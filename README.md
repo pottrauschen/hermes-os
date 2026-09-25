@@ -136,8 +136,9 @@ prüft die Python-Seite, nicht die Fedora-Paketschicht. Braucht uv ab 0.10.
   `~/.hermes/lazy-packages`.
 - Die Hermes-TUI wird nicht gebaut (braucht Node im Build). CLI, Gateway und Sprache
   brauchen sie nicht.
-- Ob Aurora `ujust`-Dateien aus `/usr/share/ublue-os/just/` automatisch einbindet, ist
-  Konvention, nicht hier verifiziert.
+- ujust: Auroras Haupt-justfile importiert eine feste Liste plus optional
+  `60-custom.just` (Paketquelle `ublue-os-just`). Unsere Rezepte landen deshalb genau
+  dort; das Validierungs-Gate prüft, dass `ujust --list` sie zeigt.
 - Phase 3 (Desktop-Steuerung) wird ein eigenes Plugin mit eigener Gefahrenstufe.
 
 ## Lizenz
