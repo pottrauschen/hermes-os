@@ -32,7 +32,13 @@ HERMES_REPO="${HERMES_REPO:-https://github.com/NousResearch/hermes-agent.git}"
 # werden am Ende wieder entfernt.
 UV_PIN="${UV_PIN:-0.11.33}"
 BUILD_DEPS=(gcc gcc-c++ make cmake python3-devel libffi-devel openssl-devel python3-pip)
-dnf install -y git "${BUILD_DEPS[@]}"
+# Nur installieren, was fehlt, und am Ende nur das wieder entfernen: ein
+# Paket, das Aurora selbst mitbringt, darf nicht aus dem Basis-Image fliegen.
+ADDED_DEPS=()
+for pkg in "${BUILD_DEPS[@]}"; do
+  rpm -q "${pkg}" >/dev/null 2>&1 || ADDED_DEPS+=("${pkg}")
+done
+dnf install -y git "${ADDED_DEPS[@]}"
 python3 -m pip install --quiet --target /tmp/uv-bootstrap "uv==${UV_PIN}"
 export PATH="/tmp/uv-bootstrap/bin:${PATH}"
 uv --version
@@ -53,17 +59,37 @@ export UV_LINK_MODE=copy
 export UV_PROJECT_ENVIRONMENT="${HERMES_ROOT}/.venv"
 
 cd "${HERMES_ROOT}"
-uv python install "${HERMES_PYTHON}"
+# --no-bin: keine python3.13-Shims nach /root/.local/bin (das Image hat kein
+# brauchbares /root, und bootc container lint mag dort keine Reste).
+export UV_NO_MODIFY_PATH=1
+uv python install --no-bin "${HERMES_PYTHON}"
 # --locked: exakt uv.lock des Tags, Build bricht ab, wenn das Lock nicht passt
 #           (dieselbe Form, die Hermes' eigenes setup-hermes.sh benutzt).
-# --extra all: der von Hermes selbst für Produktions-Images vorgesehene Satz.
+# --extra all:   der von Hermes selbst für Produktions-Images vorgesehene Satz.
+# --extra voice: lokale Spracherkennung (faster-whisper). Hermes würde sie
+#                sonst beim ersten Gebrauch in die Venv nachinstallieren, und
+#                die liegt hier read-only unter /usr.
 # Das Projekt selbst wird editierbar eingebunden (Pfad ist im Image stabil).
-uv sync --locked --extra all --python "${HERMES_PYTHON}"
+uv sync --locked --extra all --extra voice --python "${HERMES_PYTHON}"
+
+# Piper (lokale Sprachausgabe) ist in 0.21.x kein Extra, sondern wird von
+# `hermes setup` per pip in die Venv installiert. Hier fest eingebaut, mit dem
+# Pin, den Hermes main im Extra [piper] führt.
+PIPER_PIN="${PIPER_PIN:-1.8.0}"
+uv pip install --python "${HERMES_ROOT}/.venv/bin/python" "piper-tts==${PIPER_PIN}"
 
 # ---- Launcher ----------------------------------------------------------------
+# HERMES_LAZY_INSTALL_TARGET: Hermes' eigener Mechanismus für versiegelte
+# Images (siehe tools/lazy_deps.py). Optionale Backends, die erst bei Gebrauch
+# gebraucht werden (Messaging-Plattformen, Cloud-Suche, Wake-Word), landen
+# damit unter ~/.hermes/lazy-packages statt in der read-only Venv. Der
+# Ordner wird ans ENDE von sys.path gehängt, kann also nichts überschreiben.
 cat > /usr/bin/hermes <<'EOF'
 #!/bin/sh
 # hermes-os: Launcher für den ins Image gebackenen Hermes Agent.
+export PYTHONDONTWRITEBYTECODE=1
+: "${HERMES_LAZY_INSTALL_TARGET:=${HERMES_HOME:-${HOME}/.hermes}/lazy-packages}"
+export HERMES_LAZY_INSTALL_TARGET
 exec /usr/lib/hermes-agent/.venv/bin/hermes "$@"
 EOF
 chmod 0755 /usr/bin/hermes
@@ -83,9 +109,11 @@ update=image
 EOF
 
 # ---- Aufräumen ---------------------------------------------------------------
-rm -rf "${HERMES_ROOT}/.git" /tmp/uv-bootstrap
+rm -rf "${HERMES_ROOT}/.git" /tmp/uv-bootstrap /root/.cache /root/.local
 find "${HERMES_ROOT}" -name '__pycache__' -type d -prune -exec rm -rf {} +
-dnf remove -y "${BUILD_DEPS[@]}"
+if [ "${#ADDED_DEPS[@]}" -gt 0 ]; then
+  dnf remove -y "${ADDED_DEPS[@]}"
+fi
 
 # Smoke-Test schon hier, damit ein kaputter Build früh abbricht.
 HERMES_HOME=/tmp/hermes-build-check /usr/bin/hermes --version

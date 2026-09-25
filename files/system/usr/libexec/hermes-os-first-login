@@ -42,10 +42,10 @@ link() {  # link <ziel> <linkpfad>
 link "${SHARE}/plugins/hermes_os" "${HERMES_HOME}/plugins/hermes_os"
 link "${SHARE}/skills/hermes-os-system" "${HERMES_HOME}/skills/hermes-os-system"
 
-# 3. Plugin aktivieren (best effort, Hermes schreibt die enabled-Liste selbst)
-if ! /usr/bin/hermes plugins list 2>/dev/null | grep -qE 'hermes-os.*(enabled|active)'; then
-  /usr/bin/hermes plugins enable hermes-os || echo "WARN: hermes plugins enable fehlgeschlagen"
-fi
+# 3. Plugin aktivieren. `hermes plugins enable` ist idempotent und schreibt
+#    nur die enabled-Liste in config.yaml; ein Grep auf die Tabellenausgabe
+#    von `plugins list` wäre fehleranfällig ("not enabled" enthält "enabled").
+/usr/bin/hermes plugins enable hermes-os || echo "WARN: hermes plugins enable fehlgeschlagen"
 
 # 4. Gateway einschalten, wenn ein Provider eingerichtet ist
 if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then

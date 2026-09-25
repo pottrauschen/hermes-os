@@ -20,7 +20,7 @@ COPY files/system /system_files/
 COPY --chmod=0755 files/scripts /build_files/
 COPY *.pub /keys/
 
-FROM ghcr.io/ublue-os/aurora-dx:stable
+FROM ghcr.io/ublue-os/aurora-dx-nvidia-open:stable
 
 ARG IMAGE_NAME="hermes-os"
 ARG IMAGE_REGISTRY="localhost"

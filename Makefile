@@ -3,8 +3,9 @@ SUDO = sudo
 PODMAN = $(SUDO) podman
 
 IMAGE_NAME ?= localhost/hermes-os
-CONTAINER_FILE ?= ./Dockerfile
 VARIANT ?=
+# VARIANT=nvidia wählt Dockerfile.nvidia (literale FROM-Zeile, siehe Dockerfile-Kopf)
+CONTAINER_FILE ?= $(if $(VARIANT),./Dockerfile.$(VARIANT),./Dockerfile)
 HERMES_REF ?= v2026.9.24
 HERMES_PYTHON ?= 3.13
 IMAGE_CONFIG ?= ./iso.toml
@@ -22,9 +23,14 @@ clean:
 	$(SUDO) rm -rf ./output
 
 # Syntaxprüfung ohne Build (shellcheck + python -m py_compile), läuft überall.
+# Prüft außerdem, dass Dockerfile und Dockerfile.nvidia nur in der FROM-Zeile
+# des Basis-Images abweichen.
 lint:
 	shellcheck -x files/scripts/*.sh files/system/usr/libexec/hermes-os-first-login || true
 	python3 -m py_compile files/system/usr/share/hermes-os/plugins/hermes_os/*.py
+	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
+		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
+		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }
 	@echo "lint ok"
 
 image:

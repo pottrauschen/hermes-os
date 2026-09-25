@@ -35,11 +35,15 @@ export UV_PROJECT_ENVIRONMENT="${ROOT}/.venv"
 cd "${ROOT}"
 rm -rf "${ROOT}/.venv"
 uv python install "${HERMES_PYTHON}"
-uv sync --locked --extra all --python "${HERMES_PYTHON}"
+uv sync --locked --extra all --extra voice --python "${HERMES_PYTHON}"
+uv pip install --python "${ROOT}/.venv/bin/python" "piper-tts==${PIPER_PIN:-1.8.0}"
 
 echo "== python: $("${ROOT}/.venv/bin/python" --version)"
 HERMES_HOME="${WORK}/home" "${ROOT}/.venv/bin/hermes" --version
 "${ROOT}/.venv/bin/python" -c 'import hermes_cli.main, hermes_cli.plugins, tools.checkpoint_manager; print("core imports ok")'
+"${ROOT}/.venv/bin/python" -c 'import faster_whisper, piper; print("voice packages ok:", faster_whisper.__version__)'
+# Nach dem piper-Install muss das Lock noch stimmen (kein Core-Paket verdrängt)
+(cd "${ROOT}" && uv sync --locked --extra all --extra voice --python "${HERMES_PYTHON}" --dry-run 2>&1 | tail -3)
 
 # Das hermes-os-Plugin so laden, wie es das First-Login-Skript einrichtet:
 # Symlink unter ~/.hermes/plugins, Config-Vorlage, `hermes plugins enable`,
