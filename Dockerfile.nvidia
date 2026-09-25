@@ -6,11 +6,11 @@
 # Aufbau nach dem Muster von querencia-linux: ein Dockerfile, das nur build.sh
 # aufruft, und nummerierte Skripte in files/scripts/.
 #
-# Die FROM-Zeile MUSS literal sein: atomic-ci liest sie mit dockerfile-parse,
-# prüft die Signatur des Basis-Images gegen aurora-cosign.pub und leitet
-# Versionen daraus ab. Eine ARG-Substitution in FROM bricht diesen Schritt.
-# Die NVIDIA-Variante ist deshalb eine eigene Datei (Dockerfile.nvidia), die
-# sich nur in dieser Zeile unterscheidet; `make lint` prüft das.
+# Die FROM-Zeile MUSS literal sein: der CI-Workflow liest sie mit grep, prüft
+# die Signatur des Basis-Images gegen aurora-cosign.pub und leitet die
+# Image-Version daraus ab. Die NVIDIA-Variante ist deshalb eine eigene Datei
+# (Dockerfile.nvidia), die sich nur in dieser Zeile unterscheidet; `make lint`
+# prüft das.
 # =============================================================================
 
 # Build-Kontext getrennt vom Image: Skripte und Systemdateien werden nur
@@ -25,6 +25,9 @@ FROM ghcr.io/ublue-os/aurora-dx-nvidia-open:stable
 ARG IMAGE_NAME="hermes-os"
 ARG IMAGE_REGISTRY="localhost"
 ARG VARIANT=""
+# Version des Images: die CI setzt <Aurora-Version>.<Datum>, lokal bleibt es
+# ein Platzhalter. Ohne eigenen Wert erbt das Label die Aurora-Version.
+ARG IMAGE_VERSION="0.1"
 # Hermes-Release, das ins Image gebacken wird. Ein Bump ist ein Commit hier,
 # kein `hermes update` auf dem Rechner (das ist auf dem read-only /usr
 # absichtlich nicht möglich).
@@ -46,10 +49,14 @@ ENV HERMES_REPO=${HERMES_REPO}
 LABEL org.opencontainers.image.title="hermes-os"
 LABEL org.opencontainers.image.description="Atomic KDE desktop with Hermes Agent as a system component (Aurora DX base)"
 LABEL org.opencontainers.image.vendor="pottrauschen"
-LABEL org.opencontainers.image.version="0.1"
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}"
 LABEL ostree.bootable="true"
 
-RUN --mount=type=cache,dst=/var/cache/dnf \
+# Cache-Mounts: dnf5 auf Fedora cacht unter /var/cache/libdnf5 (nicht
+# /var/cache/dnf wie dnf4 auf AlmaLinux). Beide Mountpunkte sind in
+# usr/lib/tmpfiles.d/hermes-os.conf deklariert, damit bootc container lint
+# nicht über undeklarierten Inhalt unter /var stolpert.
+RUN --mount=type=cache,dst=/var/cache/libdnf5 \
     --mount=type=cache,dst=/var/cache/uv \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=bind,from=ctx,source=/,target=/ctx \

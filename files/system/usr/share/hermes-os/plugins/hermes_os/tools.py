@@ -1,20 +1,26 @@
 """Werkzeuge des hermes-os-Plugins.
 
-Alle os_*-Werkzeuge sind lesend. Sie rufen die Systemkommandos auf, die das
-Image mitbringt (bootc, systemctl, flatpak, nmcli, ...), begrenzen die
-Ausgabe und geben Text zurück, den das Modell direkt lesen kann.
+Alle os_*-Werkzeuge sind lesend und laufen ohne Root: Sie rufen die
+Systemkommandos auf, die das Image mitbringt (rpm-ostree, skopeo, systemctl,
+flatpak, nmcli, ...), begrenzen die Ausgabe und geben Text zurück, den das
+Modell direkt lesen kann. `bootc` selbst verlangt für status/upgrade Root
+(prepare_for_write), deshalb liest os_status den Deployment-Zustand über
+`rpm-ostree status --json` und os_updates vergleicht Digests mit skopeo.
 
 ``app_launch`` ist die einzige schreibende Aktion: Sie startet einen
-Desktop-Eintrag über ``gio launch`` und ist damit auf das beschränkt, was
-der Nutzer auch per Klick im Menü starten könnte.
+Desktop-Eintrag über ``gio launch`` in einem eigenen systemd-Scope, damit die
+App nicht in der cgroup des Gateways hängt und bei dessen Neustart stirbt.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 _TIMEOUT = 20
 _MAX_CHARS = 12_000
@@ -24,23 +30,31 @@ _MAX_CHARS = 12_000
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
-def _run(argv: List[str], timeout: int = _TIMEOUT, env: Optional[Dict[str, str]] = None) -> str:
-    """Kommando ausführen, stdout+stderr als Text, nie eine Exception nach außen."""
+def _run_raw(argv: List[str], timeout: int = _TIMEOUT, env: Optional[Dict[str, str]] = None) -> Tuple[int, str, str]:
+    """Kommando ausführen; (returncode, stdout, stderr). Fehlendes Kommando -> (127, "", Hinweis)."""
     if shutil.which(argv[0]) is None:
-        return f"[{argv[0]}: nicht installiert]"
+        return 127, "", f"{argv[0]}: nicht installiert"
     try:
         proc = subprocess.run(
             argv, capture_output=True, text=True, timeout=timeout,
             env={**os.environ, "LC_ALL": "C.UTF-8", **(env or {})},
         )
     except subprocess.TimeoutExpired:
-        return f"[{' '.join(argv)}: Timeout nach {timeout}s]"
+        return 124, "", f"{' '.join(argv)}: Timeout nach {timeout}s"
     except OSError as exc:
-        return f"[{' '.join(argv)}: {exc}]"
-    out = proc.stdout
-    if proc.returncode != 0 and proc.stderr.strip():
-        out += f"\n[exit {proc.returncode}] {proc.stderr.strip()}"
-    return out.strip()
+        return 126, "", f"{' '.join(argv)}: {exc}"
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _run(argv: List[str], timeout: int = _TIMEOUT, env: Optional[Dict[str, str]] = None) -> str:
+    """Kommando ausführen, stdout (+stderr bei Fehler) als Text, nie eine Exception nach außen."""
+    rc, out, err = _run_raw(argv, timeout, env)
+    if rc == 127 or rc == 124 or rc == 126:
+        return f"[{err}]"
+    text = out
+    if rc != 0 and err.strip():
+        text += f"\n[exit {rc}] {err.strip()}"
+    return text.strip()
 
 
 def _clip(text: str, limit: int = _MAX_CHARS) -> str:
@@ -66,14 +80,56 @@ def check_requirements() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Deployments (rpm-ostree, ohne Root)
+# ---------------------------------------------------------------------------
+
+def _deployments() -> Tuple[Optional[Dict[str, Any]], str]:
+    """Booted/staged/rollback-Deployment aus `rpm-ostree status --json` (D-Bus, kein Root)."""
+    rc, out, err = _run_raw(["rpm-ostree", "status", "--json"], timeout=30)
+    if rc != 0:
+        return None, f"[rpm-ostree status: exit {rc}] {err.strip()}"
+    try:
+        data = json.loads(out)
+    except ValueError as exc:
+        return None, f"[rpm-ostree status: JSON unlesbar: {exc}]"
+    deps = data.get("deployments") or []
+    booted = next((d for d in deps if d.get("booted")), None)
+    staged = next((d for d in deps if d.get("staged")), None)
+    others = [d for d in deps if not d.get("booted") and not d.get("staged")]
+    return {"booted": booted, "staged": staged, "rollback": others[0] if others else None, "count": len(deps)}, out
+
+
+def _image_ref(dep: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+    """(docker-Referenz ohne Transportpräfix, Digest) eines Deployments."""
+    if not dep:
+        return "", ""
+    ref = str(dep.get("container-image-reference") or "")
+    # ostree-image-signed:docker://ghcr.io/x/y:latest  ->  ghcr.io/x/y:latest
+    if "docker://" in ref:
+        ref = ref.split("docker://", 1)[1]
+    digest = str(dep.get("container-image-reference-digest") or "")
+    return ref, digest
+
+
+def _describe_dep(label: str, dep: Optional[Dict[str, Any]]) -> str:
+    if not dep:
+        return f"{label}: (keins)"
+    ref, digest = _image_ref(dep)
+    version = dep.get("version") or "?"
+    ts = dep.get("timestamp")
+    return f"{label}: {ref or dep.get('origin', '?')}  version={version}  digest={digest[:19] + '…' if digest else '?'}  timestamp={ts}"
+
+
+# ---------------------------------------------------------------------------
 # os_status
 # ---------------------------------------------------------------------------
 
 OS_STATUS_SCHEMA = _schema(
     "os_status",
-    "Zustand des Systems: welches Image läuft, welches ist gestaged, welches ist der "
-    "Rollback-Stand (bootc), dazu os-release, Kernel, Uptime und Hermes-Version. "
-    "Nur lesend. Zuerst aufrufen, bevor du über Updates oder Rollbacks sprichst.",
+    "Zustand des Systems: welches Image gebootet ist, welches gestaged ist, welches der "
+    "Rollback-Stand ist (rpm-ostree/bootc-Deployments), dazu os-release, Kernel, Uptime und "
+    "Hermes-Version. Nur lesend, kein Root. Zuerst aufrufen, bevor du über Updates oder "
+    "Rollbacks sprichst.",
     {},
 )
 
@@ -82,10 +138,17 @@ def handle_os_status(args: Dict[str, Any], **_kw) -> str:
     parts = []
     parts.append(_section("os-release", _run(["sh", "-c", "grep -E '^(PRETTY_NAME|VARIANT_ID|VERSION_ID|IMAGE_ID|IMAGE_VERSION)=' /usr/lib/os-release"])))
     parts.append(_section("kernel / uptime", _run(["uname", "-r"]) + "\n" + _run(["uptime", "-p"])))
-    bootc = _run(["bootc", "status", "--format", "yaml"], timeout=30)
-    if bootc.startswith("["):
-        bootc = _run(["rpm-ostree", "status"], timeout=30)
-    parts.append(_section("bootc status", bootc))
+    info, raw = _deployments()
+    if info is None:
+        parts.append(_section("deployments (rpm-ostree status)", raw))
+    else:
+        lines = [
+            _describe_dep("gebootet", info["booted"]),
+            _describe_dep("gestaged (aktiv nach Reboot)", info["staged"]),
+            _describe_dep("rollback", info["rollback"]),
+            f"deployments gesamt: {info['count']}",
+        ]
+        parts.append(_section("deployments (rpm-ostree status)", "\n".join(lines)))
     stamp = Path("/usr/lib/hermes-agent/.hermes-os-release")
     if stamp.exists():
         try:
@@ -255,7 +318,17 @@ def handle_os_journal(args: Dict[str, Any], **_kw) -> str:
     unit = (args.get("unit") or "").strip()
     if unit:
         argv += ["-u", unit]
-    return _clip(_section(" ".join(argv), _run(argv, timeout=30)))
+    rc, out, err = _run_raw(argv, timeout=30)
+    text = out.strip()
+    if rc != 0 and err.strip():
+        text += f"\n[exit {rc}] {err.strip()}"
+    # journalctl meldet fehlenden Zugriff auf das System-Journal nur auf stderr
+    # und mit Exit 0; ohne diesen Hinweis sähe ein leeres Ergebnis wie "alles
+    # ruhig" aus (Nutzer außerhalb von wheel/adm/systemd-journal).
+    if not args.get("user") and "Hint:" in err:
+        text += ("\n[Hinweis: kein Zugriff auf das System-Journal, nur eigene Einträge sichtbar. "
+                 "Ein Konto in wheel, adm oder systemd-journal sieht alles.]")
+    return _clip(_section(" ".join(argv), text))
 
 
 # ---------------------------------------------------------------------------
@@ -264,17 +337,56 @@ def handle_os_journal(args: Dict[str, Any], **_kw) -> str:
 
 OS_UPDATES_SCHEMA = _schema(
     "os_updates",
-    "Stehen Updates an? Prüft das bootc-Image (nur Check, kein Download) und Flatpak. "
-    "Nur lesend. Das Einspielen selbst ist eine Aktion, die den Nutzer fragt.",
+    "Stehen Updates an? Vergleicht den Digest des gebooteten Images mit der Registry "
+    "(skopeo, kein Root), zeigt ein gestagetes Deployment, Flatpak-Updates und den Zustand "
+    "der Auto-Update-Timer. Nur lesend. Das Einspielen selbst ist eine Aktion, die den "
+    "Nutzer fragt.",
     {},
 )
 
 
+def _image_update_check() -> str:
+    info, raw = _deployments()
+    if info is None:
+        return raw
+    booted = info["booted"]
+    ref, booted_digest = _image_ref(booted)
+    lines = [_describe_dep("gebootet", booted)]
+    if info["staged"]:
+        lines.append(_describe_dep("gestaged (aktiv nach Reboot)", info["staged"]))
+    if not ref:
+        lines.append("Kein Container-Image als Ursprung erkannt, Registry-Vergleich übersprungen.")
+        return "\n".join(lines)
+    rc, out, err = _run_raw(["skopeo", "inspect", "--no-tags", "--format", "{{.Digest}}", f"docker://{ref}"], timeout=90)
+    if rc != 0:
+        lines.append(f"Registry nicht abfragbar (skopeo exit {rc}): {err.strip()[:300]}")
+        return "\n".join(lines)
+    remote = out.strip()
+    lines.append(f"registry: {ref}  digest={remote[:19] + '…' if remote else '?'}")
+    if remote and booted_digest:
+        if remote == booted_digest:
+            lines.append("Update verfügbar: nein (Registry-Digest = gebooteter Digest)")
+        else:
+            staged_digest = _image_ref(info["staged"])[1]
+            if staged_digest == remote:
+                lines.append("Update verfügbar: bereits gestaged, aktiv nach Reboot")
+            else:
+                lines.append("Update verfügbar: ja (Registry-Digest weicht ab). Einspielen: ujust update, dann Reboot.")
+    return "\n".join(lines)
+
+
+def _timer_state() -> str:
+    timers = ["uupd.timer", "rpm-ostreed-automatic.timer", "bootc-fetch-apply-updates.timer"]
+    listed = _run(["systemctl", "list-timers", "--no-pager", "--no-legend", "--all", *timers])
+    enabled = _run(["sh", "-c", "for t in " + " ".join(timers) + "; do printf '%s: ' \"$t\"; systemctl is-enabled \"$t\" 2>/dev/null || echo not-found; done"])
+    return listed + "\n" + enabled
+
+
 def handle_os_updates(args: Dict[str, Any], **_kw) -> str:
     parts = [
-        _section("bootc upgrade --check", _run(["bootc", "upgrade", "--check"], timeout=90)),
+        _section("system image", _image_update_check()),
         _section("flatpak updates", _run(["flatpak", "remote-ls", "--updates", "--columns=application,version,branch"], timeout=90)),
-        _section("auto-update timer", _run(["systemctl", "list-timers", "--no-pager", "--no-legend", "ublue-update.timer", "bootc-fetch-apply-updates.timer"])),
+        _section("auto-update timers", _timer_state()),
     ]
     return _clip("\n".join(parts))
 
@@ -307,6 +419,18 @@ def _find_desktop_file(app_id: str) -> Optional[Path]:
     return None
 
 
+def _launch_argv(desktop: Path, app_id: str, target: str) -> List[str]:
+    """gio launch in einem eigenen transienten Scope: Die App gehört dann nicht
+    zur cgroup des Gateways und überlebt dessen Neustart. Ohne systemd-run
+    (nicht auf Aurora) bleibt der direkte Aufruf."""
+    gio = ["gio", "launch", str(desktop)] + ([target] if target else [])
+    if shutil.which("systemd-run") is None:
+        return gio
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", app_id)[:60]
+    unit = f"app-hermes-{safe}-{uuid.uuid4().hex[:8]}.scope"
+    return ["systemd-run", "--user", "--scope", "--collect", "--quiet", f"--unit={unit}", "--", *gio]
+
+
 def handle_app_launch(args: Dict[str, Any], **_kw) -> str:
     app_id = (args.get("app_id") or "").strip()
     target = (args.get("target") or "").strip()
@@ -315,9 +439,7 @@ def handle_app_launch(args: Dict[str, Any], **_kw) -> str:
         near = [e["id"] for e in _desktop_entries() if app_id.lower() in e["id"].lower() or app_id.lower() in e["name"].lower()]
         hint = f" Ähnliche IDs: {', '.join(near[:8])}" if near else ""
         return f"Kein Desktop-Eintrag '{app_id}' gefunden. Erst os_apps mit einem Suchbegriff aufrufen.{hint}"
-    argv = ["gio", "launch", str(desktop)]
-    if target:
-        argv.append(target)
+    argv = _launch_argv(desktop, app_id, target)
     try:
         subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError as exc:

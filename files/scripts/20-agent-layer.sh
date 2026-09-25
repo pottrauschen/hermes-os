@@ -37,13 +37,13 @@ chmod 0644 "${JUST_DIR}/60-custom.just"
 #              mit; das Paket ist dann ein No-op).
 dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
 
-# ---- systemd: User-Unit bleibt vorhanden, aber standardmäßig aus ------------
-# Das Gateway (Sprache, Messaging) startet erst, wenn `hermes setup` gelaufen
-# ist. Das First-Login-Skript schaltet es dann ein.
-mkdir -p /usr/lib/systemd/user-preset
-cat > /usr/lib/systemd/user-preset/90-hermes-os.preset <<'EOF'
-disable hermes-gateway.service
-EOF
+# ---- systemd: User-Unit ist vorhanden, aber standardmäßig aus ---------------
+# Das Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen) startet
+# erst, wenn `hermes setup` gelaufen ist. Aus ist es, weil das Image keinen
+# WantedBy-Symlink mitliefert; ein User-Preset wäre wirkungslos, weil kein
+# User-Manager preset-all ausführt. Das First-Login-Skript schaltet die Unit
+# ein, sobald ein Provider konfiguriert ist.
+chmod 0644 /usr/lib/systemd/user/hermes-gateway.service /usr/lib/environment.d/60-hermes-os.conf
 
 # ---- Sicherheitsnetz: Hermes darf sich nicht selbst aktualisieren -----------
 # Der Code liegt read-only unter /usr. `hermes update` würde scheitern; ein

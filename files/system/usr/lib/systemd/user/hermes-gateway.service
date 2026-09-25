@@ -1,21 +1,43 @@
 [Unit]
-Description=hermes-os -- Hermes Agent Gateway (Sprache, Messaging, Cron)
+Description=hermes-os -- Hermes Agent Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen)
 Documentation=https://hermes-agent.nousresearch.com/docs/
+# Erst nach der Plasma-Sitzung starten und mit ihr enden: nur dann bekommt
+# der Dienst WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS und XDG_* aus der
+# Sitzung. default.target würde ihn schon beim Login vor dem Sync starten.
 After=graphical-session.target network-online.target
 Wants=network-online.target
+PartOf=graphical-session.target
 # Erst sinnvoll, wenn hermes setup gelaufen ist (Provider konfiguriert).
 ConditionPathExists=%h/.hermes/config.yaml
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# Gleiche Kommandozeile, die `hermes gateway install` selbst schreiben würde.
-ExecStart=/usr/bin/hermes gateway run --replace
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=30
+# Hinweis: `hermes setup` legt bei Bedarf eine eigene Unit unter
+# ~/.config/systemd/user/ an, die diese hier überdeckt. Beide tragen
+# dieselben Direktiven; die Umgebungsvariablen kommen für beide aus
+# /usr/lib/environment.d/60-hermes-os.conf.
+ExecStart=/usr/bin/hermes gateway run
+WorkingDirectory=%h/.hermes
 Environment=PYTHONUNBUFFERED=1
-# Read-only Code unter /usr: keine .pyc-Schreibversuche
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HERMES_SUPERVISED_CHILD=1
+# Hermes' Exit-Vertrag: 75 = bitte neu starten, 78 = Konfiguration kaputt,
+# nicht wieder versuchen. on-failure statt always, weil `hermes gateway stop`
+# mit Exit 0 endet und nicht wieder hochkommen darf.
+Restart=on-failure
+RestartSec=5
+RestartForceExitStatus=75
+SuccessExitStatus=75
+RestartPreventExitStatus=78
+KillMode=mixed
+KillSignal=SIGTERM
+ExecReload=/bin/kill -USR1 $MAINPID
+ExecStop=-/usr/lib/hermes-agent/.venv/bin/python -m gateway.systemd_stop_mark
+ExecStopPost=-/usr/lib/hermes-agent/.venv/bin/python -m gateway.cgroup_cleanup
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

@@ -34,8 +34,10 @@ Das neue Image wird gestaged, aktiv nach Reboot. Vorher `os_updates`, nachher
 
 **Rollback** (fragt den Nutzer):
 ```
-ujust rollback        # vorheriges Image beim nächsten Boot
+sudo bootc rollback   # vorheriges Image beim nächsten Boot, dann Reboot
 ```
+Es gibt kein `ujust rollback`. `ujust rebase-helper` und `rollback-helper` wechseln
+auf Upstream-Aurora-Images und sind hier falsch.
 
 **App installieren** (frei):
 ```
@@ -58,10 +60,12 @@ distrobox enter dev
 ```
 Bauen, kompilieren, `dnf install`: nur im Container, nie auf dem Host.
 
-**Hermes selbst**: Konfiguration in `~/.hermes/config.yaml`, Checkpoints sind an
-(`/rollback` im Chat holt Dateiänderungen zurück). Der Code liegt read-only in
-`/usr/lib/hermes-agent`. `hermes update` funktioniert hier absichtlich nicht,
-ein neues Hermes kommt mit dem nächsten Image.
+**Hermes selbst**: Konfiguration in `~/.hermes/config.yaml`. Checkpoints sind an:
+vor write_file/patch und vor erkennbar destruktiven Shell-Befehlen (rm, mv, cp,
+sed -i, `>`, git reset) wird der betroffene Projektordner gesichert, `/rollback` im
+Chat holt ihn zurück. Nicht erfasst: /etc, Flatpak, bootc und andere Systemänderungen.
+Der Code liegt read-only in `/usr/lib/hermes-agent`. `hermes update` funktioniert hier
+absichtlich nicht, ein neues Hermes kommt mit dem nächsten Image.
 
 ## Was du nicht tust
 

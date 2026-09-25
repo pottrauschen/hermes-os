@@ -27,7 +27,7 @@ clean:
 # des Basis-Images abweichen.
 lint:
 	shellcheck -x files/scripts/*.sh files/system/usr/libexec/hermes-os-first-login || true
-	python3 -m py_compile files/system/usr/share/hermes-os/plugins/hermes_os/*.py
+	python3 -c 'import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]; print("python syntax ok")' files/system/usr/share/hermes-os/plugins/hermes_os/*.py
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }
