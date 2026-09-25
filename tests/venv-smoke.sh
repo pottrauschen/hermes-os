@@ -3,8 +3,10 @@
 # hermes-os -- Smoke-Test für den riskantesten Build-Schritt ohne Podman
 # =============================================================================
 # Führt die Venv-Schritte aus 10-hermes.sh in einem temporären Verzeichnis
-# aus (uv-verwaltetes Python 3.14, uv sync --frozen --extra all) und ruft
-# danach hermes --version auf. Läuft auf jedem Linux mit uv und git,
+# aus (uv-verwaltetes Python aus HERMES_PYTHON, Standard 3.13, uv sync
+# --locked --extra all --extra voice, plus piper-tts), ruft danach
+# hermes --version auf, lädt das Plugin über den echten Plugin-Loader und
+# prüft den Freigabe-Hook. Läuft auf jedem Linux mit uv (ab 0.10) und git,
 # braucht keinen Container. Prüft NICHT die Fedora-Paketschicht.
 #
 #   ./tests/venv-smoke.sh [HERMES_REF] [WORKDIR] [HERMES_PYTHON]
@@ -67,6 +69,27 @@ pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
 print("plugin loaded by release loader:", names, "+ prompt section hermes-os.system")
+# Freigabe-Hook über Hermes' eigene Dispatch-Funktion
+cases = {
+    "sudo bootc switch ghcr.io/x/y:latest": "approve",
+    "rpm-ostree install foo": "approve",
+    "ujust update": "approve",
+    "sudo systemctl enable --now sshd": "approve",
+    "bash -c 'sudo useradd bob'": "approve",
+    "sudo tee /etc/foo.conf": "approve",
+    "flatpak install --system flathub org.x.Y": "approve",
+    "systemctl --user restart hermes-gateway": None,
+    "flatpak install flathub org.mozilla.Thunderbird": None,
+    "cat /etc/passwd | head": None,
+    "git status && ls -la": None,
+    "rpm-ostree status": None,
+    "ujust hermes-doctor": None,
+}
+for cmd, want in cases.items():
+    d = hp._get_pre_tool_call_directive_details("terminal", {"command": cmd})
+    assert d.action == want, f"{cmd!r}: got {d.action}, want {want}"
+assert hp._get_pre_tool_call_directive_details("write_file", {"path": "/etc/x"}).action is None
+print("approval hook:", len(cases), "cases ok")
 PY
 )
 

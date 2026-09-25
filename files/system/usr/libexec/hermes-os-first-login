@@ -47,15 +47,18 @@ link "${SHARE}/skills/hermes-os-system" "${HERMES_HOME}/skills/hermes-os-system"
 #    von `plugins list` wäre fehleranfällig ("not enabled" enthält "enabled").
 /usr/bin/hermes plugins enable hermes-os || echo "WARN: hermes plugins enable fehlgeschlagen"
 
-# 4. Gateway einschalten, wenn ein Provider eingerichtet ist
+# 4. Gateway einschalten, wenn ein Provider eingerichtet ist.
+#    reenable statt enable: ältere Installationen hatten die Unit noch an
+#    default.target hängen; reenable räumt den alten Symlink weg.
 if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then
-  systemctl --user enable --now hermes-gateway.service || echo "WARN: gateway enable fehlgeschlagen"
+  systemctl --user reenable hermes-gateway.service || echo "WARN: gateway reenable fehlgeschlagen"
+  systemctl --user start hermes-gateway.service || echo "WARN: gateway start fehlgeschlagen"
 fi
 
 # 5. Erster Start: Setup anbieten
 if [ "${FIRST_RUN}" = "1" ]; then
   notify-send -a hermes-os "Hermes ist bereit zur Einrichtung" \
-    "Ein Terminal öffnet sich mit 'hermes setup'. Dort Provider und Modell wählen." || true
+    "Ein Terminal öffnet sich mit 'hermes setup'. Dort Provider und Modell wählen. Sprache am Desktop danach mit: hermes, dann /voice on" || true
   if command -v konsole >/dev/null 2>&1; then
     setsid konsole -e /usr/bin/hermes setup >/dev/null 2>&1 &
   elif command -v xdg-terminal-exec >/dev/null 2>&1; then

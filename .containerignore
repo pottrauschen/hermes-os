@@ -1,0 +1,14 @@
+# hermes-os -- was nicht in den Build-Kontext gehört.
+# Podman/Buildah lesen diese Datei wie .dockerignore (Go-Glob mit ** für
+# beliebige Tiefe). Muster ohne führenden Pfad gelten im Wurzelverzeichnis,
+# die **-Varianten in Unterordnern.
+.git
+output
+tests
+docs
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+# nur Markdown im Wurzelverzeichnis; SKILL.md unter files/ bleibt drin
+*.md

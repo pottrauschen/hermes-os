@@ -10,10 +10,16 @@ hermes-setup:
 hermes-doctor:
     /usr/bin/hermes doctor
 
-# Gateway (Sprache, Messaging, Cron) als Nutzerdienst einschalten
+# Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen) als Nutzerdienst einschalten
 hermes-gateway-enable:
-    systemctl --user enable --now hermes-gateway.service
+    systemctl --user reenable hermes-gateway.service
+    systemctl --user start hermes-gateway.service
     systemctl --user status hermes-gateway.service --no-pager
+
+# Sprache am Desktop: Push-to-Talk im Terminal (lokale Erkennung und Ausgabe)
+hermes-voice:
+    @echo "Im Chat eingeben: /voice on   (Push-to-Talk, faster-whisper + piper lokal)"
+    /usr/bin/hermes
 
 # Gateway ausschalten
 hermes-gateway-disable:

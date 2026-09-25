@@ -73,24 +73,36 @@ jobs:
           BASE_IMAGE="$(grep -E '^FROM ghcr.io/ublue-os/' "${{ matrix.containerfile }}" | tail -1 | awk '{print $2}')"
           DATE="$(date -u +%Y%m%d)"
           SHA7="${GITHUB_SHA::7}"
+          # Image-Version: Aurora-Version des Basis-Images plus Datum, damit
+          # sich Deployments in bootc/rpm-ostree status unterscheiden lassen.
+          BASE_VERSION="$(skopeo inspect --no-tags "docker://${BASE_IMAGE}" | jq -r '.Labels["org.opencontainers.image.version"] // "unknown"')"
+          IMAGE_VERSION="${BASE_VERSION}.${DATE}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             TAGS="pr-${{ github.event.number }}"
           elif [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
             TAGS="latest ${DATE} ${SHA7}"
           else
-            TAGS="${{ github.ref_name }} ${SHA7}"
+            # Branch-Namen mit "/" sind keine gültigen Tags
+            REF_TAG="${GITHUB_REF_NAME//[^A-Za-z0-9_.-]/_}"
+            TAGS="${REF_TAG:0:120} ${SHA7}"
           fi
           {
             echo "image_name=${IMAGE_NAME}"
             echo "registry=${REGISTRY}"
             echo "base_image=${BASE_IMAGE}"
+            echo "image_version=${IMAGE_VERSION}"
             echo "tags=${TAGS}"
           } >> "$GITHUB_OUTPUT"
-          echo "image: ${REGISTRY}/${IMAGE_NAME}  base: ${BASE_IMAGE}  tags: ${TAGS}"
+          echo "image: ${REGISTRY}/${IMAGE_NAME}  base: ${BASE_IMAGE}  version: ${IMAGE_VERSION}  tags: ${TAGS}"
 
       - name: Verify base image signature (Universal Blue)
+        # shell: bash schaltet pipefail ein; ohne das würde ein cosign-Fehler
+        # hinter der Pipe verschluckt und der Build liefe unverifiziert weiter.
+        shell: bash
         run: |
-          cosign verify --key aurora-cosign.pub "${{ steps.names.outputs.base_image }}" | jq -r '.[0].critical.identity."docker-reference"'
+          set -euo pipefail
+          cosign verify --key aurora-cosign.pub "${{ steps.names.outputs.base_image }}" > /tmp/verify.json
+          jq -r '.[0].critical.identity."docker-reference"' /tmp/verify.json
 
       - name: Build image
         id: build
@@ -105,6 +117,14 @@ jobs:
             --build-arg IMAGE_NAME="${{ steps.names.outputs.image_name }}" \
             --build-arg IMAGE_REGISTRY="${{ steps.names.outputs.registry }}" \
             --build-arg VARIANT="${{ matrix.variant }}" \
+            --build-arg IMAGE_VERSION="${{ steps.names.outputs.image_version }}" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}#readme" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "io.artifacthub.package.readme-url=" \
+            --label "quay.expires-after=" \
             -t "${{ steps.names.outputs.image_name }}:build" \
             -f "${{ matrix.containerfile }}" \
             .

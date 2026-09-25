@@ -10,17 +10,24 @@
 # fragt danach beim ersten Start.
 # =============================================================================
 
-# ---- Undo pro Tool-Aufruf ----------------------------------------------------
-# Vor jeder dateiverändernden Operation ein Snapshot im Shadow-Git-Store
-# (~/.hermes/checkpoints). /rollback im Chat holt ihn zurück.
+# ---- Undo für Projektdateien -------------------------------------------------
+# Vor write_file/patch und vor erkennbar destruktiven Shell-Befehlen (rm, mv,
+# cp, sed -i, >, git reset ...) ein Snapshot des betroffenen Projektordners
+# im Shadow-Git-Store (~/.hermes/checkpoints), höchstens einmal pro Ordner
+# und Modellschritt. /rollback im Chat holt ihn zurück. Nicht erfasst: /etc,
+# Flatpak, bootc und andere Systemänderungen.
 checkpoints:
   enabled: true
   max_snapshots: 30
   max_total_size_mb: 1000
 
 # ---- Die Grenze: frei oder fragen -------------------------------------------
-# mode smart: Muster + Guardian-LLM entscheiden, ob ein Befehl gefährlich ist.
-# smart_policy ergänzt die Regeln des Guardians um die hermes-os-Grenze.
+# mode smart: Hermes' Detektor erkennt gefährliche Muster (rm -r, Schreiben
+# nach /etc, systemctl stop/mask ...) und lässt den Guardian-LLM entscheiden;
+# smart_policy ergänzt dessen Regeln. Befehle, die der Detektor nicht kennt
+# (bootc, rpm-ostree, ujust update, systemctl start/enable, Nutzer, Disks),
+# schickt der pre_tool_call-Hook des hermes-os-Plugins direkt in den
+# Freigabe-Dialog. Neustart/Herunterfahren sind für den Agenten gesperrt.
 approvals:
   mode: smart
   timeout: 300

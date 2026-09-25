@@ -53,11 +53,19 @@ else
   fail "faster_whisper or piper not importable from the venv"
 fi
 
-# 4c. Launcher setzt das Lazy-Install-Ziel ins Home des Nutzers
-if grep -q 'HERMES_LAZY_INSTALL_TARGET' /usr/bin/hermes; then
-  pass "launcher exports HERMES_LAZY_INSTALL_TARGET"
+# 4c. Launcher und environment.d setzen das Lazy-Install-Ziel ins Home
+if grep -q 'HERMES_LAZY_INSTALL_TARGET' /usr/bin/hermes \
+   && grep -q '^HERMES_LAZY_INSTALL_TARGET=' /usr/lib/environment.d/60-hermes-os.conf; then
+  pass "HERMES_LAZY_INSTALL_TARGET set in launcher and environment.d"
 else
-  fail "launcher does not set HERMES_LAZY_INSTALL_TARGET"
+  fail "HERMES_LAZY_INSTALL_TARGET missing in launcher or environment.d"
+fi
+
+# 4d. Ein Installer für Nachinstallationen ist im Image (uv-Venv hat kein pip)
+if /usr/bin/uv --version >/dev/null 2>&1; then
+  pass "uv available at runtime: $(/usr/bin/uv --version)"
+else
+  fail "/usr/bin/uv missing; lazy installs would fail"
 fi
 
 # 5. Install-Stempel: paketverwaltet, hermes update verweigert
@@ -97,7 +105,12 @@ assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
-print("tools:", ", ".join(names))
+# Freigabe-Hook: System-Befehle landen im Dialog, freie Befehle nicht
+d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo bootc switch ghcr.io/x/y:latest"})
+assert d.action == "approve", d
+d = hp._get_pre_tool_call_directive_details("terminal", {"command": "systemctl --user restart hermes-gateway"})
+assert d.action is None, d
+print("tools:", ", ".join(names), "| approval hook active")
 PY
   ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
 else
