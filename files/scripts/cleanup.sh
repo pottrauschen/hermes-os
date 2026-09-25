@@ -7,7 +7,9 @@ shopt -s extglob
 
 dnf clean all
 
-rm -rf /.gitkeep /boot
+# dnf lässt /run/dnf zurück; bootc container lint meldet das als
+# nonempty-run-tmp. /run ist zur Laufzeit ohnehin ein tmpfs.
+rm -rf /.gitkeep /boot /run/dnf
 
 # /var leeren, aber die Cache-Mounts (dnf, uv) in Ruhe lassen:
 # ein rm auf einen Bind-Mount scheitert mit "Device or resource busy".

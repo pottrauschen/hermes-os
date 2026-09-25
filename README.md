@@ -86,12 +86,16 @@ Die NVIDIA-Variante ist eine eigene Datei `Dockerfile.nvidia`, weil die FROM-Zei
 literal sein muss (Signaturprüfung und Parser lesen sie). `make lint` prüft, dass sich
 beide Dateien nur in dieser Zeile unterscheiden.
 
-Auf einem bestehenden bootc-System umschalten:
+Auf einem bestehenden bootc-System (Aurora, Bluefin, Silverblue, Kinoite) umschalten:
 
 ```sh
-sudo bootc switch ghcr.io/<owner>/hermes-os:latest
+sudo bootc switch ghcr.io/pottrauschen/hermes-os:latest          # AMD / Intel
+sudo bootc switch ghcr.io/pottrauschen/hermes-os-nvidia:latest   # NVIDIA
 sudo reboot
 ```
+
+Das Paket auf GitHub muss dafür öffentlich sein (Packages, hermes-os, Package settings,
+Visibility). Ein per Actions erzeugtes Paket ist anfangs privat.
 
 ## Nach dem ersten Login
 
@@ -112,7 +116,15 @@ prüft die Python-Seite, nicht die Fedora-Paketschicht. Braucht uv ab 0.10.
 
 ## Status und offene Punkte
 
-- Der Image-Build ist noch nicht gelaufen. Erster Lauf in CI oder lokal mit Podman.
+- **Beide Images bauen in CI** und liegen unter `ghcr.io/pottrauschen/hermes-os` und
+  `ghcr.io/pottrauschen/hermes-os-nvidia` (Tags `latest`, Datum, Commit). Basis ist
+  Aurora auf Fedora 44. Im Build laufen Validierungs-Gate und Tests durch: Hermes 0.21.5
+  startet aus der read-only Venv, das Plugin lädt über den echten Plugin-Loader,
+  Sprachpakete sind importierbar, `hermes update` verweigert. `bootc container lint`
+  ist sauber. Der Hermes-Baum im Image ist rund 1 GB groß.
+- **Noch nie gebootet.** Der nächste Schritt ist ein Boot in einer VM (`make qcow2`,
+  `make run-qemu-qcow`) oder ein `bootc switch` auf einem Testrechner. Erst dort zeigt
+  sich, ob First-Login, Gateway-Unit und ujust-Einbindung wie gedacht greifen.
 - Getestet ohne Container: Hermes 0.21.5 auf Python 3.13 mit uv 0.11.33 baut, startet,
   und das Plugin registriert sich gegen die Plugin-API des Releases (siehe Test-Skript).
 - Basis-Images geprüft (Registry-Manifest): `ghcr.io/ublue-os/aurora-dx:stable` und
