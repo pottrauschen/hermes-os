@@ -115,10 +115,17 @@ for f in /usr/share/hermes-os/skills/hermes-os-system/SKILL.md \
 done
 
 # 7b. ujust sieht unsere Rezepte wirklich (Import über 60-custom.just)
-if just --justfile /usr/share/ublue-os/justfile --list 2>/dev/null | grep -qE '^\s*hermes-setup\b'; then
+JUST_OUT="$(just --justfile /usr/share/ublue-os/justfile --list 2>&1)" || true
+if echo "${JUST_OUT}" | grep -qE '^\s*hermes-setup\b'; then
   pass "ujust lists hermes-setup"
 else
   fail "ujust does not list hermes-setup (60-custom.just not imported?)"
+  echo "  --- just --list output (head) ---"
+  echo "${JUST_OUT}" | head -15 | sed 's/^/  /'
+  echo "  --- /usr/share/ublue-os/justfile ---"
+  sed 's/^/  /' /usr/share/ublue-os/justfile 2>/dev/null | head -30
+  echo "  --- /usr/share/ublue-os/just/ ---"
+  ls -la /usr/share/ublue-os/just/ 2>/dev/null | sed 's/^/  /'
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
