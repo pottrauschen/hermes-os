@@ -23,9 +23,14 @@ else
   fail "launcher or venv missing"
 fi
 
-# 2. Interpreter ist 3.14 (uv-verwaltet, nicht Fedora-Python)
+# 2. Interpreter ist der gepinnte (uv-verwaltet, nicht Fedora-Python)
+WANT="$(sed -n 's/^python=//p' /usr/lib/hermes-agent/.hermes-os-release 2>/dev/null || true)"
 PYV="$(/usr/lib/hermes-agent/.venv/bin/python -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-if [ "${PYV}" = "3.14" ]; then pass "venv python ${PYV}"; else fail "venv python is ${PYV}, expected 3.14"; fi
+if [ -n "${WANT}" ] && [ "${PYV}" = "${WANT}" ]; then pass "venv python ${PYV}"; else fail "venv python is ${PYV}, expected ${WANT:-?}"; fi
+case "$(readlink -f /usr/lib/hermes-agent/.venv/bin/python)" in
+  /usr/lib/hermes-agent/python/*) pass "interpreter is uv-managed" ;;
+  *) fail "interpreter is not under /usr/lib/hermes-agent/python" ;;
+esac
 
 # 3. Hermes startet und meldet das gepinnte Release
 if VER="$(/usr/bin/hermes --version 2>&1)"; then
@@ -41,31 +46,44 @@ else
   fail "core module import failed"
 fi
 
-# 5. Install-Stempel sagt: Updates kommen von außen
-if grep -q '"updateMechanism": *"external"' /usr/lib/hermes-agent/install-stamp.json 2>/dev/null; then
-  pass "install stamp: updateMechanism external"
+# 5. Install-Stempel: paketverwaltet, hermes update verweigert
+if [ "$(cat /usr/lib/hermes-agent/.install_method 2>/dev/null)" = "apt" ] \
+   && grep -q '^update=image' /usr/lib/hermes-agent/.hermes-os-release 2>/dev/null; then
+  pass "install method stamp: apt (image-managed)"
 else
-  fail "install stamp missing or not external"
+  fail "install method stamp missing"
+fi
+# Hermes 0.21.x beendet einen verweigerten Update-Versuch mit Exit-Code 2
+# (refused-by-contract) und druckt nur den Paketmanager-Befehl.
+set +e
+/usr/bin/hermes update >/dev/null 2>&1
+UPDATE_RC=$?
+set -e
+if [ "${UPDATE_RC}" -eq 2 ]; then
+  pass "hermes update refuses on image-managed install (exit 2)"
+else
+  fail "hermes update exited ${UPDATE_RC}, expected 2 (refusal)"
 fi
 
-# 6. Das hermes-os-Plugin lädt (Manifest + register())
+# 6. Das hermes-os-Plugin lädt über den echten Plugin-Loader (wie nach dem
+#    First-Login: Symlink unter ~/.hermes/plugins, Config-Vorlage, enable)
 PLUGIN=/usr/share/hermes-os/plugins/hermes_os
 if [ -f "${PLUGIN}/plugin.yaml" ] && [ -f "${PLUGIN}/__init__.py" ]; then
-  if (cd /usr/share/hermes-os/plugins && /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
-import importlib, sys
-sys.path.insert(0, ".")
-m = importlib.import_module("hermes_os")
-class Ctx:
-    def __init__(self): self.tools = []; self.sections = []
-    def register_tool(self, name, toolset, schema, handler, **kw): self.tools.append(name)
-    def register_system_prompt_section(self, id, content, **kw): self.sections.append(id)
-ctx = Ctx()
-m.register(ctx)
-assert len(ctx.tools) >= 6, ctx.tools
-assert ctx.sections, "no system prompt section registered"
-print("tools:", ", ".join(ctx.tools))
+  mkdir -p "${HERMES_HOME}/plugins"
+  ln -sfn "${PLUGIN}" "${HERMES_HOME}/plugins/hermes_os"
+  cp /usr/share/hermes-os/config.yaml.default "${HERMES_HOME}/config.yaml"
+  if /usr/bin/hermes plugins enable hermes-os >/dev/null 2>&1 \
+     && (cd /usr/lib/hermes-agent && /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+import hermes_cli.plugins as hp
+from tools.registry import registry
+hp.discover_plugins(force=True)
+names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch")))
+assert len(names) == 8, names
+assert registry.get_toolset_for_tool("os_status") == "hermes_os"
+assert "hermes-os.system" in hp._ensure_plugins_discovered().system_prompt_sections
+print("tools:", ", ".join(names))
 PY
-  ); then pass "plugin hermes_os registers"; else fail "plugin hermes_os failed to register"; fi
+  ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
 else
   fail "plugin hermes_os files missing"
 fi

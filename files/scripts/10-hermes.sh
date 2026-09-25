@@ -20,34 +20,45 @@ set -xeuo pipefail
 
 HERMES_ROOT=/usr/lib/hermes-agent
 HERMES_REF="${HERMES_REF:?HERMES_REF must be set (Dockerfile ARG)}"
+HERMES_PYTHON="${HERMES_PYTHON:?HERMES_PYTHON must be set (Dockerfile ARG)}"
 HERMES_REPO="${HERMES_REPO:-https://github.com/NousResearch/hermes-agent.git}"
 
 # ---- Build-Abhängigkeiten ----------------------------------------------------
-# uv kommt aus dem Fedora-Repo. Die Compiler werden nur gebraucht, falls ein
-# Paket kein Wheel für 3.14 hat; sie werden am Ende wieder entfernt.
-BUILD_DEPS=(gcc gcc-c++ make cmake python3-devel libffi-devel openssl-devel)
-dnf install -y git uv "${BUILD_DEPS[@]}"
+# uv wird gepinnt aus PyPI geholt (nicht aus dem Fedora-Repo, dessen Version
+# vom Basis-Image abhängt). Hermes 0.21.x braucht ein uv, das relative
+# exclude-newer-Angaben und das aktuelle Lock-Format kennt; 0.8 ist zu alt,
+# 0.11.33 ist gegen das Release getestet (tests/venv-smoke.sh).
+# Die Compiler werden nur gebraucht, falls ein Paket kein Wheel hat; sie
+# werden am Ende wieder entfernt.
+UV_PIN="${UV_PIN:-0.11.33}"
+BUILD_DEPS=(gcc gcc-c++ make cmake python3-devel libffi-devel openssl-devel python3-pip)
+dnf install -y git "${BUILD_DEPS[@]}"
+python3 -m pip install --quiet --target /tmp/uv-bootstrap "uv==${UV_PIN}"
+export PATH="/tmp/uv-bootstrap/bin:${PATH}"
+uv --version
 
 # ---- Quellcode auf dem Release-Tag -------------------------------------------
 rm -rf "${HERMES_ROOT}"
 git clone --depth 1 --branch "${HERMES_REF}" "${HERMES_REPO}" "${HERMES_ROOT}"
 HERMES_COMMIT="$(git -C "${HERMES_ROOT}" rev-parse HEAD)"
 
-# ---- Python 3.14 und Venv ----------------------------------------------------
+# ---- Python und Venv ---------------------------------------------------------
 # uv holt einen eigenen Interpreter (python-build-standalone) nach
 # /usr/lib/hermes-agent/python. Damit hängt Hermes nicht am Fedora-Python
 # und ein Fedora-Major-Bump ändert nichts an der Venv.
+# Die Version muss zum gepinnten Tag passen (0.21.x: 3.11 bis 3.13).
 export UV_PYTHON_INSTALL_DIR="${HERMES_ROOT}/python"
 export UV_CACHE_DIR=/var/cache/uv
 export UV_LINK_MODE=copy
 export UV_PROJECT_ENVIRONMENT="${HERMES_ROOT}/.venv"
 
 cd "${HERMES_ROOT}"
-uv python install 3.14
-# --frozen: exakt uv.lock des Tags, keine Neuauflösung.
+uv python install "${HERMES_PYTHON}"
+# --locked: exakt uv.lock des Tags, Build bricht ab, wenn das Lock nicht passt
+#           (dieselbe Form, die Hermes' eigenes setup-hermes.sh benutzt).
 # --extra all: der von Hermes selbst für Produktions-Images vorgesehene Satz.
 # Das Projekt selbst wird editierbar eingebunden (Pfad ist im Image stabil).
-uv sync --frozen --extra all --python 3.14
+uv sync --locked --extra all --python "${HERMES_PYTHON}"
 
 # ---- Launcher ----------------------------------------------------------------
 cat > /usr/bin/hermes <<'EOF'
@@ -58,17 +69,21 @@ EOF
 chmod 0755 /usr/bin/hermes
 
 # ---- Install-Stempel ---------------------------------------------------------
-# updateMechanism=external: Hermes weiß, dass es sich nicht selbst
-# aktualisiert. version_info liest den Stempel, weil .git unten entfernt wird.
-"${HERMES_ROOT}/.venv/bin/python" "${HERMES_ROOT}/scripts/write_install_stamp.py" \
-    --output "${HERMES_ROOT}/install-stamp.json" \
-    --commit "${HERMES_COMMIT}" \
-    --base-version "${HERMES_REF#v}" \
-    --source bootc-image \
-    --update-mechanism external
+# Hermes 0.21.x kennt die Werte apt/docker/nix/nixos/home-manager/git/unknown.
+# "apt" heißt: paketverwaltet, `hermes update` verweigert und verweist auf den
+# Paketmanager. Das ist hier semantisch richtig: das Image ist der Paketmanager.
+printf 'apt\n' > "${HERMES_ROOT}/.install_method"
+
+# Eigener Stempel für os_status und ujust hermes-os-info.
+cat > "${HERMES_ROOT}/.hermes-os-release" <<EOF
+ref=${HERMES_REF}
+commit=${HERMES_COMMIT}
+python=${HERMES_PYTHON}
+update=image
+EOF
 
 # ---- Aufräumen ---------------------------------------------------------------
-rm -rf "${HERMES_ROOT}/.git"
+rm -rf "${HERMES_ROOT}/.git" /tmp/uv-bootstrap
 find "${HERMES_ROOT}" -name '__pycache__' -type d -prune -exec rm -rf {} +
 dnf remove -y "${BUILD_DEPS[@]}"
 

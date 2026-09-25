@@ -10,7 +10,6 @@ der Nutzer auch per Klick im Menü starten könnte.
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -87,14 +86,14 @@ def handle_os_status(args: Dict[str, Any], **_kw) -> str:
     if bootc.startswith("["):
         bootc = _run(["rpm-ostree", "status"], timeout=30)
     parts.append(_section("bootc status", bootc))
-    stamp = Path("/usr/lib/hermes-agent/install-stamp.json")
+    stamp = Path("/usr/lib/hermes-agent/.hermes-os-release")
     if stamp.exists():
         try:
-            data = json.loads(stamp.read_text())
-            parts.append(_section("hermes", f"version {data.get('baseVersion') or data.get('displayVersion')}, "
-                                             f"commit {str(data.get('commit'))[:12]}, updates: {data.get('updateMechanism')}"))
+            data = dict(line.split("=", 1) for line in stamp.read_text().splitlines() if "=" in line)
+            parts.append(_section("hermes", f"release {data.get('ref')}, commit {str(data.get('commit'))[:12]}, "
+                                             f"python {data.get('python')}, updates via {data.get('update')}"))
         except Exception as exc:  # pragma: no cover
-            parts.append(_section("hermes", f"install-stamp unlesbar: {exc}"))
+            parts.append(_section("hermes", f"release stamp unlesbar: {exc}"))
     return _clip("\n".join(parts))
 
 

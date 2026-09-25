@@ -29,7 +29,7 @@ hermes-os-info:
     @echo
     @echo "Hermes:"
     @/usr/bin/hermes --version
-    @cat /usr/lib/hermes-agent/install-stamp.json
+    @cat /usr/lib/hermes-agent/.hermes-os-release
 
 # Nutzer-Einrichtung erneut ausführen (Plugin, Skill, Config-Vorlage)
 hermes-os-relink:
