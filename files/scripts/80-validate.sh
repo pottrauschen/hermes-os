@@ -46,6 +46,20 @@ else
   fail "core module import failed"
 fi
 
+# 4b. Sprachpakete sind fest eingebaut (read-only Venv kann nicht nachladen)
+if /usr/lib/hermes-agent/.venv/bin/python -c 'import faster_whisper, piper' 2>/dev/null; then
+  pass "voice packages baked in (faster_whisper, piper)"
+else
+  fail "faster_whisper or piper not importable from the venv"
+fi
+
+# 4c. Launcher setzt das Lazy-Install-Ziel ins Home des Nutzers
+if grep -q 'HERMES_LAZY_INSTALL_TARGET' /usr/bin/hermes; then
+  pass "launcher exports HERMES_LAZY_INSTALL_TARGET"
+else
+  fail "launcher does not set HERMES_LAZY_INSTALL_TARGET"
+fi
+
 # 5. Install-Stempel: paketverwaltet, hermes update verweigert
 if [ "$(cat /usr/lib/hermes-agent/.install_method 2>/dev/null)" = "apt" ] \
    && grep -q '^update=image' /usr/lib/hermes-agent/.hermes-os-release 2>/dev/null; then

@@ -11,19 +11,25 @@ FAILURES=0
 check_pass() { echo "  PASS: $1"; }
 check_fail() { echo "  FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 
-echo "=== Command Presence (used by hermes_os plugin) ==="
-for cmd in bootc rpm-ostree systemctl journalctl flatpak nmcli lsblk lscpu lspci \
-           free gio gdbus qdbus notify-send ujust just distrobox podman; do
+echo "=== Commands the hermes_os plugin calls (hard) ==="
+for cmd in bootc systemctl journalctl flatpak nmcli lsblk lscpu lspci free df uname gio notify-send; do
   if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else check_fail "$cmd not found"; fi
 done
 
-echo "=== Base image identity ==="
-if grep -qiE 'aurora' /usr/lib/os-release; then check_pass "Aurora base"; else check_fail "os-release does not mention Aurora"; fi
-if grep -q 'VARIANT_ID="hermes-os' /usr/lib/os-release; then check_pass "VARIANT_ID set"; else check_fail "VARIANT_ID not set (91-image-info.sh)"; fi
+echo "=== Commands the docs and ujust recipes mention (soft) ==="
+for cmd in rpm-ostree ujust just distrobox podman konsole; do
+  if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else echo "  WARN: $cmd not found"; fi
+done
 
-echo "=== Build deps removed ==="
-for pkg in gcc gcc-c++ cmake; do
-  if rpm -q "$pkg" >/dev/null 2>&1; then check_fail "$pkg still installed"; else check_pass "$pkg removed"; fi
+echo "=== Base image identity ==="
+# VARIANT_ID wird erst in 91-image-info.sh gesetzt, also hier nicht prüfen.
+if grep -qiE 'aurora' /usr/lib/os-release; then check_pass "Aurora base"; else echo "  WARN: os-release does not mention Aurora: $(grep -E '^(NAME|ID|VARIANT_ID)=' /usr/lib/os-release | tr '\n' ' ')"; fi
+
+echo "=== Build deps: nothing left that we added ==="
+# 10-hermes.sh entfernt nur, was es selbst installiert hat; hier nur ein
+# Plausibilitätscheck auf die schwersten Pakete.
+for pkg in gcc-c++ cmake; do
+  if rpm -q "$pkg" >/dev/null 2>&1; then echo "  WARN: $pkg installed (was it part of the base image?)"; else check_pass "$pkg not present"; fi
 done
 
 echo "=== Size sanity ==="

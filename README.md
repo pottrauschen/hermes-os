@@ -72,8 +72,19 @@ make qcow2 && make run-qemu-qcow
 ```
 
 In CI: Push auf `main` baut beide Varianten und pusht nach `ghcr.io/<owner>/hermes-os`
-und `hermes-os-nvidia`. Wöchentlicher Rebuild montags. Signierung, sobald das Secret
-`SIGNING_SECRET` (cosign private key) im Repo hinterlegt ist.
+und `hermes-os-nvidia`, Tags `latest`, Datum und Commit. Wöchentlicher Rebuild montags.
+Vor dem Build wird die Signatur des Aurora-Basis-Images gegen `aurora-cosign.pub` geprüft.
+Signierung des eigenen Images, sobald das Secret `SIGNING_SECRET` (cosign private key)
+im Repo hinterlegt und der zugehörige `cosign.pub` committet ist; `90-signing.sh` trägt
+ihn dann in die Container-Policy des Images ein.
+
+Der Workflow ist bewusst eigenständig und nicht AlmaLinux atomic-ci wie bei
+querencia-linux: dessen Build-Action prüft nach dem Build `rpm -q almalinux-gpg-keys`,
+was auf einer Fedora-Basis scheitert.
+
+Die NVIDIA-Variante ist eine eigene Datei `Dockerfile.nvidia`, weil die FROM-Zeile
+literal sein muss (Signaturprüfung und Parser lesen sie). `make lint` prüft, dass sich
+beide Dateien nur in dieser Zeile unterscheiden.
 
 Auf einem bestehenden bootc-System umschalten:
 
@@ -104,9 +115,13 @@ prüft die Python-Seite, nicht die Fedora-Paketschicht. Braucht uv ab 0.10.
 - Der Image-Build ist noch nicht gelaufen. Erster Lauf in CI oder lokal mit Podman.
 - Getestet ohne Container: Hermes 0.21.5 auf Python 3.13 mit uv 0.11.33 baut, startet,
   und das Plugin registriert sich gegen die Plugin-API des Releases (siehe Test-Skript).
-- `ghcr.io/ublue-os/aurora-dx:stable` ist geprüft. Der NVIDIA-Name
-  `aurora-dx-nvidia-open` ist aus der Universal-Blue-Namenskonvention abgeleitet, nicht
-  geprüft.
+- Basis-Images geprüft (Registry-Manifest): `ghcr.io/ublue-os/aurora-dx:stable` und
+  `ghcr.io/ublue-os/aurora-dx-nvidia-open:stable`. Ein `aurora-dx-nvidia:stable` gibt
+  es nicht.
+- Lokale Sprache: faster-whisper (Extra `voice`) und piper-tts sind fest in die Venv
+  gebaut, weil Hermes sie sonst zur Laufzeit in die read-only Venv nachinstallieren
+  würde. Alles andere Optionale landet über `HERMES_LAZY_INSTALL_TARGET` unter
+  `~/.hermes/lazy-packages`.
 - Die Hermes-TUI wird nicht gebaut (braucht Node im Build). CLI, Gateway und Sprache
   brauchen sie nicht.
 - Ob Aurora `ujust`-Dateien aus `/usr/share/ublue-os/just/` automatisch einbindet, ist

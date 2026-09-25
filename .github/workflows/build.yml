@@ -1,7 +1,11 @@
 ---
-# hermes-os -- Image-Build (Muster: querencia-linux, AlmaLinux atomic-ci v11,
-# das für jedes bootc-Image funktioniert). Basis-Signatur wird gegen
-# aurora-cosign.pub (Universal Blue) geprüft.
+# hermes-os -- Image-Build
+#
+# Eigener Workflow statt AlmaLinux atomic-ci: dessen Build-Action prüft nach
+# dem Build bedingungslos `rpm -q almalinux-gpg-keys`, was auf einer
+# Fedora/Aurora-Basis scheitert. Aufbau nach dem Universal-Blue-Template
+# (podman build, Test, Push nach GHCR, cosign-Signatur), mit denselben
+# gepinnten Actions.
 name: Build image
 on:
   pull_request:
@@ -12,6 +16,7 @@ on:
       - "**/README.md"
       - "LICENSE"
       - "docs/**"
+      - "tests/**"
   workflow_dispatch:
   schedule:
     # Wöchentlich, damit Aurora-Updates ohne Commit ins Image kommen.
@@ -21,137 +26,127 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+  # Einziger Ort für den Image-Namen (Arbeitsname, siehe README).
+  IMAGE_BASENAME: "hermes-os"
+
 jobs:
-  set-env:
+  build:
+    name: Build ${{ matrix.label }}
     runs-on: ubuntu-latest
-    outputs:
-      LATEST_TAG: ${{ steps.set.outputs.LATEST_TAG }}
-      REGISTRY: ${{ steps.set.outputs.REGISTRY }}
-      REGISTRY_USER: ${{ steps.set.outputs.REGISTRY_USER }}
-      PLATFORMS: ${{ steps.set.outputs.PLATFORMS }}
-      IMAGE_PATH: ${{ steps.set.outputs.IMAGE_PATH }}
-      IMAGE_NAME: ${{ steps.set.outputs.IMAGE_NAME }}
-      IMAGE_REF: ${{ steps.set.outputs.IMAGE_REF }}
-      IS_SIGNED: ${{ steps.set.outputs.IS_SIGNED }}
-    steps:
-      - name: Checkout github actions
-        uses: actions/checkout@v4
-
-      - name: Set environment variables
-        uses: ./.github/actions/config
-        id: set
-        with:
-          SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}
-
-  # ===========================================================================
-  # AMD / Intel (Standard)
-  # ===========================================================================
-  build-image:
-    name: Build image (AMD)
-    uses: AlmaLinux/atomic-ci/.github/workflows/build-image.yml@v11
-    needs: set-env
-    with:
-      image-description: "hermes-os -- Atomic KDE desktop with Hermes Agent as a system component (Aurora DX)"
-      containerfile: Dockerfile
-      image-name: ${{ needs.set-env.outputs.IMAGE_NAME }}
-      variant: ""
-      previous-image: "${{ needs.set-env.outputs.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_PATH }}/${{ needs.set-env.outputs.IMAGE_NAME }}:latest"
-      upstream-public-key: aurora-cosign.pub
-      platforms: ${{ needs.set-env.outputs.PLATFORMS }}
-      skip-maximize-build-space: false
-      generate-sbom: true
-      image-path: ${{ needs.set-env.outputs.IMAGE_PATH }}
-      REGISTRY: ${{ needs.set-env.outputs.REGISTRY }}
-      REGISTRY_USER: ${{ needs.set-env.outputs.REGISTRY_USER }}
-    secrets:
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}
     permissions:
       contents: read
       packages: write
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: "AMD / Intel"
+            suffix: ""
+            containerfile: Dockerfile
+            variant: ""
+          - label: "NVIDIA"
+            suffix: "-nvidia"
+            containerfile: Dockerfile.nvidia
+            variant: "nvidia"
 
-  test-image:
-    name: Test image (AMD)
-    runs-on: ubuntu-latest
-    needs: [set-env, build-image]
-    env:
-      IMAGE_REF: "${{ needs.build-image.outputs.image-ref }}@${{ needs.build-image.outputs.digest }}"
     steps:
-      - name: Login to Container Registry
-        run: echo ${{ secrets.GITHUB_TOKEN }} | podman login -u ${{ needs.set-env.outputs.REGISTRY_USER }} --password-stdin ${{ needs.set-env.outputs.REGISTRY }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Test container
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v3.1.2"
+
+      - name: Prepare names
+        id: names
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="${IMAGE_BASENAME}${{ matrix.suffix }}"
+          REGISTRY="${IMAGE_REGISTRY,,}"
+          BASE_IMAGE="$(grep -E '^FROM ghcr.io/ublue-os/' "${{ matrix.containerfile }}" | tail -1 | awk '{print $2}')"
+          DATE="$(date -u +%Y%m%d)"
+          SHA7="${GITHUB_SHA::7}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TAGS="pr-${{ github.event.number }}"
+          elif [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+            TAGS="latest ${DATE} ${SHA7}"
+          else
+            TAGS="${{ github.ref_name }} ${SHA7}"
+          fi
+          {
+            echo "image_name=${IMAGE_NAME}"
+            echo "registry=${REGISTRY}"
+            echo "base_image=${BASE_IMAGE}"
+            echo "tags=${TAGS}"
+          } >> "$GITHUB_OUTPUT"
+          echo "image: ${REGISTRY}/${IMAGE_NAME}  base: ${BASE_IMAGE}  tags: ${TAGS}"
+
+      - name: Verify base image signature (Universal Blue)
+        run: |
+          cosign verify --key aurora-cosign.pub "${{ steps.names.outputs.base_image }}" | jq -r '.[0].critical.identity."docker-reference"'
+
+      - name: Build image
+        id: build
+        run: |
+          set -euo pipefail
+          sudo podman build \
+            --security-opt=label=disable \
+            --cap-add=all \
+            --device /dev/fuse \
+            --timestamp=0 \
+            --iidfile /tmp/image-id \
+            --build-arg IMAGE_NAME="${{ steps.names.outputs.image_name }}" \
+            --build-arg IMAGE_REGISTRY="${{ steps.names.outputs.registry }}" \
+            --build-arg VARIANT="${{ matrix.variant }}" \
+            -t "${{ steps.names.outputs.image_name }}:build" \
+            -f "${{ matrix.containerfile }}" \
+            .
+          echo "image_id=$(cat /tmp/image-id)" >> "$GITHUB_OUTPUT"
+
+      - name: Test image
         run: |
           cat << 'EOF' > /tmp/test.sh
           set -ex
-          cat /etc/os-release
+          grep -E '^(NAME|PRETTY_NAME|VARIANT_ID)=' /etc/os-release
           bootc -V
           HERMES_HOME=/tmp/h hermes --version
           test -f /usr/share/hermes-os/plugins/hermes_os/plugin.yaml
+          test -x /usr/libexec/hermes-os-first-login
           EOF
-          podman run --rm -v /tmp/test.sh:/tmp/test.sh ${{ env.IMAGE_REF }} /bin/bash /tmp/test.sh
+          sudo podman run --rm -v /tmp/test.sh:/tmp/test.sh:ro \
+            "${{ steps.build.outputs.image_id }}" /bin/bash /tmp/test.sh
 
-  promote-image:
-    name: Promote image (AMD)
-    needs: [set-env, build-image, test-image]
-    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-    uses: AlmaLinux/atomic-ci/.github/workflows/retag-image.yml@v11
-    with:
-      image: ${{ needs.build-image.outputs.image-ref }}
-      digest: ${{ needs.build-image.outputs.digest }}
-      tag: |
-        ${{ needs.set-env.outputs.LATEST_TAG }}
-        ${{ needs.build-image.outputs.version }}
-      REGISTRY: ${{ needs.set-env.outputs.REGISTRY }}
-      REGISTRY_USER: ${{ needs.set-env.outputs.REGISTRY_USER }}
-    secrets:
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    permissions:
-      packages: write
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login -u "${{ github.actor }}" --password-stdin ghcr.io
+          echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-  # ===========================================================================
-  # NVIDIA
-  # ===========================================================================
-  build-image-nvidia:
-    name: Build image (NVIDIA)
-    uses: AlmaLinux/atomic-ci/.github/workflows/build-image.yml@v11
-    needs: set-env
-    with:
-      image-description: "hermes-os NVIDIA -- Atomic KDE desktop with Hermes Agent as a system component (Aurora DX, nvidia-open)"
-      containerfile: Dockerfile
-      image-name: "${{ needs.set-env.outputs.IMAGE_NAME }}-nvidia"
-      variant: "nvidia"
-      previous-image: "${{ needs.set-env.outputs.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_PATH }}/${{ needs.set-env.outputs.IMAGE_NAME }}-nvidia:latest"
-      upstream-public-key: aurora-cosign.pub
-      platforms: ${{ needs.set-env.outputs.PLATFORMS }}
-      skip-maximize-build-space: false
-      generate-sbom: true
-      image-path: ${{ needs.set-env.outputs.IMAGE_PATH }}
-      REGISTRY: ${{ needs.set-env.outputs.REGISTRY }}
-      REGISTRY_USER: ${{ needs.set-env.outputs.REGISTRY_USER }}
-    secrets:
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
+      - name: Push to GHCR
+        if: github.event_name != 'pull_request'
+        id: push
+        run: |
+          set -euo pipefail
+          for tag in ${{ steps.names.outputs.tags }}; do
+            sudo podman tag "${{ steps.build.outputs.image_id }}" "${{ steps.names.outputs.registry }}/${{ steps.names.outputs.image_name }}:${tag}"
+            sudo podman push --digestfile=/tmp/digestfile \
+              "${{ steps.names.outputs.registry }}/${{ steps.names.outputs.image_name }}:${tag}"
+          done
+          echo "digest=$(cat /tmp/digestfile)" >> "$GITHUB_OUTPUT"
+          echo "pushed ${{ steps.names.outputs.registry }}/${{ steps.names.outputs.image_name }} @ $(cat /tmp/digestfile)"
 
-  promote-image-nvidia:
-    name: Promote image (NVIDIA)
-    needs: [set-env, build-image-nvidia]
-    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-    uses: AlmaLinux/atomic-ci/.github/workflows/retag-image.yml@v11
-    with:
-      image: ${{ needs.build-image-nvidia.outputs.image-ref }}
-      digest: ${{ needs.build-image-nvidia.outputs.digest }}
-      tag: |
-        ${{ needs.set-env.outputs.LATEST_TAG }}
-        ${{ needs.build-image-nvidia.outputs.version }}
-      REGISTRY: ${{ needs.set-env.outputs.REGISTRY }}
-      REGISTRY_USER: ${{ needs.set-env.outputs.REGISTRY_USER }}
-    secrets:
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    permissions:
-      packages: write
+      - name: Sign image
+        if: github.event_name != 'pull_request' && env.COSIGN_PRIVATE_KEY != ''
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+        run: |
+          cosign sign -y --new-bundle-format=false --use-signing-config=false \
+            --key env://COSIGN_PRIVATE_KEY \
+            "${{ steps.names.outputs.registry }}/${{ steps.names.outputs.image_name }}@${{ steps.push.outputs.digest }}"
