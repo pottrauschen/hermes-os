@@ -28,13 +28,19 @@ ARG VARIANT=""
 # Hermes-Release, das ins Image gebacken wird. Ein Bump ist ein Commit hier,
 # kein `hermes update` auf dem Rechner (das ist auf dem read-only /usr
 # absichtlich nicht möglich).
+#
+# Die Tags v2026.x.y liegen auf der Release-Linie 0.21.x (Python 3.11-3.13).
+# main ist bereits bei Python 3.14 und einem anderen Build-System; wer main
+# pinnen will, muss HERMES_PYTHON mit anheben und 10-hermes.sh prüfen.
 ARG HERMES_REF="v2026.9.24"
+ARG HERMES_PYTHON="3.13"
 ARG HERMES_REPO="https://github.com/NousResearch/hermes-agent.git"
 
 ENV VARIANT=${VARIANT}
 ENV IMAGE_NAME=${IMAGE_NAME}
 ENV IMAGE_REGISTRY=${IMAGE_REGISTRY}
 ENV HERMES_REF=${HERMES_REF}
+ENV HERMES_PYTHON=${HERMES_PYTHON}
 ENV HERMES_REPO=${HERMES_REPO}
 
 LABEL org.opencontainers.image.title="hermes-os"

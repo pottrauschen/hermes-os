@@ -29,7 +29,7 @@ ein Validierungs-Gate, Build-Tests, Signierung, CI über AlmaLinux atomic-ci.
 
 ```
 Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
-  + Hermes v2026.9.24           /usr/lib/hermes-agent, eigene Python-3.14-Venv (uv)
+  + Hermes v2026.9.24 (0.21.5)  /usr/lib/hermes-agent, eigene Python-3.13-Venv (uv)
   + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage
   + Dienst                      hermes-gateway.service (User-Unit, aus bis nach Setup)
   + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill
@@ -38,9 +38,14 @@ Apps                            Flatpak
 Entwicklung                     Distrobox / Podman
 ```
 
-Vier Schichten, vier Update-Zyklen. Hermes wird nur über ein neues Image aktualisiert,
-`hermes update` ist auf dem read-only `/usr` absichtlich wirkungslos. Ein Hermes-Bump ist
-eine Änderung von `HERMES_REF` im `Dockerfile`.
+Vier Schichten, vier Update-Zyklen. Hermes wird nur über ein neues Image aktualisiert.
+Der Code trägt den Install-Stempel `apt`, damit `hermes update` verweigert und auf den
+Paketmanager verweist, hier also das Image. Ein Hermes-Bump ist eine Änderung von
+`HERMES_REF` im `Dockerfile`.
+
+Die Hermes-Tags `v2026.x.y` liegen auf der Release-Linie 0.21.x mit Python 3.11 bis 3.13.
+Der main-Zweig ist bereits bei Python 3.14 und einem anderen Build-System. Wer main pinnt,
+muss `HERMES_PYTHON` anheben und `10-hermes.sh` anpassen.
 
 ## Die Grenze
 
@@ -90,13 +95,15 @@ hermes                        # chatten
 
 ## Testen ohne Podman
 
-`tests/venv-smoke.sh` führt den riskantesten Build-Schritt, die Hermes-Venv auf
-Python 3.14, außerhalb eines Containers aus. Das prüft die Python-Seite, nicht die
-Fedora-Paketschicht.
+`tests/venv-smoke.sh` führt den riskantesten Build-Schritt, die Hermes-Venv, außerhalb
+eines Containers aus und lädt das Plugin gegen die echte Plugin-API des Releases. Das
+prüft die Python-Seite, nicht die Fedora-Paketschicht. Braucht uv ab 0.10.
 
 ## Status und offene Punkte
 
 - Der Image-Build ist noch nicht gelaufen. Erster Lauf in CI oder lokal mit Podman.
+- Getestet ohne Container: Hermes 0.21.5 auf Python 3.13 mit uv 0.11.33 baut, startet,
+  und das Plugin registriert sich gegen die Plugin-API des Releases (siehe Test-Skript).
 - `ghcr.io/ublue-os/aurora-dx:stable` ist geprüft. Der NVIDIA-Name
   `aurora-dx-nvidia-open` ist aus der Universal-Blue-Namenskonvention abgeleitet, nicht
   geprüft.

@@ -6,6 +6,7 @@ IMAGE_NAME ?= localhost/hermes-os
 CONTAINER_FILE ?= ./Dockerfile
 VARIANT ?=
 HERMES_REF ?= v2026.9.24
+HERMES_PYTHON ?= 3.13
 IMAGE_CONFIG ?= ./iso.toml
 
 IMAGE_TYPE ?= qcow2
@@ -35,6 +36,7 @@ image:
 		--build-arg IMAGE_REGISTRY=localhost \
 		--build-arg VARIANT=$(VARIANT) \
 		--build-arg HERMES_REF=$(HERMES_REF) \
+		--build-arg HERMES_PYTHON=$(HERMES_PYTHON) \
 		-t $(IMAGE_NAME) \
 		-f $(CONTAINER_FILE) \
 		.
