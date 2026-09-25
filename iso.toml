@@ -1,0 +1,19 @@
+# bootc-image-builder Konfiguration für hermes-os
+# Interaktiver Anaconda-Installer: Sprache, Tastatur, Zeitzone und
+# Partitionierung wählt der Nutzer (Muster aus querencia-linux).
+
+[customizations.installer.kickstart]
+contents = """
+graphical
+network --bootproto=dhcp --activate --onboot=yes
+bootloader --append="quiet splash"
+"""
+
+[customizations.installer.modules]
+enable = [
+  "org.fedoraproject.Anaconda.Modules.Localization",
+  "org.fedoraproject.Anaconda.Modules.Timezone",
+]
+
+[customizations.iso]
+volume_id = "hermes-os"
