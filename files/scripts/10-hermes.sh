@@ -94,8 +94,12 @@ uv pip install --python "${HERMES_ROOT}/.venv/bin/python" "piper-tts==${PIPER_PI
 # (etwa 1 bis 2 Sekunden). Hash-basierte, ungeprüfte .pyc sind unabhängig von
 # mtimes, die `podman build --timestamp=0` und ostree ohnehin verändern.
 # -f erzwingt das Überschreiben der zeitstempelbasierten .pyc, die uv anlegt.
+# Ein einzelnes unkompilierbares Testdaten- oder Vendor-File bricht den Build
+# nicht ab (compileall meldet Exit 1); 89-tests.sh prüft, dass hermes_cli
+# tatsächlich .pyc bekommen hat.
 "${HERMES_ROOT}/.venv/bin/python" -m compileall -q -f -j 0 \
-    --invalidation-mode unchecked-hash "${HERMES_ROOT}"
+    --invalidation-mode unchecked-hash "${HERMES_ROOT}" \
+    || echo "compileall: einzelne Dateien nicht kompilierbar (siehe oben), weiter"
 
 # ---- Launcher ----------------------------------------------------------------
 # HERMES_LAZY_INSTALL_TARGET: Hermes' eigener Mechanismus für versiegelte

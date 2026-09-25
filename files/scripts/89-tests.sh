@@ -35,8 +35,10 @@ for pkg in cmake python3-devel libffi-devel python3-pip; do
 done
 
 echo "=== Precompiled bytecode present ==="
-if find /usr/lib/hermes-agent/hermes_cli -name '*.pyc' -path '*__pycache__*' | grep -q .; then
-  check_pass "hermes_cli has .pyc"
+# Kein `find | grep -q`: unter pipefail beendet grep die Pipe nach dem ersten
+# Treffer, find stirbt an SIGPIPE und der Test schlägt fälschlich fehl.
+if [ -n "$(find /usr/lib/hermes-agent/hermes_cli -name '*.pyc' -path '*__pycache__*' -print -quit)" ]; then
+  check_pass "hermes_cli has .pyc ($(find /usr/lib/hermes-agent/hermes_cli -name '*.pyc' | wc -l) files)"
 else
   check_fail "no .pyc under /usr/lib/hermes-agent/hermes_cli (compileall missing?)"
 fi
