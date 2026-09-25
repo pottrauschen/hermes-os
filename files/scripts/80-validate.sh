@@ -110,9 +110,16 @@ for f in /usr/share/hermes-os/skills/hermes-os-system/SKILL.md \
          /usr/lib/systemd/user/hermes-gateway.service \
          /etc/xdg/autostart/hermes-os-first-login.desktop \
          /usr/libexec/hermes-os-first-login \
-         /usr/share/ublue-os/just/90-hermes-os.just; do
+         /usr/share/ublue-os/just/60-custom.just; do
   if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
 done
+
+# 7b. ujust sieht unsere Rezepte wirklich (Import über 60-custom.just)
+if just --justfile /usr/share/ublue-os/justfile --list 2>/dev/null | grep -qE '^\s*hermes-setup\b'; then
+  pass "ujust lists hermes-setup"
+else
+  fail "ujust does not list hermes-setup (60-custom.just not imported?)"
+fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi

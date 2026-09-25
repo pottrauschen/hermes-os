@@ -1,4 +1,6 @@
-# hermes-os -- ujust-Rezepte (werden von Aurora's ujust automatisch eingebunden)
+# hermes-os -- ujust-Rezepte. 20-agent-layer.sh legt diese Datei als
+# /usr/share/ublue-os/just/60-custom.just ab, die einzige Datei, die Auroras
+# ujust zusätzlich zu seiner festen Liste importiert.
 
 # Hermes einrichten (Provider, Modell, Tools)
 hermes-setup:
