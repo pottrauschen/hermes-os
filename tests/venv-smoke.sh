@@ -60,7 +60,8 @@ names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", 
 assert len(names) == 8, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
-assert "hermes-os.system" in pm.system_prompt_sections, pm.system_prompt_sections
+sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
+assert "hermes-os.system" in sections, list(sections)
 print("plugin loaded by release loader:", names, "+ prompt section hermes-os.system")
 PY
 )
