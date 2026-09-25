@@ -22,7 +22,7 @@ ein Validierungs-Gate, Build-Tests, Signierung, CI über AlmaLinux atomic-ci.
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus `smart_policy` |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates) | Plugin `hermes_os`, Phase 2, lesend |
 | Apps per Sprache starten | `app_launch`, fertig |
-| Fenster steuern, tippen, klicken, Widgets lesen (KWin, Virtual Input, AT-SPI) | Phase 3, noch nicht gebaut |
+| Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Portal-Vermittler und unabhängiges Audit-Log | Phase 4, noch nicht gebaut |
 
 ## Aufbau
