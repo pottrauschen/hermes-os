@@ -80,7 +80,9 @@ hp.discover_plugins(force=True)
 names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch")))
 assert len(names) == 8, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
-assert "hermes-os.system" in hp._ensure_plugins_discovered().system_prompt_sections
+pm = hp._ensure_plugins_discovered()
+sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
+assert "hermes-os.system" in sections, list(sections)
 print("tools:", ", ".join(names))
 PY
   ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
