@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=hermes-os first login
+Comment=Richtet Hermes für diesen Nutzer ein (Config, Plugin, Skill, Dienst)
+Exec=/usr/libexec/hermes-os-first-login
+NoDisplay=true
+Terminal=false
+X-KDE-autostart-phase=2
+OnlyShowIn=KDE;GNOME;

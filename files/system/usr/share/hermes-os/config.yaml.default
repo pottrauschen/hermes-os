@@ -1,0 +1,66 @@
+# =============================================================================
+# hermes-os -- Vorgabe für ~/.hermes/config.yaml
+# =============================================================================
+# Wird beim ersten Login nach ~/.hermes/config.yaml kopiert, falls dort noch
+# nichts liegt. Danach gehört die Datei dem Nutzer; ein Image-Update
+# überschreibt sie nicht. Alle Schlüssel sind Hermes-Standardschlüssel
+# (siehe cli-config.yaml.example im Hermes-Repo).
+#
+# Modell und Provider werden hier absichtlich NICHT gesetzt: `hermes setup`
+# fragt danach beim ersten Start.
+# =============================================================================
+
+# ---- Undo pro Tool-Aufruf ----------------------------------------------------
+# Vor jeder dateiverändernden Operation ein Snapshot im Shadow-Git-Store
+# (~/.hermes/checkpoints). /rollback im Chat holt ihn zurück.
+checkpoints:
+  enabled: true
+  max_snapshots: 30
+  max_total_size_mb: 1000
+
+# ---- Die Grenze: frei oder fragen -------------------------------------------
+# mode smart: Muster + Guardian-LLM entscheiden, ob ein Befehl gefährlich ist.
+# smart_policy ergänzt die Regeln des Guardians um die hermes-os-Grenze.
+approvals:
+  mode: smart
+  timeout: 300
+  cron_mode: deny
+  single_query_mode: deny
+  unattended_mode: deny
+  denial_breaker_threshold: 3
+  smart_policy: |
+    hermes-os Regeln. ESCALATE (Nutzer fragen) bei allem, was das laufende
+    System berührt: bootc upgrade/rollback/switch, rpm-ostree install/override,
+    systemctl ohne --user (start/stop/enable/disable/mask), Änderungen unter
+    /etc, /usr, /boot, Kernel-Argumente, firewall-cmd, sudo, Nutzer- und
+    Passwortverwaltung, ssh-keygen/authorized_keys, Formatieren, Partitionen,
+    rm/mv außerhalb des aktuellen Projekts oder mit Wildcards auf Home-Ebene.
+    APPROVE ohne Rückfrage: Befehle im Home des Nutzers und im aktuellen
+    Projekt, flatpak install/update/remove, distrobox/podman, systemctl --user,
+    lesende Befehle (status, list, show, cat, grep, journalctl).
+
+# ---- Terminal --------------------------------------------------------------
+# Phase 1: lokale Shell auf dem Host, weil der Agent das System bedienen soll.
+# Für Projektarbeit später: Docker/Podman-Backend pro Projekt.
+terminal:
+  backend: local
+  timeout: 180
+
+# ---- Sprache -----------------------------------------------------------------
+# Spracherkennung lokal (faster-whisper), Deutsch als Vorgabe.
+stt:
+  enabled: true
+  provider: local
+  language: de
+  local:
+    model: small
+
+# Sprachausgabe lokal (Piper). Die Stimme wird beim ersten Gebrauch geladen.
+tts:
+  provider: piper
+  piper:
+    voice: de_DE-thorsten-medium
+
+# ---- Anzeige -----------------------------------------------------------------
+display:
+  interface: cli

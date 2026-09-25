@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# =============================================================================
+# hermes-os -- Einrichtung pro Nutzer beim Login (idempotent)
+# =============================================================================
+# Läuft bei jedem Login über /etc/xdg/autostart, macht aber nur, was fehlt:
+#   1. ~/.hermes anlegen, Config-Vorlage kopieren (nur wenn keine existiert)
+#   2. Plugin und Skill aus /usr/share/hermes-os verlinken (Symlinks, damit
+#      ein Image-Update sie automatisch aktualisiert)
+#   3. Plugin aktivieren
+#   4. Gateway-Dienst einschalten, sobald ein Provider konfiguriert ist
+#   5. Beim allerersten Mal: Hinweis und Setup in einem Terminal anbieten
+# =============================================================================
+set -euo pipefail
+
+SHARE=/usr/share/hermes-os
+HOME_DIR="${HOME:?}"
+HERMES_HOME="${HERMES_HOME:-${HOME_DIR}/.hermes}"
+export HERMES_HOME
+LOG="${HERMES_HOME}/hermes-os-first-login.log"
+
+mkdir -p "${HERMES_HOME}/plugins" "${HERMES_HOME}/skills"
+exec >>"${LOG}" 2>&1
+echo "=== $(date -Iseconds) ==="
+
+# 1. Config-Vorlage
+if [ ! -f "${HERMES_HOME}/config.yaml" ]; then
+  cp "${SHARE}/config.yaml.default" "${HERMES_HOME}/config.yaml"
+  echo "config.yaml aus Vorlage angelegt"
+  FIRST_RUN=1
+else
+  FIRST_RUN=0
+fi
+
+# 2. Plugin und Skill verlinken
+link() {  # link <ziel> <linkpfad>
+  if [ -L "$2" ] || [ ! -e "$2" ]; then
+    ln -sfn "$1" "$2"
+  else
+    echo "WARN: $2 existiert und ist kein Symlink, lasse es in Ruhe"
+  fi
+}
+link "${SHARE}/plugins/hermes_os" "${HERMES_HOME}/plugins/hermes_os"
+link "${SHARE}/skills/hermes-os-system" "${HERMES_HOME}/skills/hermes-os-system"
+
+# 3. Plugin aktivieren (best effort, Hermes schreibt die enabled-Liste selbst)
+if ! /usr/bin/hermes plugins list 2>/dev/null | grep -qE 'hermes-os.*(enabled|active)'; then
+  /usr/bin/hermes plugins enable hermes-os || echo "WARN: hermes plugins enable fehlgeschlagen"
+fi
+
+# 4. Gateway einschalten, wenn ein Provider eingerichtet ist
+if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then
+  systemctl --user enable --now hermes-gateway.service || echo "WARN: gateway enable fehlgeschlagen"
+fi
+
+# 5. Erster Start: Setup anbieten
+if [ "${FIRST_RUN}" = "1" ]; then
+  notify-send -a hermes-os "Hermes ist bereit zur Einrichtung" \
+    "Ein Terminal öffnet sich mit 'hermes setup'. Dort Provider und Modell wählen." || true
+  if command -v konsole >/dev/null 2>&1; then
+    setsid konsole -e /usr/bin/hermes setup >/dev/null 2>&1 &
+  elif command -v xdg-terminal-exec >/dev/null 2>&1; then
+    setsid xdg-terminal-exec /usr/bin/hermes setup >/dev/null 2>&1 &
+  fi
+fi
+echo "done"

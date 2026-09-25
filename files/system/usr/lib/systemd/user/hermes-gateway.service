@@ -1,0 +1,21 @@
+[Unit]
+Description=hermes-os -- Hermes Agent Gateway (Sprache, Messaging, Cron)
+Documentation=https://hermes-agent.nousresearch.com/docs/
+After=graphical-session.target network-online.target
+Wants=network-online.target
+# Erst sinnvoll, wenn hermes setup gelaufen ist (Provider konfiguriert).
+ConditionPathExists=%h/.hermes/config.yaml
+
+[Service]
+Type=simple
+# Gleiche Kommandozeile, die `hermes gateway install` selbst schreiben würde.
+ExecStart=/usr/bin/hermes gateway run --replace
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+# Read-only Code unter /usr: keine .pyc-Schreibversuche
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=default.target

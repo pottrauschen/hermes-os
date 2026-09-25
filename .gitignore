@@ -1,0 +1,34 @@
+# Build-Artefakte
+*.img
+*.iso
+*.raw
+*.qcow2
+*.oci
+*.tar
+*.tar.gz
+*.tar.zst
+output/
+.buildcache/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# Geheimnisse, nie committen
+*.pem
+*.key
+*.env
+.env.*
+secrets/
+cosign.key
+cosign.pub.local
+
+# Logs
+*.log
