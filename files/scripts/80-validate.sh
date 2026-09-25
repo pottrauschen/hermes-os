@@ -114,16 +114,20 @@ for f in /usr/share/hermes-os/skills/hermes-os-system/SKILL.md \
   if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
 done
 
-# 7b. ujust sieht unsere Rezepte wirklich (Import über 60-custom.just)
-JUST_OUT="$(just --justfile /usr/share/ublue-os/justfile --list 2>&1)" || true
+# 7b. ujust sieht unsere Rezepte wirklich. Aurora's /usr/bin/ujust ruft
+#     just mit /usr/share/ublue-os/just/00-entry.just auf (aus dem
+#     common-Image), und die importiert optional 60-custom.just. Deshalb
+#     den echten Wrapper fragen, nicht /usr/share/ublue-os/justfile aus dem
+#     RPM ublue-os-just, das Aurora gar nicht benutzt.
+JUST_OUT="$(ujust --list 2>&1)" || true
 if echo "${JUST_OUT}" | grep -qE '^\s*hermes-setup\b'; then
   pass "ujust lists hermes-setup"
 else
   fail "ujust does not list hermes-setup (60-custom.just not imported?)"
-  echo "  --- just --list output (head) ---"
+  echo "  --- ujust --list output (head) ---"
   echo "${JUST_OUT}" | head -15 | sed 's/^/  /'
-  echo "  --- /usr/share/ublue-os/justfile ---"
-  sed 's/^/  /' /usr/share/ublue-os/justfile 2>/dev/null | head -30
+  echo "  --- /usr/bin/ujust ---"
+  sed 's/^/  /' /usr/bin/ujust 2>/dev/null | head -5
   echo "  --- /usr/share/ublue-os/just/ ---"
   ls -la /usr/share/ublue-os/just/ 2>/dev/null | sed 's/^/  /'
 fi
