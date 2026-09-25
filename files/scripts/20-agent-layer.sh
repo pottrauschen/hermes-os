@@ -16,11 +16,11 @@ find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
 find "${SHARE}/plugins" "${SHARE}/skills" -type d -exec chmod 0755 {} +
 
 # ---- ujust-Rezepte -----------------------------------------------------------
-# Auroras ujust (Paket ublue-os-just) importiert eine feste Liste von
-# Rezeptdateien plus optional /usr/share/ublue-os/just/60-custom.just; ein
-# Glob über das Verzeichnis gibt es nicht. Unsere Rezepte gehören also genau
-# in diese Datei. Falls das Basis-Image sie schon mitbringt, hängen wir an,
-# statt sie zu überschreiben.
+# Auroras /usr/bin/ujust ruft just mit /usr/share/ublue-os/just/00-entry.just
+# auf (aus dem Aurora-common-Image). Die importiert eine feste Liste von
+# Rezeptdateien plus optional 60-custom.just; ein Glob über das Verzeichnis
+# gibt es nicht. Unsere Rezepte gehören also genau in diese Datei. Falls das
+# Basis-Image sie schon mitbringt, hängen wir an, statt sie zu überschreiben.
 JUST_DIR=/usr/share/ublue-os/just
 mkdir -p "${JUST_DIR}"
 if [ -f "${JUST_DIR}/60-custom.just" ]; then
