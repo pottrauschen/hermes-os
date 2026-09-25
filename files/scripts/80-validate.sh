@@ -133,7 +133,9 @@ done
 #     den echten Wrapper fragen, nicht /usr/share/ublue-os/justfile aus dem
 #     RPM ublue-os-just, das Aurora gar nicht benutzt.
 JUST_OUT="$(ujust --list 2>&1)" || true
-if echo "${JUST_OUT}" | grep -qE '^\s*hermes-setup\b'; then
+# Here-String statt Pipe: unter pipefail koennte grep -q die Pipe vorzeitig
+# schliessen und den Test faelschlich scheitern lassen.
+if grep -qE '^\s*hermes-setup\b' <<< "${JUST_OUT}"; then
   pass "ujust lists hermes-setup"
 else
   fail "ujust does not list hermes-setup (60-custom.just not imported?)"
