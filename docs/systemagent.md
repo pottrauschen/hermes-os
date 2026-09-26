@@ -208,7 +208,9 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   Widget mit echtem Popup wäre der nächste Schritt, wenn das stört.
 - **Nur eine Instanz.** Ein lokaler Socket `hermes-os-tray-<uid>` reicht
   „show" an die laufende Instanz weiter; Menüeintrag und Meta+H rufen
-  `hermes-os-tray --show`. Bleibt der Socket nach einem Absturz stehen, räumt
+  `hermes-os-tray --show`. Der Knopf „Im Chat besprechen" am Morgenbericht
+  schickt auf demselben Weg `discuss <pfad>` (`--discuss`), siehe
+  [morgenbericht.md](morgenbericht.md). Bleibt der Socket nach einem Absturz stehen, räumt
   der nächste Start ihn weg.
 - **Kurzbefehl**: KGlobalAccel liest Vorgaben aus
   `/usr/share/kglobalaccel/*.desktop` (`X-KDE-Shortcuts`), startet aber die
