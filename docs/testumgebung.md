@@ -145,6 +145,16 @@ NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
   hermes-os-Schicht; `tests/boot-check.sh` filtert das Bekannte heraus.
 - **Screenshots ohne Anmeldung:** `echo "screendump /root/112.ppm" | qm monitor 112`
   auf dem Host; `/root/ppm2png.py` dort wandelt das PPM nach PNG.
+- **Bildschirmfoto aus der Sitzung zeigt ein altes Bild**, wenn die Anzeige
+  per DPMS aus ist: `spectacle --background` liefert dann den eingefrorenen
+  Frame samt alter Uhr. Vorher `kscreen-doctor --dpms on` über
+  `systemd-run --user`, dann stimmt das Foto.
+- **Tastatur und Sprache kommen nicht vom Builder.** bootc-image-builder
+  kennt keine Locale-Anpassung; ohne Vorgaben im Image bootet der Datenträger
+  mit us-Tastatur und Englisch. Plasma liest die Tastatur aus `kxkbrc`, sonst
+  aus `localectl`. KWin lauscht per KConfigWatcher: eine Änderung greift
+  sofort, wenn `kwriteconfig6 --notify` schreibt, sonst erst mit der nächsten
+  Anmeldung. Das D-Bus-Signal `reloadConfig` bewirkt bei KWin 6.7 nichts.
 
 ## Messwerte vom ersten Lauf (2026-09-26)
 
@@ -173,6 +183,7 @@ und `bootc switch` auf die NVIDIA-Variante (2,4 GB, rund fünf Minuten).
 | Freigabe-Dialog | Offen, nur interaktiv prüfbar: `sudo bootc upgrade --check` im Chat muss fragen, `flatpak install` nicht. |
 | Gateway | Bestanden. Der Assistent ruft nach dem Speichern das First-Login-Skript, das die Unit einschaltet; `enabled`/`active`, OpenRouter-Schlüssel im Credential-Pool. Seit dem 26.09. mit API-Server auf `127.0.0.1:8642`, Schlüssel aus `.env` wird akzeptiert. Hinweis im Journal: die Unit hat `TimeoutStopSec=30s`, Hermes erwartet `drain_timeout`-passende Werte („Stale systemd unit detected"); noch nicht angeglichen. |
 | Sprache (`/voice on`) | Offen, braucht Mikrofon in der VM. |
+| Tastatur und Systemsprache | Fehlgeschlagen am 2026-09-26: y ergab z, Plasma auf Englisch. Ursache: der Datenträger aus dem Builder trägt weder Locale noch Tastatur, nur der Anaconda-Installer fragt danach; das Testmodell hat dann Schlüssel in `kdeglobals` und `kwinrc` erfunden. In VM 112 von Hand gesetzt (`kxkbrc`, `plasma-localerc`, `localectl`), seither Vorgaben im Image und Rezeptur im Skill; beim nächsten Boot mit `os_locale` prüfen. |
 | `ujust --list` | Bestanden, acht Rezepte. |
 | AT-SPI (Phase 3) | `busctl --user tree org.a11y.atspi.Registry` liefert keinen Baum; Accessibility in den KDE-Einstellungen einschalten, sobald Phase 3 beginnt. |
 

@@ -25,7 +25,8 @@ Universal-Blue-Muster.
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
-| Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
+| Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
+| Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
 | Apps per Sprache starten | `app_launch`, fertig |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Portal-Vermittler und unabhängiges Audit-Log | Phase 4, noch nicht gebaut |
@@ -65,7 +66,8 @@ nie in der read-only Venv. Die Variable setzen der Launcher und
 
 Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle.
 Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`, Firewall,
-Nutzer, Root-Shells, Partitionen. Neustart und Herunterfahren führt der Agent nie aus.
+Nutzer, Root-Shells, Partitionen, systemweite Sprache und Tastatur (`localectl set-*`).
+Neustart und Herunterfahren führt der Agent nie aus.
 
 Drei Stellen setzen das durch:
 

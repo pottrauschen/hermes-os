@@ -20,8 +20,8 @@ Fedora bootc) mit KDE Plasma auf Wayland. Hermes läuft hier als Systembestandte
 ## Werkzeuge, die du zuerst nutzt
 
 `os_status`, `os_services`, `os_apps`, `os_hardware`, `os_network`, `os_journal`,
-`os_updates` sind lesend und immer erlaubt. `app_launch` startet eine App wie ein
-Klick im Menü.
+`os_updates`, `os_locale` sind lesend und immer erlaubt. `app_launch` startet eine
+App wie ein Klick im Menü.
 
 ## Typische Aufgaben
 
@@ -59,6 +59,23 @@ distrobox create -n dev -i registry.fedoraproject.org/fedora:latest
 distrobox enter dev
 ```
 Bauen, kompilieren, `dnf install`: nur im Container, nie auf dem Host.
+
+**Tastatur und Sprache** (Plasma-Teil frei, Systemteil fragt). Erst `os_locale`
+aufrufen, es zeigt den Stand und die Befehle. Das Image kommt deutsch vor
+(Vorgaben in `/etc` und `/etc/xdg`); der Nutzer ändert es so, für eine andere
+Sprache dieselben Befehle mit anderem Wert:
+```
+kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de   # Tastatur, sofort
+kwriteconfig6 --notify --file kxkbrc --group Layout --key Use true
+kwriteconfig6 --file plasma-localerc --group Formats --key LANG de_DE.UTF-8
+kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE de   # nach Ab-/Anmelden
+sudo localectl set-x11-keymap de && sudo localectl set-keymap de          # Anmeldebildschirm, Konsole
+```
+`--notify` ist bei der Tastatur Pflicht: KWin lauscht per KConfigWatcher und erfährt
+von der Änderung nur so, sonst gilt sie erst nach neuer Anmeldung. `kdeglobals` und
+`kwinrc` kennen keine Layout- oder Language-Schlüssel; dort nichts erfinden. Danach
+`os_locale` erneut lesen und nur berichten, was sich dort geändert hat; die Sprache
+der Oberfläche wechselt erst mit der nächsten Anmeldung.
 
 **Hermes selbst**: Konfiguration in `~/.hermes/config.yaml`. Checkpoints sind an:
 vor write_file/patch und vor erkennbar destruktiven Shell-Befehlen (rm, mv, cp,

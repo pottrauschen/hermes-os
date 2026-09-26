@@ -445,3 +445,82 @@ def handle_app_launch(args: Dict[str, Any], **_kw) -> str:
     except OSError as exc:
         return f"Start von {app_id} fehlgeschlagen: {exc}"
     return f"Gestartet: {app_id} ({desktop}){' mit ' + target if target else ''}. Ob das Fenster erschienen ist, wurde nicht geprüft."
+
+
+# ---------------------------------------------------------------------------
+# os_locale
+# ---------------------------------------------------------------------------
+
+OS_LOCALE_SCHEMA = _schema(
+    "os_locale",
+    "Sprache und Tastatur, wie sie wirklich gesetzt sind: Systemlocale und Tastatur "
+    "(localectl, /etc/locale.conf, /etc/vconsole.conf, 00-keyboard.conf), Plasma-Sprache "
+    "und -Formate (plasma-localerc), Tastaturbelegung von Plasma (kxkbrc), dazu die "
+    "Befehle, mit denen man sie ändert. Nur lesend. Vor und nach jeder Änderung an "
+    "Sprache oder Tastatur aufrufen.",
+    {},
+)
+
+_LOCALE_HOWTO = """\
+Tastatur von Plasma (frei; mit --notify übernimmt KWin es sofort, ohne
+--notify erst nach neuer Anmeldung, weil KWin per KConfigWatcher lauscht):
+  kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de
+  kwriteconfig6 --notify --file kxkbrc --group Layout --key Use true
+Sprache und Formate von Plasma (frei, gilt nach Ab- und Anmelden):
+  kwriteconfig6 --file plasma-localerc --group Formats --key LANG de_DE.UTF-8
+  kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE de
+Systemweit, Anmeldebildschirm, Konsole (Root, fragt den Nutzer):
+  sudo localectl set-x11-keymap de
+  sudo localectl set-keymap de
+  sudo localectl set-locale LANG=de_DE.UTF-8
+kdeglobals und kwinrc kennen keine Layout- oder Language-Schlüssel; dort nichts
+eintragen. Danach os_locale erneut aufrufen und nur berichten, was sich dort
+geändert hat; die Sprache der Oberfläche wechselt erst mit neuer Anmeldung."""
+
+
+def _read_text(path: str, limit: int = 2000) -> str:
+    try:
+        text = Path(path).expanduser().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "(fehlt)"
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    return "\n".join(lines)[:limit] or "(leer)"
+
+
+def _config_groups(path: str, groups: Tuple[str, ...]) -> str:
+    """Ausgewählte Gruppen einer KDE-Ini-Datei (~/.config oder /etc/xdg), sonst nichts."""
+    text = _read_text(path, 20_000)
+    if text.startswith("("):
+        return text
+    out: List[str] = []
+    current = ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            current = line[1:-1]
+            if current in groups:
+                out.append(line)
+            continue
+        if current in groups and line:
+            out.append(line)
+    return "\n".join(out) or f"(keine der Gruppen {', '.join(groups)} gesetzt)"
+
+
+def handle_os_locale(args: Dict[str, Any], **_kw) -> str:
+    env = {k: os.environ.get(k, "") for k in ("LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LC_TIME")}
+    env_text = "\n".join(f"{k}={v}" for k, v in env.items() if v) or "(nichts gesetzt)"
+    parts = [
+        _section("localectl status (System: Locale, Konsolen- und X11-Tastatur)", _run(["localectl", "status"])),
+        _section("/etc/locale.conf", _read_text("/etc/locale.conf")),
+        _section("/etc/vconsole.conf", _read_text("/etc/vconsole.conf")),
+        _section("/etc/X11/xorg.conf.d/00-keyboard.conf", _read_text("/etc/X11/xorg.conf.d/00-keyboard.conf")),
+        _section("Plasma-Tastatur des Nutzers: ~/.config/kxkbrc", _config_groups("~/.config/kxkbrc", ("Layout",))),
+        _section("Plasma-Tastatur, Vorgabe des Images: /etc/xdg/kxkbrc", _config_groups("/etc/xdg/kxkbrc", ("Layout",))),
+        _section("Plasma-Sprache des Nutzers: ~/.config/plasma-localerc",
+                 _config_groups("~/.config/plasma-localerc", ("Formats", "Translations"))),
+        _section("Plasma-Sprache, Vorgabe des Images: /etc/xdg/plasma-localerc",
+                 _config_groups("/etc/xdg/plasma-localerc", ("Formats", "Translations"))),
+        _section("Umgebung dieses Prozesses (Gateway)", env_text),
+        _section("So wird es geändert", _LOCALE_HOWTO),
+    ]
+    return _clip("\n".join(parts))

@@ -1,0 +1,6 @@
+# hermes-os: Tastaturbelegung von Plasma ab Werk. Die Datei ist die Vorgabe
+# in der XDG-Kaskade; ~/.config/kxkbrc des Nutzers (Systemeinstellungen,
+# Tastatur) gewinnt. KWin liest die Belegung von hier, nicht aus kwinrc.
+[Layout]
+LayoutList=de
+Use=true

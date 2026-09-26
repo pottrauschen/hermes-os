@@ -1,0 +1,8 @@
+# hermes-os: Sprache und Formate von Plasma ab Werk. Vorgabe in der
+# XDG-Kaskade; ~/.config/plasma-localerc des Nutzers (Systemeinstellungen,
+# Region und Sprache) gewinnt. Wirkt ab der nächsten Anmeldung.
+[Formats]
+LANG=de_DE.UTF-8
+
+[Translations]
+LANGUAGE=de
