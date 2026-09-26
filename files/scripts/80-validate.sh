@@ -100,8 +100,9 @@ import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
 names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch")))
-assert len(names) == 8, names
+assert len(names) == 9, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
+assert registry.get_toolset_for_tool("os_locale") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
@@ -109,6 +110,10 @@ assert "hermes-os.system" in sections, list(sections)
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo bootc switch ghcr.io/x/y:latest"})
 assert d.action == "approve", d
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "systemctl --user restart hermes-gateway"})
+assert d.action is None, d
+d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo localectl set-x11-keymap de"})
+assert d.action == "approve", d
+d = hp._get_pre_tool_call_directive_details("terminal", {"command": "kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de"})
 assert d.action is None, d
 print("tools:", ", ".join(names), "| approval hook active")
 PY
@@ -270,6 +275,29 @@ else
   fail "first-login duplicated or lost API_SERVER_KEY on the second run"
 fi
 if [ "$(stat -c %a "${HERMES_HOME}/.env")" = "600" ]; then pass ".env is 0600"; else fail ".env mode is $(stat -c %a "${HERMES_HOME}/.env"), expected 600"; fi
+
+# 7f. Deutsch ab Werk: Systemlocale und Tastatur wie von localectl geschrieben,
+#     Plasma-Vorgaben über die XDG-Kaskade. Der Image-Builder kann Sprache und
+#     Tastatur nicht setzen, nur der Anaconda-Installer fragt danach; ohne die
+#     Vorgaben kommt jeder Datenträger mit us-Tastatur und Englisch hoch.
+if grep -q '^LANG=de_DE.UTF-8$' /etc/locale.conf && grep -q '^KEYMAP=de$' /etc/vconsole.conf \
+   && grep -q 'Option "XkbLayout" "de"' /etc/X11/xorg.conf.d/00-keyboard.conf \
+   && grep -q '^LayoutList=de$' /etc/xdg/kxkbrc && grep -q '^Use=true$' /etc/xdg/kxkbrc \
+   && grep -q '^LANG=de_DE.UTF-8$' /etc/xdg/plasma-localerc && grep -q '^LANGUAGE=de$' /etc/xdg/plasma-localerc; then
+  pass "german defaults: locale.conf, vconsole.conf, 00-keyboard.conf, /etc/xdg/kxkbrc, /etc/xdg/plasma-localerc"
+else
+  fail "german defaults incomplete (locale.conf, vconsole.conf, 00-keyboard.conf, /etc/xdg/kxkbrc, /etc/xdg/plasma-localerc)"
+fi
+if locale -a 2>/dev/null | grep -qiE '^de_DE(\.utf8)?$'; then
+  pass "locale de_DE.UTF-8 available"
+else
+  fail "locale de_DE.UTF-8 not available (glibc-all-langpacks missing?)"
+fi
+if [ -f /usr/share/locale/de/LC_MESSAGES/kcm_keyboard.mo ] && [ -f /usr/share/locale/de/LC_MESSAGES/dolphin.mo ]; then
+  pass "german Plasma translations present"
+else
+  fail "german Plasma translations missing under /usr/share/locale/de"
+fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi

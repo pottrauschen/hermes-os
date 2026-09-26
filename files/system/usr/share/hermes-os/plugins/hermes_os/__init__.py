@@ -36,6 +36,7 @@ _TOOLS = (
     ("os_network",  tools.OS_NETWORK_SCHEMA,  tools.handle_os_network,  "🌐"),
     ("os_journal",  tools.OS_JOURNAL_SCHEMA,  tools.handle_os_journal,  "📜"),
     ("os_updates",  tools.OS_UPDATES_SCHEMA,  tools.handle_os_updates,  "⬆️"),
+    ("os_locale",   tools.OS_LOCALE_SCHEMA,   tools.handle_os_locale,   "🌍"),
     ("app_launch",  tools.APP_LAUNCH_SCHEMA,  tools.handle_app_launch,  "🚀"),
 )
 
@@ -51,7 +52,8 @@ schreibgeschützt. Updates sind Transaktionen mit Rollback.
 ### Bevor du handelst: nachsehen, nicht raten
 Nutze die os_*-Werkzeuge, um den echten Zustand zu lesen: os_status (Image,
 Rollback-Stände), os_services, os_apps (was installiert und startbar ist),
-os_hardware, os_network, os_journal (Fehler seit Boot), os_updates.
+os_hardware, os_network, os_journal (Fehler seit Boot), os_updates,
+os_locale (Sprache und Tastatur samt der Befehle zum Ändern).
 Sie sind nur lesend, brauchen kein Root und sind immer erlaubt.
 
 ### Die Grenze: frei oder fragen
@@ -69,6 +71,8 @@ FRAGEN, immer, mit kurzer Begründung was und warum:
 - Firewall, Netzwerkfreigaben nach außen, SSH-Keys
 - Löschen außerhalb des aktuellen Projekts, Formatieren, Partitionen
 - Passwörter, Nutzerverwaltung, sudo-Regeln, Root-Shells
+- Systemweite Sprache, Tastatur, Zeitzone, Rechnername (localectl,
+  timedatectl, hostnamectl set-*)
 
 Diese Befehle landen automatisch im Freigabe-Dialog des Nutzers; erkläre
 dort in einem Satz, was passiert. Neustart und Herunterfahren führst du nie
@@ -86,6 +90,11 @@ Aussage als "erledigt" und wird auch so formuliert.
   Es gibt kein `ujust rollback`; `ujust rebase-helper` wechselt auf
   Upstream-Aurora und ist hier falsch.
 - Apps: Flatpak/Flathub, Suche mit `flatpak search`, Start mit app_launch
+- Sprache und Tastatur: erst os_locale lesen. Plasma-Tastatur steht in
+  kxkbrc (`kwriteconfig6 --notify`, frei, sofort wirksam), Plasma-Sprache
+  in plasma-localerc (frei, nach neuer Anmeldung); systemweit `sudo
+  localectl set-x11-keymap`, `set-keymap`, `set-locale` (fragt).
+  kdeglobals und kwinrc kennen keine Layout-Schlüssel.
 - Entwicklung: Distrobox (`distrobox create`), nie auf dem Host bauen
 - Hermes selbst wird über das System-Image aktualisiert, nicht mit
   `hermes update`.
@@ -110,6 +119,7 @@ _SYSTEM_PATTERNS = (
     ("disks", re.compile(r"^(fdisk|sfdisk|parted|sgdisk|gdisk|wipefs|mkfs(\.\w+)?|mkswap|dd|cryptsetup|lvm|pvcreate|vgcreate|lvcreate)\b")),
     ("system-files", re.compile(r"^(tee|cp|mv|install|ln|rm|rmdir|chmod|chown|chattr|truncate|sed\s+-i\S*|touch|mkdir)\b.*\s/(etc|usr|boot|var/lib|ostree)(/|\s|$)")),
     ("flatpak-system", re.compile(r"^flatpak\s+(?:--\S+\s+)*(install|remove|uninstall|update|override|repair)\b.*\s(--system|-s)\b")),
+    ("system-config", re.compile(r"^(localectl|timedatectl|hostnamectl)\s+(?:--\S+\s+)*set-\w+")),
 )
 
 # Root-Shells werden VOR dem Entfernen der Präfixe erkannt, weil `sudo -i`

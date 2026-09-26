@@ -18,6 +18,15 @@ chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* \
 find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
 find "${SHARE}/plugins" "${SHARE}/skills" -type d -exec chmod 0755 {} +
 
+# ---- Deutsch ab Werk ---------------------------------------------------------
+# Der Image-Builder kann Sprache und Tastatur nicht setzen, nur der Anaconda-
+# Installer fragt danach. Deshalb liegen die Vorgaben im Image: Systemlocale,
+# Konsolen- und X11-Tastatur wie von localectl geschrieben, Plasma-Sprache und
+# -Tastatur als XDG-Vorgabe. Der Nutzer ändert sie in den Systemeinstellungen,
+# der Agent mit kwriteconfig6 und localectl (Skill hermes-os-system).
+chmod 0644 /etc/locale.conf /etc/vconsole.conf /etc/X11/xorg.conf.d/00-keyboard.conf \
+  /etc/xdg/kxkbrc /etc/xdg/plasma-localerc
+
 # ---- Icons des Leisten-Symbols ----------------------------------------------
 # Liegen in hicolor, damit Plasma sie über den Namen findet (StatusNotifierItem
 # überträgt Namen, keine Bilder). Ein veralteter icon-theme.cache würde neue
