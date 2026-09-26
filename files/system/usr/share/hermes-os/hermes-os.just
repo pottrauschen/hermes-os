@@ -14,6 +14,10 @@ hermes-setup-terminal:
 hermes-tray:
     /usr/libexec/hermes-os-tray --show
 
+# Hermes-Dashboard als Fenster öffnen (Web-Oberfläche: Modelle, Schlüssel, Sessions, Cron, Plugins)
+hermes-dashboard:
+    /usr/libexec/hermes-os-dashboard
+
 # Hermes-Diagnose
 hermes-doctor:
     /usr/bin/hermes doctor
