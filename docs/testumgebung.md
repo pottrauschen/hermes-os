@@ -149,6 +149,12 @@ NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
   per DPMS aus ist: `spectacle --background` liefert dann den eingefrorenen
   Frame samt alter Uhr. Vorher `kscreen-doctor --dpms on` über
   `systemd-run --user`, dann stimmt das Foto.
+- **Ohne grafische Anmeldung stirbt das Gateway mit der SSH-Sitzung.** Nach
+  einem Neustart steht die VM am Anmeldebildschirm, kein Autologin; die
+  Nutzer-Units starten erst mit der Plasma-Sitzung. `systemctl --user start
+  hermes-gateway` aus SSH läuft nur, solange diese Sitzung offen ist, weil
+  der Nutzer-Manager ohne Linger mit der letzten Sitzung endet. Also Start
+  und Test in einer SSH-Sitzung, oder an der Konsole anmelden.
 - **Tastatur und Sprache kommen nicht vom Builder.** bootc-image-builder
   kennt keine Locale-Anpassung; ohne Vorgaben im Image bootet der Datenträger
   mit us-Tastatur und Englisch. Plasma liest die Tastatur aus `kxkbrc`, sonst
@@ -183,7 +189,8 @@ und `bootc switch` auf die NVIDIA-Variante (2,4 GB, rund fünf Minuten).
 | Freigabe-Dialog | Offen, nur interaktiv prüfbar: `sudo bootc upgrade --check` im Chat muss fragen, `flatpak install` nicht. |
 | Gateway | Bestanden. Der Assistent ruft nach dem Speichern das First-Login-Skript, das die Unit einschaltet; `enabled`/`active`, OpenRouter-Schlüssel im Credential-Pool. Seit dem 26.09. mit API-Server auf `127.0.0.1:8642`, Schlüssel aus `.env` wird akzeptiert. Hinweis im Journal: die Unit hat `TimeoutStopSec=30s`, Hermes erwartet `drain_timeout`-passende Werte („Stale systemd unit detected"); noch nicht angeglichen. |
 | Sprache (`/voice on`) | Offen, braucht Mikrofon in der VM. |
-| Tastatur und Systemsprache | Fehlgeschlagen am 2026-09-26: y ergab z, Plasma auf Englisch. Ursache: der Datenträger aus dem Builder trägt weder Locale noch Tastatur, nur der Anaconda-Installer fragt danach; das Testmodell hat dann Schlüssel in `kdeglobals` und `kwinrc` erfunden. In VM 112 von Hand gesetzt (`kxkbrc`, `plasma-localerc`, `localectl`), seither Vorgaben im Image und Rezeptur im Skill; beim nächsten Boot mit `os_locale` prüfen. |
+| Tastatur und Systemsprache | Fehlgeschlagen am 2026-09-26 mit dem ersten Datenträger: y ergab z, Plasma auf Englisch. Ursache: der Datenträger aus dem Builder trägt weder Locale noch Tastatur, nur der Anaconda-Installer fragt danach; das Testmodell hat dann Schlüssel in `kdeglobals` und `kwinrc` erfunden. In VM 112 von Hand gesetzt, seither Vorgaben im Image und Rezeptur im Skill. Bestanden am Abend des 2026-09-26 nach `bootc upgrade` auf Digest `2eb6e1a5…`: Vorgaben unter `/etc` und `/etc/xdg` da, `localectl` meldet de/de/de, der Agent bestätigt es über `os_locale`. |
+| Bibliothek (`docs/bibliothek.md`) | Bestanden am 2026-09-26: `library_list` über das Gateway im gebooteten Image nennt den Eintrag docs.kde.org; zuvor aus `~/hos` der volle Lauf mit `library_fetch` (Dolphin-Handbuch mit Quelle in 30 s). Die Seite im Fenster ist offscreen geprüft, am Bildschirm noch nicht. |
 | `ujust --list` | Bestanden, acht Rezepte. |
 | AT-SPI (Phase 3) | `busctl --user tree org.a11y.atspi.Registry` liefert keinen Baum; Accessibility in den KDE-Einstellungen einschalten, sobald Phase 3 beginnt. |
 
