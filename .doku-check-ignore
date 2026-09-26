@@ -1,0 +1,4 @@
+# Skill-Dateien, die ins Image kopiert werden (Anleitung für den Agenten unter
+# /usr/share/hermes-os/skills): Bestandteil des Systems, keine Projekt-Doku.
+# Ausnahme freigegeben von Stephan am 2026-09-26.
+files/system/usr/share/hermes-os/skills/
