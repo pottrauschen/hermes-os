@@ -185,11 +185,12 @@ def journal_errors(since: float) -> Dict[str, Any]:
     return result
 
 
-def journal_part(since: float, now: float, previous: Optional[Dict[str, int]]) -> Tuple[str, List[str], Dict[str, int]]:
+def journal_part(since: float, now: float, previous: Optional[Dict[str, int]]) -> Tuple[str, List[str], Optional[Dict[str, int]]]:
+    """Satz, Einzelheiten und die Quellen; None statt Quellen, wenn das Journal nicht lesbar war."""
     j = journal_errors(since)
     when = _when(since, now) if previous is not None else f"in den letzten {FIRST_WINDOW_HOURS} Stunden"
     if not j["ok"]:
-        return "Journal nicht lesbar.", [f"Journal: {j['error']}"], {}
+        return "Journal nicht lesbar.", [f"Journal: {j['error']}"], None
     sources: Dict[str, int] = j["sources"]
     limited = " (nur eigene Einträge lesbar)" if j["limited"] else ""
     if not j["count"]:
@@ -346,8 +347,9 @@ OS_REPORT_SCHEMA = tools._schema(
 )
 
 
-def build_report(record: bool = False, flatpak: bool = True) -> Dict[str, Any]:
-    """Bericht bauen: {"summary", "text", "time"}; mit record den Vergleichspunkt setzen."""
+def build_report(record: bool = False, flatpak: bool = True, save: bool = True) -> Dict[str, Any]:
+    """Bericht bauen: {"summary", "text", "time"}. save legt ihn als letzten Bericht für
+    desktop_notify ab, record setzt zusätzlich den Vergleichspunkt; save=false schreibt nichts."""
     now = _now()
     state = load_state()
     baseline = state.get("baseline") if isinstance(state.get("baseline"), dict) else None
@@ -375,9 +377,13 @@ def build_report(record: bool = False, flatpak: bool = True) -> Dict[str, Any]:
     summary = " ".join(x for x in sentences if x)
     text = (f"{TITLE}, {_stamp(now)}\n\nKurzfassung:\n{summary}\n\nEinzelheiten:\n" + "\n".join(details)).strip()
     report = {"time": now, "summary": summary, "text": text}
+    if not save:
+        return report
     new_state = dict(state)
     new_state["latest"] = report
-    if record:
+    # War das Journal nicht lesbar, bleibt der alte Vergleichspunkt: sonst fielen die Fehler
+    # seitdem aus dem nächsten Bericht, und jede Quelle hieße dort neu.
+    if record and sources is not None:
         new_state["baseline"] = {"time": now, "sources": sources}
     err = _save_state(new_state)
     if err:

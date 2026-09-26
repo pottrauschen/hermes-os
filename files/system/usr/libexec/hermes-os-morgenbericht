@@ -54,7 +54,7 @@ def main():
         print("OK    hermes-os-morgenbericht: report.py und tools.py ladbar")
         return 0
     if "--probe" in sys.argv:
-        print(report.build_report(record=False)["text"])
+        print(report.build_report(record=False, save=False)["text"])
         return 0
     result = report.build_report(record=True)
     note = report.handle_desktop_notify({"report": True})
