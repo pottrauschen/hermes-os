@@ -36,8 +36,10 @@ Plasma-Sitzung noch nicht gebootet.
   kann, ohne das Fenster zu öffnen. Ohne Antwort läuft der Befehl nach
   `approvals.timeout` (Vorgabe 5 Minuten) nicht.
 - **Bibliothek**: Der Knopf im Kopf und der Menüpunkt am Symbol öffnen eine
-  Seite, auf der Adressen, Dateien und Ordner eingetragen werden, die Hermes
-  bei Bedarf liest; Details in [bibliothek.md](bibliothek.md).
+  Seite, auf der Adressen, Dateien und Ordner eingetragen werden (auch per
+  Ablegen), die Hermes bei Bedarf liest; dazu Spiegeln mit Fortschritt, eine
+  Suche in den Spiegeln und die Schalter der Doku-Server; Details in
+  [bibliothek.md](bibliothek.md).
 - **Protokoll**: Der Knopf mit der Uhr im Kopf und der Menüpunkt am Symbol
   öffnen eine Seite mit allem, was Hermes am System getan hat: Freigaben mit
   Entscheidung, Systembefehle mit Ergebnis, App-Starts; Details in

@@ -105,6 +105,40 @@ Kirigami.ApplicationWindow {
         libraryNote.text = ""
         return true
     }
+    // Stufe zwei: Spiegel je Eintrag, Suche, Ablegen, Notizen ändern, Doku-Server
+    function libraryMirrorText(entryId) {
+        var m = backend.libraryMirror
+        return (m !== undefined && m[entryId] !== undefined) ? m[entryId].text : "Kein Spiegel: noch nicht indiziert."
+    }
+    function libraryMirrorRunning(entryId) {
+        var m = backend.libraryMirror
+        return m !== undefined && m[entryId] !== undefined && m[entryId].running === true
+    }
+    function libraryDropped(urls, text) {
+        libraryMessage.text = backend.libraryDrop(urls, text)
+        return libraryMessage.text
+    }
+    function typeLibrarySearch(text) { librarySearchField.text = text }
+    function librarySearchCurrent() {
+        backend.librarySearch(librarySearchField.text.trim())
+        return true
+    }
+    function librarySaveRow(row) {
+        // Erst die Zeile schließen: das Backend liest die Liste neu und baut die Zeilen um
+        var entryId = row.modelData.id
+        var title = row.editTitle.trim()
+        var note = row.editNote.trim()
+        row.editing = false
+        libraryError.text = backend.libraryUpdate(entryId, title, note)
+        return libraryError.text === ""
+    }
+    function toggleNamed(name) {
+        var item = findNamed(name)
+        if (item === null) return false
+        item.toggle()
+        item.toggled()
+        return true
+    }
 
     // Protokoll: was Hermes am System getan hat, eigene Seite wie die Bibliothek.
     // Solange sie offen ist, liest das Backend die Datei bei jeder Änderung neu.
@@ -970,7 +1004,8 @@ Kirigami.ApplicationWindow {
                 wrapMode: Text.WordWrap
                 opacity: 0.8
                 text: "Adressen, Dateien und Ordner, die Hermes kennen soll. Er liest sie bei Bedarf, folgt "
-                    + "Verweisen auf derselben Seite und nennt die Quelle. Neue Einträge gelten ab dem nächsten Gespräch."
+                    + "Verweisen auf derselben Seite und nennt die Quelle. „Spiegeln“ legt einen durchsuchbaren "
+                    + "Index an, in dem Hermes und du suchen. Neue Einträge gelten ab dem nächsten Gespräch."
             }
 
             Kirigami.FormLayout {
@@ -1035,6 +1070,138 @@ Kirigami.ApplicationWindow {
                 }
             }
 
+            // Ablegen: Dateien und Ordner aus dem Dateimanager, Adressen aus dem Browser
+            Rectangle {
+                objectName: "libraryDropZone"
+                Layout.fillWidth: true
+                implicitHeight: libraryDropLabel.implicitHeight + Kirigami.Units.largeSpacing * 2
+                radius: Kirigami.Units.largeSpacing
+                color: libraryDropArea.containsDrag
+                     ? Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.highlightColor, 0.25)
+                     : Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.03)
+                border.width: libraryDropArea.containsDrag ? 2 : 1
+                border.color: libraryDropArea.containsDrag ? Kirigami.Theme.highlightColor
+                            : Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15)
+                Controls.Label {
+                    id: libraryDropLabel
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.largeSpacing
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                    text: "Dateien, Ordner oder eine Adresse aus dem Browser hierher ziehen"
+                }
+                DropArea {
+                    id: libraryDropArea
+                    anchors.fill: parent
+                    onDropped: drop => {
+                        root.libraryDropped(drop.hasUrls ? drop.urls : [], drop.hasText ? drop.text : "")
+                        drop.accept(Qt.CopyAction)   // nie „Verschieben“: die Quelle bleibt, wo sie ist
+                    }
+                }
+            }
+            Controls.Label {
+                id: libraryMessage
+                objectName: "libraryMessage"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+            }
+
+            Kirigami.Separator { Layout.fillWidth: true }
+
+            // Suche in den Spiegeln
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+                Controls.TextField {
+                    id: librarySearchField
+                    objectName: "librarySearchField"
+                    Layout.fillWidth: true
+                    placeholderText: "In den Spiegeln suchen, z. B. versteckte Dateien"
+                    onAccepted: root.librarySearchCurrent()
+                }
+                Controls.Button {
+                    objectName: "librarySearchButton"
+                    text: "Suchen"
+                    icon.name: "search"
+                    enabled: !backend.librarySearching
+                    onClicked: root.librarySearchCurrent()
+                }
+                Controls.BusyIndicator {
+                    running: backend.librarySearching
+                    visible: running
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                }
+            }
+            Controls.Label {
+                objectName: "librarySearchNote"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.8
+                visible: text !== ""
+                text: backend.librarySearchNote
+            }
+            Repeater {
+                model: backend.librarySearchHits
+                delegate: Rectangle {
+                    id: libraryHit
+                    objectName: "librarySearchHit"
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: hitContent.implicitHeight + Kirigami.Units.largeSpacing * 2
+                    radius: Kirigami.Units.largeSpacing
+                    color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.highlightColor, 0.08)
+                    border.width: 1
+                    border.color: Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.highlightColor, 0.3)
+                    RowLayout {
+                        id: hitContent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Kirigami.Units.largeSpacing
+                        spacing: Kirigami.Units.largeSpacing
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Kirigami.Heading {
+                                Layout.fillWidth: true
+                                level: 5
+                                text: libraryHit.modelData.title
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                            }
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                text: libraryHit.modelData.entryTitle + " · " + libraryHit.modelData.source
+                                textFormat: Text.PlainText
+                                elide: Text.ElideMiddle
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.7
+                            }
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                visible: text !== ""
+                                text: libraryHit.modelData.snippet
+                                textFormat: Text.PlainText
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                        Controls.ToolButton {
+                            objectName: "librarySearchOpen"
+                            icon.name: "document-open"
+                            display: Controls.AbstractButton.IconOnly
+                            text: "Öffnen"
+                            Controls.ToolTip.text: text
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: backend.libraryOpenSource(libraryHit.modelData.source)
+                        }
+                    }
+                }
+            }
+
             Kirigami.Separator { Layout.fillWidth: true }
 
             Kirigami.PlaceholderMessage {
@@ -1051,70 +1218,219 @@ Kirigami.ApplicationWindow {
                     id: libraryRow
                     objectName: "libraryRow"
                     required property var modelData
+                    property bool editing: false
+                    readonly property bool mirroring: root.libraryMirrorRunning(libraryRow.modelData.id)
+                    // Die Felder gehören zur Zeile, nicht zum Fenster: root.librarySaveRow liest sie hierüber
+                    property alias editTitle: libraryEditTitle.text
+                    property alias editNote: libraryEditNote.text
                     Layout.fillWidth: true
                     implicitHeight: rowContent.implicitHeight + Kirigami.Units.largeSpacing * 2
                     radius: Kirigami.Units.largeSpacing
                     color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.05)
                     border.width: 1
                     border.color: Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15)
-                    RowLayout {
+                    ColumnLayout {
                         id: rowContent
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.margins: Kirigami.Units.largeSpacing
-                        spacing: Kirigami.Units.largeSpacing
-                        Kirigami.Icon {
-                            source: libraryRow.modelData.kind === "url" ? "globe"
-                                  : (libraryRow.modelData.kind === "folder" ? "folder" : "text-x-generic")
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-                            Layout.preferredHeight: Kirigami.Units.iconSizes.medium
-                            Layout.alignment: Qt.AlignTop
-                        }
-                        ColumnLayout {
+                        spacing: Kirigami.Units.smallSpacing
+                        RowLayout {
                             Layout.fillWidth: true
-                            spacing: 2
-                            Kirigami.Heading {
-                                Layout.fillWidth: true
-                                level: 4
-                                text: libraryRow.modelData.title
-                                elide: Text.ElideRight
+                            spacing: Kirigami.Units.largeSpacing
+                            Kirigami.Icon {
+                                source: libraryRow.modelData.kind === "url" ? "globe"
+                                      : (libraryRow.modelData.kind === "folder" ? "folder" : "text-x-generic")
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.medium
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+                                Layout.alignment: Qt.AlignTop
                             }
-                            Controls.Label {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: libraryRow.modelData.source
-                                elide: Text.ElideMiddle
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.7
+                                spacing: 2
+                                Kirigami.Heading {
+                                    Layout.fillWidth: true
+                                    level: 4
+                                    text: libraryRow.modelData.title
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    text: libraryRow.modelData.source
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideMiddle
+                                    font: Kirigami.Theme.smallFont
+                                    opacity: 0.7
+                                }
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    visible: libraryRow.modelData.note !== "" && !libraryRow.editing
+                                    text: libraryRow.modelData.note
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.WordWrap
+                                }
+                                Controls.Label {
+                                    objectName: "libraryMirrorText"
+                                    Layout.fillWidth: true
+                                    text: root.libraryMirrorText(libraryRow.modelData.id)
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.WordWrap
+                                    font: Kirigami.Theme.smallFont
+                                    opacity: 0.8
+                                }
                             }
-                            Controls.Label {
-                                Layout.fillWidth: true
-                                visible: libraryRow.modelData.note !== ""
-                                text: libraryRow.modelData.note
-                                wrapMode: Text.WordWrap
+                            Controls.ToolButton {
+                                objectName: "libraryMirrorButton"
+                                icon.name: libraryRow.mirroring ? "process-stop" : "view-refresh"
+                                display: Controls.AbstractButton.IconOnly
+                                text: libraryRow.mirroring ? "Spiegeln abbrechen" : "Spiegeln"
+                                Controls.ToolTip.text: libraryRow.mirroring ? text
+                                    : "Spiegeln: Seiten samt Verweisen auf demselben Host in den Index holen (Ordner und Dateien werden indiziert)"
+                                Controls.ToolTip.visible: hovered
+                                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: libraryRow.mirroring ? backend.libraryMirrorCancel(libraryRow.modelData.id)
+                                                                : backend.libraryMirrorStart(libraryRow.modelData.id)
+                            }
+                            Controls.ToolButton {
+                                objectName: "libraryEdit"
+                                icon.name: "document-edit"
+                                display: Controls.AbstractButton.IconOnly
+                                text: "Titel und Notiz ändern"
+                                checkable: true
+                                checked: libraryRow.editing
+                                Controls.ToolTip.text: text
+                                Controls.ToolTip.visible: hovered
+                                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: {
+                                    libraryRow.editing = !libraryRow.editing
+                                    if (libraryRow.editing) {
+                                        libraryEditTitle.text = libraryRow.modelData.title
+                                        libraryEditNote.text = libraryRow.modelData.note
+                                        libraryEditTitle.forceActiveFocus()
+                                    }
+                                }
+                            }
+                            Controls.ToolButton {
+                                icon.name: "document-open"
+                                display: Controls.AbstractButton.IconOnly
+                                text: "Öffnen"
+                                Controls.ToolTip.text: text
+                                Controls.ToolTip.visible: hovered
+                                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: backend.libraryOpen(libraryRow.modelData.id)
+                            }
+                            Controls.ToolButton {
+                                objectName: "libraryRemove"
+                                icon.name: "edit-delete"
+                                display: Controls.AbstractButton.IconOnly
+                                text: "Entfernen"
+                                Controls.ToolTip.text: text
+                                Controls.ToolTip.visible: hovered
+                                Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: backend.libraryRemove(libraryRow.modelData.id)
                             }
                         }
-                        Controls.ToolButton {
-                            icon.name: "document-open"
-                            display: Controls.AbstractButton.IconOnly
-                            text: "Öffnen"
-                            Controls.ToolTip.text: text
-                            Controls.ToolTip.visible: hovered
-                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
-                            onClicked: backend.libraryOpen(libraryRow.modelData.id)
-                        }
-                        Controls.ToolButton {
-                            objectName: "libraryRemove"
-                            icon.name: "edit-delete"
-                            display: Controls.AbstractButton.IconOnly
-                            text: "Entfernen"
-                            Controls.ToolTip.text: text
-                            Controls.ToolTip.visible: hovered
-                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
-                            onClicked: backend.libraryRemove(libraryRow.modelData.id)
+                        // Titel und Notiz ändern, an Ort und Stelle
+                        Kirigami.FormLayout {
+                            Layout.fillWidth: true
+                            visible: libraryRow.editing
+                            Controls.TextField {
+                                id: libraryEditTitle
+                                objectName: "libraryEditTitle"
+                                Kirigami.FormData.label: "Titel:"
+                                Layout.fillWidth: true
+                                onAccepted: root.librarySaveRow(libraryRow)
+                            }
+                            Controls.TextField {
+                                id: libraryEditNote
+                                objectName: "libraryEditNote"
+                                Kirigami.FormData.label: "Notiz für Hermes:"
+                                Layout.fillWidth: true
+                                onAccepted: root.librarySaveRow(libraryRow)
+                            }
+                            RowLayout {
+                                Kirigami.FormData.label: " "
+                                spacing: Kirigami.Units.smallSpacing
+                                Controls.Button {
+                                    objectName: "librarySave"
+                                    text: "Speichern"
+                                    icon.name: "document-save"
+                                    highlighted: true
+                                    onClicked: root.librarySaveRow(libraryRow)
+                                }
+                                Controls.Button {
+                                    text: "Abbrechen"
+                                    icon.name: "dialog-cancel"
+                                    onClicked: libraryRow.editing = false
+                                }
+                            }
                         }
                     }
                 }
+            }
+
+            Kirigami.Separator { Layout.fillWidth: true }
+
+            // Doku-Server aus Hermes' MCP-Katalog: Schalter in ~/.hermes/config.yaml
+            Kirigami.Heading {
+                level: 4
+                text: "Doku-Server (MCP)"
+            }
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.8
+                text: "Server aus Hermes' Katalog, die Fragen zu Bibliotheken, Frameworks und fremden Projekten aus "
+                    + "deren Dokumentation beantworten. Ein Schalter trägt den Server in Hermes' config.yaml ein oder "
+                    + "aus; das Gateway übernimmt das von selbst innerhalb etwa einer Minute, ein laufendes Gespräch "
+                    + "ab dem nächsten neuen Gespräch."
+            }
+            Repeater {
+                model: backend.libraryMcp
+                delegate: RowLayout {
+                    id: libraryMcpRow
+                    objectName: "libraryMcpRow"
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.largeSpacing
+                    Controls.Switch {
+                        objectName: "libraryMcpSwitch"
+                        Layout.alignment: Qt.AlignTop
+                        checked: libraryMcpRow.modelData.enabled
+                        onToggled: backend.libraryMcpSet(libraryMcpRow.modelData.id, checked)
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Kirigami.Heading {
+                            Layout.fillWidth: true
+                            level: 5
+                            text: libraryMcpRow.modelData.title
+                        }
+                        Controls.Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: libraryMcpRow.modelData.description
+                            opacity: 0.8
+                        }
+                        Controls.Label {
+                            Layout.fillWidth: true
+                            text: libraryMcpRow.modelData.url
+                            elide: Text.ElideMiddle
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.6
+                        }
+                    }
+                }
+            }
+            Controls.Label {
+                objectName: "libraryMcpMessage"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+                text: backend.libraryMcpMessage
             }
         }
     }
