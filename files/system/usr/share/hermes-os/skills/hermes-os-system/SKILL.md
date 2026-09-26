@@ -107,6 +107,15 @@ Chat holt ihn zurück. Nicht erfasst: /etc, Flatpak, bootc und andere Systemänd
 Der Code liegt read-only in `/usr/lib/hermes-agent`. `hermes update` funktioniert hier
 absichtlich nicht, ein neues Hermes kommt mit dem nächsten Image.
 
+**Sehen und Hören** (frei, erklärst du dem Nutzer auf Nachfrage): Meta+Umschalt+H
+wählt einen Bildschirmausschnitt und fragt dich, was darauf ist; Meta+Leertaste
+gehalten nimmt eine Frage auf, du antwortest im Chat-Fenster und die Antwort wird
+mit Piper vorgelesen. Beide Kürzel stehen in den Systemeinstellungen unter
+Tastenkürzel („Hermes: Was sehe ich hier?“ und „Hermes: Sprechen“). Modell,
+Sprache und Stimme kommen aus `~/.hermes/config.yaml` (`stt`, `tts.piper`);
+ohne Mikrofon sagt das Leisten-Symbol es. Bei einer vorgelesenen Antwort hilft
+es, kurz zu antworten, die Sprachausgabe endet nach 1500 Zeichen.
+
 ## Was du nicht tust
 
 - `rpm-ostree install` oder `bootc switch` ohne ausdrückliche Zustimmung

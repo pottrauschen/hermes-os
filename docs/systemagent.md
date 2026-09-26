@@ -42,18 +42,22 @@ Plasma-Sitzung noch nicht gebootet.
   öffnen eine Seite mit allem, was Hermes am System getan hat: Freigaben mit
   Entscheidung, Systembefehle mit Ergebnis, App-Starts; Details in
   [protokoll.md](protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Hermes
-  einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
+- **Sehen und Hören**: Meta+Umschalt+H wählt einen Bildschirmausschnitt und
+  fragt Hermes, was darauf zu sehen ist; Meta+Leertaste halten nimmt eine Frage
+  auf, der erkannte Text geht ins Fenster, die Antwort wird vorgelesen. Der
+  Kamera-Knopf neben dem Textfeld hängt einen Ausschnitt an, der Mikrofon-Knopf
+  schaltet die Aufnahme ein und aus; während Hermes zuhört oder spricht, zeigt
+  das Symbol einen eigenen Zustand (rot mit Mikrofon, blau mit Lautsprecher).
+  Details in [sehen-hoeren.md](sehen-hoeren.md).
+- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Was
+  sehe ich hier?, Mit Hermes sprechen, Hermes einrichten, Gateway starten, Chat
+  im Terminal, Beenden. „Dashboard öffnen" erscheint,
   sobald Teil 2 aus [einrichtung.md](einrichtung.md) das Startskript
   `/usr/libexec/hermes-os-dashboard` liefert.
 - **Autostart** bei jeder Plasma-Sitzung. Beim allerersten Login sagt das
   Symbol „nicht eingerichtet" und bietet den Assistenten an; nach dem
   Speichern schaltet das First-Login-Skript das Gateway ein, und das Symbol
   wird von selbst blau.
-
-Das Mikrofon im Fenster ist ein Platzhalter. Der API-Server hat keinen
-Sprachkanal; geplant ist Aufnahme mit QtMultimedia und Transkription über die
-Brücke mit Hermes' lokalem Whisper.
 
 ## Dateien
 
@@ -62,10 +66,12 @@ Brücke mit Hermes' lokalem Whisper.
 | Startprogramm, Python mit PySide6 | `files/system/usr/libexec/hermes-os-tray` |
 | Fenster, QML mit Kirigami | `files/system/usr/share/hermes-os/tray/Main.qml` |
 | Client für den API-Server, nur Standardbibliothek | `files/system/usr/share/hermes-os/tray/hermes_client.py` |
+| Kürzel und Benachrichtigungen mit Knöpfen, KGlobalAccel über D-Bus | `files/system/usr/share/hermes-os/tray/desktop.py` |
+| „Was sehe ich hier?“ und Push-to-Talk, Sprachhelfer in der Hermes-Venv | `files/system/usr/share/hermes-os/tray/screenshot.py`, `voice.py`, `voice_worker.py`, siehe [sehen-hoeren.md](sehen-hoeren.md) |
 | Menüeintrag „Hermes", trägt `X-KDE-Shortcuts=Meta+H` | `files/system/usr/share/applications/hermes-os-tray.desktop` |
 | Dieselbe Datei für den globalen Kurzbefehl | `files/system/usr/share/kglobalaccel/hermes-os-tray.desktop` |
 | Autostart in der Plasma-Sitzung | `files/system/etc/xdg/autostart/hermes-os-tray.desktop` |
-| Programmsymbol und die vier Zustände | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
+| Programmsymbol und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
 | Client-Test gegen ein nachgebautes Gateway | `tests/tray-client-check.py` |
 | Render-Test des Fensters ohne Display | `tests/tray-gui-check.py` |
 
@@ -214,7 +220,8 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   „show" an die laufende Instanz weiter; Menüeintrag und Meta+H rufen
   `hermes-os-tray --show`. Der Knopf „Im Chat besprechen" am Morgenbericht
   schickt auf demselben Weg `discuss <pfad>` (`--discuss`), siehe
-  [morgenbericht.md](morgenbericht.md). Bleibt der Socket nach einem Absturz stehen, räumt
+  [morgenbericht.md](morgenbericht.md); Meta+Umschalt+H schickt `look`
+  (`--look`), `--talk` schaltet die Aufnahme um. Bleibt der Socket nach einem Absturz stehen, räumt
   der nächste Start ihn weg.
 - **Kurzbefehl**: KGlobalAccel liest Vorgaben aus
   `/usr/share/kglobalaccel/*.desktop` (`X-KDE-Shortcuts`), startet aber die
@@ -250,7 +257,6 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   Symbol und in den Systemeinstellungen über
   `/usr/share/plasma/systemsettings/externalmodules/*.desktop`
   (`X-KDE-System-Settings-Parent-Category`).
-- Mikrofon: Aufnahme, Transkription über die Brücke mit dem lokalen Whisper.
 - Dashboard-Knopf, sobald Teil 2 gebaut ist.
 - Bilder aus Hermes' Antwort schon beim Streamen zeigen (heute erst mit dem
   Abschlussereignis) und Videos oder PDFs aus MEDIA-Tags zum Öffnen anbieten.

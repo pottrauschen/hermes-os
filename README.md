@@ -24,6 +24,7 @@ Universal-Blue-Muster.
 | Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
 | Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Chat-Fenster mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
+| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen | Leisten-Symbol, gebaut, Tests ohne Hardware grün, Test in VM 112 offen, siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
@@ -145,7 +146,9 @@ Ab dem Login sitzt Hermes als Symbol in der Systemleiste: grau, solange das Gate
 aus ist, blau wenn bereit, orange während er arbeitet, gelb wenn er eine Freigabe
 braucht. Klick oder Meta+H öffnet das Chat-Fenster, in das man auch Bilder legen kann
 (Dateidialog, Strg+V, Ablegen); eine Freigabe kommt zusätzlich als Benachrichtigung mit
-Knöpfen. Details in [docs/systemagent.md](docs/systemagent.md). Danach:
+Knöpfen. Meta+Umschalt+H wählt einen Bildschirmausschnitt und fragt Hermes, was darauf
+ist; Meta+Leertaste halten nimmt eine Frage auf, die Antwort wird vorgelesen
+([docs/sehen-hoeren.md](docs/sehen-hoeren.md)). Details in [docs/systemagent.md](docs/systemagent.md). Danach:
 
 ```sh
 hermes                        # chatten; Sprache: /voice on (Push-to-Talk)
