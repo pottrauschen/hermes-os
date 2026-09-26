@@ -58,7 +58,7 @@ cp "${REPO_DIR}/files/system/usr/share/hermes-os/config.yaml.default" "${HERMES_
 for k in checkpoints.enabled approvals.mode terminal.backend stt.provider tts.provider; do
   printf "  config %-22s %s\n" "$k" "$("${ROOT}/.venv/bin/hermes" config get "$k" 2>&1 | head -1)"
 done
-(cd "${ROOT}" && "${ROOT}/.venv/bin/python" - <<'PY'
+(cd "${ROOT}" && BOUNDARY_CHECK="${REPO_DIR}/tests/boundary-check.py" "${ROOT}/.venv/bin/python" - <<'PY'
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
@@ -69,29 +69,17 @@ pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
 print("plugin loaded by release loader:", names, "+ prompt section hermes-os.system")
-# Freigabe-Hook über Hermes' eigene Dispatch-Funktion
-cases = {
-    "sudo bootc switch ghcr.io/x/y:latest": "approve",
-    "rpm-ostree install foo": "approve",
-    "ujust update": "approve",
-    "sudo systemctl enable --now sshd": "approve",
-    "bash -c 'sudo useradd bob'": "approve",
-    "sudo tee /etc/foo.conf": "approve",
-    "flatpak install --system flathub org.x.Y": "approve",
-    "sudo localectl set-x11-keymap de": "approve",
-    "kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de": None,
-    "systemctl --user restart hermes-gateway": None,
-    "flatpak install flathub org.mozilla.Thunderbird": None,
-    "cat /etc/passwd | head": None,
-    "git status && ls -la": None,
-    "rpm-ostree status": None,
-    "ujust hermes-doctor": None,
-}
-for cmd, want in cases.items():
+# Freigabe-Hook über Hermes' eigene Dispatch-Funktion, mit der Fallliste
+# aus tests/boundary-check.py (dort gepflegt, hier nur geladen)
+import importlib.util, os
+spec = importlib.util.spec_from_file_location("boundary_check", os.environ["BOUNDARY_CHECK"])
+bc = importlib.util.module_from_spec(spec); spec.loader.exec_module(bc)
+for cmd, group in bc.CASES:
     d = hp._get_pre_tool_call_directive_details("terminal", {"command": cmd})
+    want = bc.expected_action(group)
     assert d.action == want, f"{cmd!r}: got {d.action}, want {want}"
 assert hp._get_pre_tool_call_directive_details("write_file", {"path": "/etc/x"}).action is None
-print("approval hook:", len(cases), "cases ok")
+print("approval hook:", len(bc.CASES), "cases from tests/boundary-check.py ok")
 PY
 )
 

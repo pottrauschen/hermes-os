@@ -116,6 +116,15 @@ d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo locale
 assert d.action == "approve", d
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de"})
 assert d.action is None, d
+# Die ganze Angriffsbatterie durch den echten Dispatch (block und approve)
+import importlib.util, os
+if os.path.exists("/ctx/tests/boundary-check.py"):
+    spec = importlib.util.spec_from_file_location("boundary_check", "/ctx/tests/boundary-check.py")
+    bc = importlib.util.module_from_spec(spec); spec.loader.exec_module(bc)
+    for cmd, group in bc.CASES:
+        d = hp._get_pre_tool_call_directive_details("terminal", {"command": cmd})
+        assert d.action == bc.expected_action(group), (cmd, d)
+    print("boundary cases through the release dispatch:", len(bc.CASES))
 print("tools:", ", ".join(names), "| approval hook active")
 PY
   ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
@@ -311,6 +320,19 @@ if [ -f /ctx/tests/library-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
+fi
+
+# 7h. Grenze: Angriffsbatterie gegen den Klassifikator des Plugins (boundary.py),
+#     mit der Venv-Python wie im Gateway; prüft auch fail-closed.
+if [ -f /ctx/tests/boundary-check.py ]; then
+  if /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/boundary-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os; then
+    pass "boundary: attack battery (ask, block, free, fail-closed)"
+  else
+    fail "boundary check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/boundary-check.py not in build context, boundary check skipped"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
