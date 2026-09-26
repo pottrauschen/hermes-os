@@ -212,50 +212,65 @@ def lookup_session_id(day: Optional[str] = None) -> str:
 
 
 def lookup_answer(client, question: str, session_id: Optional[str] = None,
-                  timeout: float = LOOKUP_TIMEOUT, split_media: Optional[Callable] = None,
-                  clock: Callable[[], float] = time.monotonic) -> Tuple[bool, str]:
+                  timeout: float = LOOKUP_TIMEOUT, split_media: Optional[Callable] = None) -> Tuple[bool, str]:
     """Frage in einem eigenen Gespräch stellen und die Antwort als Text holen.
     Braucht Hermes eine Freigabe, lehnt der Nachschlag ab: ohne Fenster gibt es
-    niemanden, der sie bewusst erteilt. Liefert (ok, Text oder Fehler)."""
-    start = clock()
+    niemanden, der sie bewusst erteilt. Liefert (ok, Text oder Fehler).
+
+    Der Strom wird in einem eigenen Thread gelesen, damit die Frist auch greift,
+    wenn der Server nur `: keepalive` schickt (parse_sse liefert die nicht aus).
+    Endet der Strom ohne run.completed, gilt das als Abbruch, nicht als Antwort."""
     session_id = session_id or lookup_session_id()
     try:
         client.ensure_session(session_id)
         run_id = client.start_run(session_id, question)
     except Exception as exc:
         return False, f"Hermes nicht erreichbar: {exc}"
-    text, denied = "", False
-    try:
-        for event in client.events(run_id):
-            name = str(event.get("event") or "")
-            if name == "message.delta":
-                text += str(event.get("delta") or "")
-            elif name == "approval.request":
-                denied = True
-                try:
-                    client.approve(run_id, "deny", str(event.get("request_id") or ""))
-                except Exception:
-                    pass
-            elif name == "run.completed":
-                output = event.get("output")
-                if isinstance(output, str) and output.strip():
-                    text = output
-                break
-            elif name in ("run.failed", "run.cancelled", "run.interrupted"):
-                reason = str(event.get("turn_exit_reason") or event.get("error") or name)
-                return False, f"Hermes hat abgebrochen: {reason}"
-            if clock() - start > timeout:
-                try:
-                    client.stop(run_id)
-                except Exception:
-                    pass
-                return False, "Keine Antwort in der Zeit. Im Chat-Fenster weiterfragen."
-    except Exception as exc:
-        return False, f"Verbindung abgebrochen: {exc}"
+    state: Dict[str, Any] = {"text": "", "denied": False, "error": None, "done": False}
+
+    def consume():
+        try:
+            for event in client.events(run_id):
+                name = str(event.get("event") or "")
+                if name == "message.delta":
+                    state["text"] += str(event.get("delta") or "")
+                elif name == "approval.request":
+                    state["denied"] = True
+                    try:
+                        client.approve(run_id, "deny", str(event.get("request_id") or ""))
+                    except Exception:
+                        pass
+                elif name == "run.completed":
+                    output = event.get("output")
+                    if isinstance(output, str) and output.strip():
+                        state["text"] = output
+                    state["done"] = True
+                    return
+                elif name in ("run.failed", "run.cancelled", "run.interrupted"):
+                    reason = str(event.get("turn_exit_reason") or event.get("error") or name)
+                    state["error"] = f"Hermes hat abgebrochen: {reason}"
+                    return
+            state["error"] = "Verbindung abgebrochen, bevor Hermes fertig war."
+        except Exception as exc:
+            state["error"] = f"Verbindung abgebrochen: {exc}"
+
+    reader = threading.Thread(target=consume, name="hermes-lookup-events", daemon=True)
+    reader.start()
+    reader.join(timeout)
+    if reader.is_alive():
+        # Der Lese-Thread endet, sobald der Server den gestoppten Run schließt
+        try:
+            client.stop(run_id)
+        except Exception:
+            pass
+        return False, "Keine Antwort in der Zeit. Im Chat-Fenster weiterfragen."
+    if not state["done"]:
+        return False, state["error"] or "Verbindung abgebrochen, bevor Hermes fertig war."
+    text = state["text"]
     if split_media is not None:
         text, _paths = split_media(text)
     text = text.strip()
-    if denied:
+    if state["denied"]:
         note = "Hermes wollte einen Befehl mit Freigabe ausführen; beim Nachschlagen wird das abgelehnt."
         text = (text + "\n\n" + note) if text else note
     return True, text or "(keine Antwort)"
