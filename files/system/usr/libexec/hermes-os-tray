@@ -9,6 +9,12 @@
 # Standardbibliothek); eine Freigabe-Anfrage erscheint zusätzlich als
 # KDE-Benachrichtigung mit Knöpfen (notify-send --action).
 #
+# Bilder gehen mit: aus dem Dateidialog, per Strg+V aus der Zwischenablage oder
+# ins Fenster gezogen. Vor dem Senden werden sie auf IMAGE_MAX_EDGE verkleinert
+# und als data-URL in die Nachricht gelegt. Bilder, die Hermes hinterlässt
+# (MEDIA:<pfad>-Tags), erscheinen im Verlauf; Bilder aus dem gespeicherten
+# Verlauf landen als Dateien unter ~/.cache/hermes-os/tray.
+#
 # Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
 #          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
 #                                    bekommt die den Befehl (Menü, Meta+H)
@@ -16,13 +22,16 @@
 # Umgebung: HERMES_OS_TRAY_DIR überschreibt /usr/share/hermes-os/tray
 #           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
 # =============================================================================
+import base64
 import datetime
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 
 TRAY_DIR = os.environ.get("HERMES_OS_TRAY_DIR", "/usr/share/hermes-os/tray")
 MAIN_QML = os.path.join(TRAY_DIR, "Main.qml")
@@ -33,6 +42,11 @@ DASHBOARD = "/usr/libexec/hermes-os-dashboard"      # kommt mit Teil 2 (docs/ein
 HERMES = "/usr/bin/hermes"
 GATEWAY_UNIT = "hermes-gateway.service"
 HEALTH_INTERVAL_MS = 5000
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "hermes-os", "tray")
+CACHE_KEEP_DAYS = 14          # Ablage- und Verlaufsbilder im Cache, danach weg
+IMAGE_MAX_COUNT = 4           # Bilder je Nachricht
+IMAGE_MAX_EDGE = 1600         # längste Kante beim Senden, in Pixeln
+IMAGE_MAX_BYTES = 1_500_000   # je Bild nach dem Kodieren; der API-Server nimmt 10 MB je Anfrage
 DEFAULT_SESSION = "hermes-os-tray"
 SESSION_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
                             "hermes-os", "tray.json")
@@ -57,6 +71,147 @@ CHOICE_LABEL = {"once": "Einmal erlauben", "session": "Für diese Sitzung", "alw
                 "deny": "Ablehnen"}
 
 
+def now_hhmm():
+    return datetime.datetime.now().strftime("%H:%M")
+
+
+def format_time(stamp):
+    """Zeitstempel des API-Servers (Epoche in Sekunden oder ISO-Text) als HH:MM,
+    mit Datum, wenn nicht von heute; leer, wenn unlesbar."""
+    try:
+        if isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
+            when = datetime.datetime.fromtimestamp(float(stamp))
+        elif isinstance(stamp, str) and stamp.strip():
+            when = datetime.datetime.fromisoformat(stamp.strip().replace("Z", "+00:00"))
+            if when.tzinfo is not None:
+                when = when.astimezone().replace(tzinfo=None)
+        else:
+            return ""
+    except (ValueError, OverflowError, OSError):
+        return ""
+    if when.date() == datetime.date.today():
+        return when.strftime("%H:%M")
+    return when.strftime("%d.%m. %H:%M")
+
+
+def local_path(value):
+    """Pfad aus QUrl, file:-Text oder Pfad-Text; None für alles andere (http, leer)."""
+    from PySide6.QtCore import QUrl
+    if isinstance(value, QUrl):
+        return value.toLocalFile() if value.isLocalFile() else None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.startswith("file:"):
+        return QUrl(text).toLocalFile() or None
+    if "://" in text:
+        return None
+    return os.path.expanduser(text)
+
+
+def file_url(path):
+    from PySide6.QtCore import QUrl
+    return QUrl.fromLocalFile(os.path.abspath(path)).toString()
+
+
+def store_data_url(url):
+    """data:image-URL aus dem Verlauf als Datei im Cache ablegen. Der Name kommt
+    aus dem Inhalt, dasselbe Bild landet also nur einmal. Pfad oder None."""
+    try:
+        suffix, data = hc.decode_data_url(url)
+    except ValueError:
+        return None
+    if len(data) > 20 * 1024 * 1024:
+        return None
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        path = os.path.join(CACHE_DIR, "verlauf-" + hashlib.sha1(data).hexdigest()[:20] + suffix)
+        if not os.path.isfile(path):
+            part = path + ".part"
+            with open(part, "wb") as f:
+                f.write(data)
+            os.replace(part, path)
+        return path
+    except OSError:
+        return None
+
+
+def prune_cache(days=CACHE_KEEP_DAYS):
+    """Alte Bilder im Cache löschen; Verlaufsbilder entstehen bei Bedarf neu."""
+    cutoff = time.time() - days * 86400
+    try:
+        with os.scandir(CACHE_DIR) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_file() and entry.stat().st_mtime < cutoff:
+                        os.unlink(entry.path)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def make_preview(path):
+    """Für die Anzeige: ein Bild über IMAGE_MAX_EDGE als verkleinerte Kopie im
+    Cache, damit der Verlauf keine 12-Megapixel-Fotos im Speicher hält (QML
+    lädt in voller Größe). Kleine Bilder bleiben, wie sie sind; bei Fehlern
+    kommt der Originalpfad zurück. Läuft auch im Arbeitsthread."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage, QImageReader
+    try:
+        size = QImageReader(path).size()      # liest nur den Kopf der Datei
+        if not size.isValid() or max(size.width(), size.height()) <= IMAGE_MAX_EDGE:
+            return path
+        stamp = f"{os.path.abspath(path)}|{os.path.getmtime(path)}|{os.path.getsize(path)}"
+        png = path.lower().endswith(".png")
+        target = os.path.join(CACHE_DIR, "vorschau-" + hashlib.sha1(stamp.encode("utf-8")).hexdigest()[:20]
+                              + (".png" if png else ".jpg"))
+        if os.path.isfile(target):
+            return target
+        image = QImage(path)
+        if image.isNull():
+            return path
+        image = image.scaled(IMAGE_MAX_EDGE, IMAGE_MAX_EDGE, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        part = target + ".part"
+        if image.save(part, "PNG" if png else "JPEG", 90):
+            os.replace(part, target)
+            return target
+    except OSError:
+        pass
+    return path
+
+
+def encode_image_for_upload(path):
+    """Bild laden, auf IMAGE_MAX_EDGE verkleinern und als data-URL kodieren: PNG,
+    wenn es Transparenz hat, sonst JPEG; wird es größer als IMAGE_MAX_BYTES,
+    stärker komprimieren. Läuft im Arbeitsthread, QImage braucht keine GUI."""
+    from PySide6.QtCore import QBuffer, QIODevice, Qt
+    from PySide6.QtGui import QImage
+    image = QImage(path)
+    if image.isNull():
+        raise ValueError(f"Kein lesbares Bild: {os.path.basename(path)}")
+    if max(image.width(), image.height()) > IMAGE_MAX_EDGE:
+        image = image.scaled(IMAGE_MAX_EDGE, IMAGE_MAX_EDGE, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+
+    def encode(fmt, quality):
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buf, fmt, quality)
+        buf.close()
+        return bytes(buf.data())
+
+    attempts = [("PNG", -1, "image/png")] if image.hasAlphaChannel() else []
+    attempts += [("JPEG", 88, "image/jpeg"), ("JPEG", 70, "image/jpeg"), ("JPEG", 50, "image/jpeg")]
+    for fmt, quality, mime in attempts:
+        data = encode(fmt, quality)
+        if 0 < len(data) <= IMAGE_MAX_BYTES:
+            return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
+    raise ValueError(f"Bild auch verkleinert zu groß: {os.path.basename(path)}")
+
+
 def approval_timeout_seconds():
     """approvals.timeout aus config.yaml (Vorgabe 300), für die Benachrichtigung."""
     try:
@@ -71,6 +226,7 @@ def check_only():
     """Trockenlauf ohne Fenster: Importe, Dateien, Client-Selbsttest."""
     problems = []
     try:
+        import PySide6.QtGui  # noqa: F401  (QImage fürs Verkleinern, QClipboard fürs Einfügen)
         import PySide6.QtQml  # noqa: F401
         import PySide6.QtQuickControls2  # noqa: F401
         import PySide6.QtWidgets  # noqa: F401
@@ -98,13 +254,13 @@ def main():
         sys.exit(check_only())
     want_show = "--show" in sys.argv
 
-    from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, QProcess, QTimer, Qt,
-                                QByteArray, Property, Signal, Slot)
-    from PySide6.QtGui import QIcon
+    from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, QProcess, QStandardPaths, QTimer,
+                                Qt, QByteArray, QUrl, Property, Signal, Slot)
+    from PySide6.QtGui import QDesktopServices, QIcon
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuickControls2 import QQuickStyle
-    from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QSystemTrayIcon
 
     # ---- Nur eine Instanz: die zweite reicht "show" an die erste weiter --------
     socket_name = f"hermes-os-tray-{os.getuid()}"
@@ -119,13 +275,18 @@ def main():
     QLocalServer.removeServer(socket_name)
 
     class MessageModel(QAbstractListModel):
-        """Verlauf für die QML-Liste: role (user, assistant, tool, info, error), text, meta."""
+        """Verlauf für die QML-Liste: role (user, assistant, tool, info, error), text, meta,
+        images (Liste von URLs, file: oder http) und time (HH:MM oder leer)."""
         _USER = int(Qt.ItemDataRole.UserRole)
-        RoleRole, TextRole, MetaRole = _USER + 1, _USER + 2, _USER + 3
+        RoleRole, TextRole, MetaRole, ImagesRole, TimeRole = _USER + 1, _USER + 2, _USER + 3, _USER + 4, _USER + 5
 
         def __init__(self):
             super().__init__()
             self._rows = []
+
+        @staticmethod
+        def _row(role, text, meta="", images=None, when=""):
+            return {"role": role, "text": text, "meta": meta or "", "images": list(images or []), "time": when or ""}
 
         def rowCount(self, parent=QModelIndex()):
             return 0 if parent.isValid() else len(self._rows)
@@ -135,16 +296,18 @@ def main():
                 return None
             row = self._rows[index.row()]
             return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"],
+                    self.ImagesRole: list(row["images"]), self.TimeRole: row["time"],
                     int(Qt.ItemDataRole.DisplayRole): row["text"]}.get(int(role))
 
         def roleNames(self):
             return {self.RoleRole: QByteArray(b"role"), self.TextRole: QByteArray(b"text"),
-                    self.MetaRole: QByteArray(b"meta")}
+                    self.MetaRole: QByteArray(b"meta"), self.ImagesRole: QByteArray(b"images"),
+                    self.TimeRole: QByteArray(b"time")}
 
-        def append(self, role, text, meta=""):
+        def append(self, role, text, meta="", images=None, when=""):
             n = len(self._rows)
             self.beginInsertRows(QModelIndex(), n, n)
-            self._rows.append({"role": role, "text": text, "meta": meta})
+            self._rows.append(self._row(role, text, meta, images, when))
             self.endInsertRows()
             return n
 
@@ -156,12 +319,25 @@ def main():
                 idx = self.index(row, 0)
                 self.dataChanged.emit(idx, idx, [self.TextRole, self.MetaRole])
 
+        def set_images(self, row, images):
+            if 0 <= row < len(self._rows):
+                self._rows[row]["images"] = list(images or [])
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, [self.ImagesRole])
+
         def text(self, row):
             return self._rows[row]["text"] if 0 <= row < len(self._rows) else ""
 
+        def remove(self, row):
+            if 0 <= row < len(self._rows):
+                self.beginRemoveRows(QModelIndex(), row, row)
+                del self._rows[row]
+                self.endRemoveRows()
+
         def replace(self, rows):
             self.beginResetModel()
-            self._rows = [{"role": r["role"], "text": r["text"], "meta": r.get("meta", "")} for r in rows]
+            self._rows = [self._row(r["role"], r["text"], r.get("meta", ""), r.get("images"), r.get("time", ""))
+                          for r in rows]
             self.endResetModel()
 
         def clear(self):
@@ -174,6 +350,7 @@ def main():
         versionChanged = Signal()
         showRequested = Signal()
         hideRequested = Signal()
+        attachmentsChanged = Signal()
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
@@ -185,6 +362,8 @@ def main():
             self._busy = False
             self._approval = {}
             self._version = ""
+            self._attachments = []      # {"path", "url", "name"} je Bild für die nächste Nachricht
+            prune_cache()
             self._model = MessageModel()
             self._settings = hc.gateway_settings()
             self._client = self._make_client()
@@ -273,6 +452,94 @@ def main():
         def sessionId(self):
             return self._session_id
 
+        # ---- Anhänge: Bilder für die nächste Nachricht ------------------------------
+        @Property("QVariantList", notify=attachmentsChanged)
+        def attachments(self):
+            return [dict(a) for a in self._attachments]
+
+        @Property(int, notify=attachmentsChanged)
+        def attachmentCount(self):
+            return len(self._attachments)
+
+        def _add_attachment(self, path):
+            path = os.path.abspath(path)
+            if not os.path.isfile(path) or not path.lower().endswith(hc.IMAGE_SUFFIXES):
+                return False
+            if any(a["path"] == path for a in self._attachments):
+                return True
+            if len(self._attachments) >= IMAGE_MAX_COUNT:
+                self._model.append("info", f"Höchstens {IMAGE_MAX_COUNT} Bilder je Nachricht.")
+                return False
+            # path geht später verkleinert zum Gateway, url zeigt die Vorschau im Fenster
+            self._attachments.append({"path": path, "url": file_url(make_preview(path)),
+                                      "name": os.path.basename(path)})
+            return True
+
+        @Slot(list)
+        def attachFiles(self, urls):
+            """Bilder anhängen: aus dem Dialog, der Zwischenablage oder ins Fenster gezogen.
+            Nimmt QUrl, file:-Text oder Pfade; alles andere als Bilddateien wird übergangen."""
+            before = len(self._attachments)
+            for value in urls or []:
+                path = local_path(value)
+                if path:
+                    self._add_attachment(path)
+            if len(self._attachments) != before:
+                self.attachmentsChanged.emit()
+
+        @Slot()
+        def attachFromDialog(self):
+            start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation) \
+                or os.path.expanduser("~")
+            files, _ = QFileDialog.getOpenFileNames(None, "Bild anhängen", start,
+                                                    "Bilder (*.png *.jpg *.jpeg *.gif *.webp *.bmp);;Alle Dateien (*)")
+            if files:
+                self.attachFiles(list(files))
+
+        @Slot(result=bool)
+        def pasteImage(self):
+            """Strg+V im Textfeld: liegt ein Bild in der Zwischenablage, wird es angehängt
+            (als PNG im Cache); liegen Bilddateien darin, ebenso. Sonst False, und das
+            Textfeld fügt wie gewohnt Text ein."""
+            clipboard = QApplication.clipboard()
+            image = clipboard.image()
+            if not image.isNull():
+                try:
+                    os.makedirs(CACHE_DIR, exist_ok=True)
+                    path = os.path.join(CACHE_DIR, "ablage-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
+                    if image.save(path, "PNG"):
+                        self.attachFiles([path])
+                        return True
+                except OSError:
+                    pass
+                return False
+            mime = clipboard.mimeData()
+            if mime is not None and mime.hasUrls():
+                paths = [u.toLocalFile() for u in mime.urls() if u.isLocalFile()]
+                paths = [p for p in paths if p.lower().endswith(hc.IMAGE_SUFFIXES)]
+                if paths:
+                    self.attachFiles(paths)
+                    return True
+            return False
+
+        @Slot(int)
+        def removeAttachment(self, index):
+            if 0 <= index < len(self._attachments):
+                del self._attachments[index]
+                self.attachmentsChanged.emit()
+
+        @Slot()
+        def clearAttachments(self):
+            if self._attachments:
+                self._attachments = []
+                self.attachmentsChanged.emit()
+
+        @Slot(str)
+        def openImage(self, url):
+            """Bild im Bildbetrachter öffnen (Klick auf ein Bild im Verlauf)."""
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+
         def _set_state(self, state):
             if state != self._state:
                 self._state = state
@@ -337,7 +604,25 @@ def main():
                 out = {"ok": False, "rows": [], "error": ""}
                 try:
                     client.ensure_session(sid)
-                    out["rows"] = client.history(sid)
+                    rows = []
+                    for r in client.history(sid):
+                        # Bilder aus dem Verlauf kommen als data-URLs; QML lädt die nicht,
+                        # also als Datei in den Cache. http-Adressen bleiben, wie sie sind.
+                        images = []
+                        for url in r.get("images") or []:
+                            if url.startswith("data:"):
+                                path = store_data_url(url)
+                                if path:
+                                    images.append(file_url(make_preview(path)))
+                            else:
+                                images.append(url)
+                        text = r["content"]
+                        if r["role"] == "user" and "[screenshot]" in text:
+                            # Hermes speichert Bildteile nur als Platzhalter (agent/session_persistence.py)
+                            text = text.replace("[screenshot]", "(Bild mitgeschickt)")
+                        rows.append({"role": r["role"], "text": text, "images": images,
+                                     "time": format_time(r.get("timestamp"))})
+                    out["rows"] = rows
                     out["ok"] = True
                 except hc.GatewayError as exc:
                     out["error"] = str(exc)
@@ -351,7 +636,7 @@ def main():
                 self._model.append("info", f"Verlauf nicht geladen: {out.get('error')}")
                 return
             self._session_ready = True
-            self._model.replace([{"role": r["role"], "text": r["content"]} for r in out["rows"]])
+            self._model.replace(out["rows"])
 
         @Slot()
         def newConversation(self):
@@ -367,9 +652,11 @@ def main():
         @Slot(str)
         def send(self, text):
             text = text.strip()
-            if not text or self._busy or self._state not in ("ready",):
+            attachments = list(self._attachments)
+            if (not text and not attachments) or self._busy or self._state not in ("ready",):
                 return
-            self._model.append("user", text)
+            self.clearAttachments()
+            self._model.append("user", text, images=[a["url"] for a in attachments], when=now_hhmm())
             self._assistant_row = -1
             self._set_busy(True)
             self._set_state("busy")
@@ -378,21 +665,46 @@ def main():
             def work():
                 run_id = ""
                 try:
+                    # Verkleinern und Kodieren hier im Thread, damit das Fenster nicht hakt
+                    images = [encode_image_for_upload(a["path"]) for a in attachments]
                     client.ensure_session(sid)
-                    run_id = client.start_run(sid, text)
+                    run_id = client.start_run(sid, text, images)
                     self._runEvent.emit("run.accepted", {"run_id": run_id})
                     for event in client.events(run_id):
                         self._runEvent.emit(str(event.get("event") or ""), event)
                     self._runEvent.emit("stream.closed", {"run_id": run_id})
-                except hc.GatewayError as exc:
+                except (hc.GatewayError, ValueError, OSError) as exc:
                     self._runEvent.emit("client.error", {"run_id": run_id, "message": str(exc)})
 
             threading.Thread(target=work, name="hermes-run", daemon=True).start()
 
         def _assistant(self):
             if self._assistant_row < 0:
-                self._assistant_row = self._model.append("assistant", "")
+                self._assistant_row = self._model.append("assistant", "", when=now_hhmm())
             return self._assistant_row
+
+        def _finish_answer(self, output):
+            """Antwort abschließen: `output` des Abschlussereignisses ersetzt den gestreamten
+            Text, MEDIA:<pfad>-Tags werden zu Bildern, eine leere Blase verschwindet."""
+            row = self._assistant_row
+            if isinstance(output, str) and output.strip():
+                final = output
+            elif row >= 0:
+                final = self._model.text(row)
+            else:
+                return
+            clean, paths = hc.split_media_tags(final)
+            images = [file_url(make_preview(p)) for p in paths if os.path.isfile(p)]
+            if not clean.strip() and not images:
+                if row >= 0:
+                    self._model.remove(row)
+                    self._assistant_row = -1
+                return
+            row = self._assistant()
+            if clean != self._model.text(row):
+                self._model.set_text(row, clean)
+            if images:
+                self._model.set_images(row, images)
 
         def _on_run_event(self, name, event):
             if name == "run.accepted":
@@ -406,8 +718,9 @@ def main():
                 self._model.append("tool", f"{tool}: {preview[0][:160]}" if preview else tool, "started")
             elif name == "tool.completed":
                 tool = str(event.get("tool") or "")
-                mark = "Fehler" if event.get("error") else f"{event.get('duration', 0)} s"
-                self._model.append("tool", f"{tool} fertig ({mark})", "completed")
+                failed = bool(event.get("error"))
+                mark = "Fehler" if failed else f"{event.get('duration', 0)} s"
+                self._model.append("tool", f"{tool} fertig ({mark})", "error" if failed else "completed")
             elif name == "approval.request":
                 choices = [c for c in (event.get("choices") or ["once", "deny"]) if c in hc.APPROVAL_CHOICES]
                 self._approval = {
@@ -423,9 +736,7 @@ def main():
             elif name == "approval.responded":
                 self._clear_approval()
             elif name in ("run.completed", "run.failed", "run.cancelled", "run.interrupted"):
-                output = event.get("output")
-                if isinstance(output, str) and output.strip():
-                    self._model.set_text(self._assistant(), output)
+                self._finish_answer(event.get("output"))
                 if name == "run.failed":
                     reason = str(event.get("turn_exit_reason") or event.get("error") or "unbekannt")
                     self._model.append("error", f"Hermes hat abgebrochen: {reason}")

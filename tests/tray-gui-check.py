@@ -4,10 +4,10 @@
 # ohne Gateway)
 # =============================================================================
 # Lädt tray/Main.qml mit einem Stub statt des echten Backends und spielt die
-# Zustände durch: Gateway aus, bereit, Nachricht senden, Streaming, Freigabe
-# mit Knöpfen, Schlüssel fehlt. Jede QML-Warnung ist ein Fehler, damit ein
-# kaputtes Binding oder ein umbenanntes Kirigami-Element schon im Image-Build
-# auffällt.
+# Zustände durch: Gateway aus, bereit, Nachricht senden, Bilder anhängen und
+# entfernen, Streaming mit Bildern in den Blasen, Freigabe mit Knöpfen,
+# Schlüssel fehlt. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
+# oder ein umbenanntes Kirigami-Element schon im Image-Build auffällt.
 #
 # Aufruf:
 #   tests/tray-gui-check.py [--qml-dir DIR] [--out DIR]
@@ -17,14 +17,15 @@
 import argparse
 import os
 import sys
+import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.*=false")
 
 from PySide6.QtCore import (QAbstractListModel, QByteArray, QDeadlineTimer, QMetaObject, QModelIndex,
-                            QObject, Qt, Property, Signal, Slot, qInstallMessageHandler, QtMsgType)
-from PySide6.QtGui import QGuiApplication
+                            QObject, QUrl, Qt, Property, Signal, Slot, qInstallMessageHandler, QtMsgType)
+from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -35,7 +36,7 @@ IGNORE = ("MESA-EGL", "egl: failed", "Could not register app ID", "QXcbConnectio
 class StubModel(QAbstractListModel):
     """Dieselben Rollen wie MessageModel in hermes-os-tray."""
     _USER = int(Qt.ItemDataRole.UserRole)
-    RoleRole, TextRole, MetaRole = _USER + 1, _USER + 2, _USER + 3
+    RoleRole, TextRole, MetaRole, ImagesRole, TimeRole = _USER + 1, _USER + 2, _USER + 3, _USER + 4, _USER + 5
 
     def __init__(self):
         super().__init__()
@@ -48,16 +49,18 @@ class StubModel(QAbstractListModel):
         if not index.isValid():
             return None
         row = self._rows[index.row()]
-        return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"]}.get(int(role))
+        return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"],
+                self.ImagesRole: list(row["images"]), self.TimeRole: row["time"]}.get(int(role))
 
     def roleNames(self):
         return {self.RoleRole: QByteArray(b"role"), self.TextRole: QByteArray(b"text"),
-                self.MetaRole: QByteArray(b"meta")}
+                self.MetaRole: QByteArray(b"meta"), self.ImagesRole: QByteArray(b"images"),
+                self.TimeRole: QByteArray(b"time")}
 
-    def append(self, role, text, meta=""):
+    def append(self, role, text, meta="", images=None, when=""):
         n = len(self._rows)
         self.beginInsertRows(QModelIndex(), n, n)
-        self._rows.append({"role": role, "text": text, "meta": meta})
+        self._rows.append({"role": role, "text": text, "meta": meta, "images": list(images or []), "time": when})
         self.endInsertRows()
         return n
 
@@ -65,6 +68,11 @@ class StubModel(QAbstractListModel):
         self._rows[row]["text"] = text
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.TextRole])
+
+    def set_images(self, row, images):
+        self._rows[row]["images"] = list(images or [])
+        idx = self.index(row, 0)
+        self.dataChanged.emit(idx, idx, [self.ImagesRole])
 
     def clear(self):
         self.beginResetModel()
@@ -80,6 +88,7 @@ class StubBackend(QObject):
     versionChanged = Signal()
     showRequested = Signal()
     hideRequested = Signal()
+    attachmentsChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -87,6 +96,7 @@ class StubBackend(QObject):
         self._busy = False
         self._approval = {}
         self._configured = False
+        self._attachments = []
         self._model = StubModel()
         self.calls = []
 
@@ -150,9 +160,58 @@ class StubBackend(QObject):
     def sessionId(self):
         return "hermes-os-tray"
 
+    # Anhänge wie im echten Backend: Liste von {"path", "url", "name"}
+    @Property("QVariantList", notify=attachmentsChanged)
+    def attachments(self):
+        return [dict(a) for a in self._attachments]
+
+    @Property(int, notify=attachmentsChanged)
+    def attachmentCount(self):
+        return len(self._attachments)
+
+    @Slot(list)
+    def attachFiles(self, urls):
+        for value in urls or []:
+            if isinstance(value, QUrl):
+                path = value.toLocalFile()
+            elif str(value).startswith("file:"):
+                path = QUrl(str(value)).toLocalFile()
+            else:
+                path = str(value)
+            self.calls.append(("attach", os.path.basename(path)))
+            self._attachments.append({"path": path, "url": QUrl.fromLocalFile(path).toString(),
+                                      "name": os.path.basename(path)})
+        self.attachmentsChanged.emit()
+
+    @Slot()
+    def attachFromDialog(self):
+        self.calls.append(("dialog",))
+
+    @Slot(result=bool)
+    def pasteImage(self):
+        self.calls.append(("paste",))
+        return False
+
+    @Slot(int)
+    def removeAttachment(self, index):
+        self.calls.append(("remove", index))
+        if 0 <= index < len(self._attachments):
+            del self._attachments[index]
+            self.attachmentsChanged.emit()
+
+    @Slot()
+    def clearAttachments(self):
+        self._attachments = []
+        self.attachmentsChanged.emit()
+
+    @Slot(str)
+    def openImage(self, url):
+        self.calls.append(("open", url))
+
     @Slot(str)
     def send(self, text):
         self.calls.append(("send", text))
+        self.clearAttachments()
 
     @Slot()
     def stopRun(self):
@@ -190,6 +249,18 @@ class StubBackend(QObject):
     @Slot()
     def showWindow(self):
         self.calls.append(("show",))
+
+
+def make_pictures(folder):
+    """Zwei kleine PNGs als Anhänge und Bilder im Verlauf."""
+    paths = []
+    for i, (w, h, color) in enumerate(((96, 64, "#3daee9"), (48, 80, "#f67400"))):
+        img = QImage(w, h, QImage.Format.Format_ARGB32)
+        img.fill(QColor(color))
+        path = os.path.join(folder, f"bild{i}.png")
+        img.save(path)
+        paths.append(path)
+    return paths
 
 
 def main():
@@ -242,6 +313,11 @@ def main():
     def child(name):
         return root.findChild(QObject, name)
 
+    def count(name):
+        # Delegates aus Repeater und ListView findet nur die QML-Seite (root.countNamed);
+        # PySide verlangt beide Parameter, None steht für den Fensterinhalt
+        return int(root.countNamed(name, None))
+
     def step(label, ok, detail=""):
         nonlocal fail
         new = warnings[step.mark:]
@@ -268,16 +344,17 @@ def main():
         settle(100)
     step("Einrichten-Knopf ruft backend.openSetup", ("setup",) in backend.calls, str(backend.calls))
 
-    # 2. Bereit: Hinweis weg, Textfeld an, Senden nur mit Text
+    # 2. Bereit: Hinweis weg, Textfeld an, Senden nur mit Text oder Bild
     backend.set_state("ready", configured=True)
     settle()
-    inp, send_btn = child("inputField"), child("sendButton")
+    inp, send_btn, attach_btn = child("inputField"), child("sendButton"), child("attachButton")
     shot("ready-empty")
-    step("Bereit: Hinweis verschwindet, Textfeld aktiv, Senden ohne Text aus",
+    step("Bereit: Hinweis verschwindet, Textfeld und Anhängen aktiv, Senden ohne Text aus",
          off_box is not None and not off_box.property("visible") and inp is not None and inp.property("enabled")
+         and attach_btn is not None and attach_btn.property("enabled")
          and send_btn is not None and not send_btn.property("enabled"),
          f"offBox={off_box and off_box.property('visible')} input={inp and inp.property('enabled')} "
-         f"send={send_btn and send_btn.property('enabled')}")
+         f"attach={attach_btn and attach_btn.property('enabled')} send={send_btn and send_btn.property('enabled')}")
 
     # 3. Nachricht senden: Textfeld leert sich, backend.send bekommt den Text
     root.typeInput("  Welches Image ist gebootet?  ")
@@ -290,24 +367,58 @@ def main():
          and inp is not None and inp.property("text") == "",
          f"enabled={send_enabled} sent={sent} calls={backend.calls} text={inp and inp.property('text')!r}")
 
-    # 4. Streaming: Zeilen im Verlauf, Stopp-Knopf während busy
-    backend._model.append("user", "Welches Image ist gebootet?")
-    row = backend._model.append("assistant", "")
+    # 4. Bilder anhängen: Streifen mit Vorschauen, Senden auch ohne Text, Entfernen,
+    #    Senden räumt den Streifen weg
+    folder = tempfile.mkdtemp(prefix="hermes-tray-")
+    pics = make_pictures(folder)
+    backend.attachFiles([QUrl.fromLocalFile(pics[0]), pics[1]])
+    settle()
+    strip = child("attachmentStrip")
+    thumbs = count("attachmentThumb")
+    shot("attachments")
+    step("Anhänge: Streifen sichtbar mit zwei Vorschauen, Senden ohne Text möglich",
+         strip is not None and strip.property("visible") and thumbs == 2
+         and send_btn is not None and send_btn.property("enabled"),
+         f"strip={strip and strip.property('visible')} thumbs={thumbs} send={send_btn and send_btn.property('enabled')}")
+    clicked = root.clickNamed("attachmentRemove")
+    settle(200)
+    thumbs = count("attachmentThumb")
+    step("Anhang entfernen: Knopf ruft backend.removeAttachment, eine Vorschau bleibt",
+         clicked and ("remove", 0) in backend.calls and thumbs == 1,
+         f"clicked={clicked} calls={backend.calls} thumbs={thumbs}")
+    root.typeInput("Was ist auf dem Bild?")
+    settle(100)
+    sent = root.sendCurrent()
+    settle(200)
+    step("Senden mit Bild: backend.send bekommt den Text, Streifen verschwindet",
+         sent and ("send", "Was ist auf dem Bild?") in backend.calls and strip is not None
+         and not strip.property("visible"),
+         f"sent={sent} calls={backend.calls} strip={strip and strip.property('visible')}")
+
+    # 5. Streaming: Zeilen im Verlauf, Bilder in beiden Blasen, Stopp-Knopf während busy
+    backend._model.append("user", "Was zeigt dieser Screenshot?", images=[QUrl.fromLocalFile(pics[0]).toString()],
+                          when="14:02")
+    row = backend._model.append("assistant", "", when="14:02")
     backend.set_busy(True)
     backend.set_state("busy")
     settle()
+    shot("typing")
     busy_stop = send_btn is not None and send_btn.property("text") == "Stopp" and send_btn.property("enabled")
     backend._model.append("tool", "os_status", "started")
-    backend._model.set_text(row, "Gebootet ist **hermes-os** `44.20260926`.")
+    backend._model.set_text(row, "Gebootet ist **hermes-os** `44.20260926`. Hier ein Bild dazu:")
+    backend._model.set_images(row, [QUrl.fromLocalFile(pics[1]).toString()])
     backend._model.append("tool", "os_status fertig (0.3 s)", "completed")
     settle()
     lv = child("messageList")
+    images = count("bubbleImage")
     shot("streaming")
-    step("Streaming: Stopp-Knopf während der Arbeit, vier Zeilen im Verlauf",
-         busy_stop and lv is not None and lv.property("count") == 4 and lv.property("contentHeight") > 0,
-         f"stop={busy_stop} count={lv and lv.property('count')} h={lv and lv.property('contentHeight')}")
+    step("Streaming: Stopp-Knopf während der Arbeit, vier Zeilen im Verlauf, zwei Bilder in Blasen",
+         busy_stop and lv is not None and lv.property("count") == 4 and lv.property("contentHeight") > 0
+         and images == 2,
+         f"stop={busy_stop} count={lv and lv.property('count')} h={lv and lv.property('contentHeight')} "
+         f"images={images}")
 
-    # 5. Freigabe: Kasten mit den erlaubten Knöpfen, Klick ruft backend.approve
+    # 6. Freigabe: Karte mit den erlaubten Knöpfen, Klick ruft backend.approve
     backend.set_approval({"request_id": "req-1", "command": "sudo bootc upgrade --check",
                           "description": "Befehl berührt das laufende System",
                           "choices": ["once", "session", "deny"]})
@@ -323,19 +434,22 @@ def main():
     if once is not None:
         QMetaObject.invokeMethod(once, "trigger")
         settle(100)
-    step("Freigabe: Kasten mit Befehl, Immer-Knopf versteckt, Einmal ruft backend.approve('once')",
+    step("Freigabe: Karte mit Befehl, Immer-Knopf versteckt, Einmal ruft backend.approve('once')",
          visible_ok and text_ok and ("approve", "once") in backend.calls,
          f"visible={visible_ok} text={text_ok} calls={backend.calls}")
+    backend._model.append("info", "Freigabe: Einmal erlauben")
     backend.set_approval({})
     backend.set_busy(False)
     backend.set_state("ready")
     settle()
-    step("Freigabe beantwortet: Kasten verschwindet, Senden-Knopf zurück",
+    shot("answered")
+    step("Freigabe beantwortet: Karte verschwindet, Senden-Knopf zurück, Hinweis im Verlauf",
          box is not None and not box.property("visible") and send_btn is not None
-         and send_btn.property("text") == "Senden",
-         f"visible={box and box.property('visible')} btn={send_btn and send_btn.property('text')}")
+         and send_btn.property("text") == "Senden" and lv is not None and lv.property("count") == 5,
+         f"visible={box and box.property('visible')} btn={send_btn and send_btn.property('text')} "
+         f"count={lv and lv.property('count')}")
 
-    # 6. Schlüssel fehlt: Hinweis mit "Gateway starten"
+    # 7. Schlüssel fehlt: Hinweis mit "Gateway starten"
     backend.set_state("nokey", configured=True)
     settle()
     shot("nokey")
@@ -348,12 +462,12 @@ def main():
          f"offBox={off_box and off_box.property('visible')} gw={gw_act and gw_act.property('visible')} "
          f"calls={backend.calls}")
 
-    # 7. Neues Gespräch leert die Liste
+    # 8. Neues Gespräch leert die Liste
     backend.set_state("ready", configured=True)
     settle()
     backend.newConversation()
     settle()
-    step("Neues Gespräch: Verlauf leer, Platzhalter darf ohne Warnung erscheinen",
+    step("Neues Gespräch: Verlauf leer, Begrüßung darf ohne Warnung erscheinen",
          lv is not None and lv.property("count") == 0, f"count={lv and lv.property('count')}")
 
     root.close()

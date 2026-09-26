@@ -13,7 +13,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage, Plan für das Dashboard |
-| `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
+| `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 

@@ -10,7 +10,8 @@ Benutzte Endpunkte (Hermes v2026.9.24):
   GET  /health                          ohne Schlüssel, Lebenszeichen
   POST /api/sessions                    Gespräch anlegen (201) oder vorhanden (409)
   GET  /api/sessions/{id}/messages      Verlauf, ?order=latest&limit=N chronologisch
-  POST /v1/runs                         Nachricht senden, 202 mit run_id
+  POST /v1/runs                         Nachricht senden, 202 mit run_id; mit Bildern geht
+                                        input als Nachrichtenliste mit text- und image_url-Teilen
   GET  /v1/runs/{id}/events             Ereignis-Strom (SSE): message.delta, tool.*,
                                         approval.request, run.completed|failed|cancelled
   POST /v1/runs/{id}/approval           Freigabe beantworten (once|session|always|deny)
@@ -18,16 +19,24 @@ Benutzte Endpunkte (Hermes v2026.9.24):
 
 Der einfache Sessions-Strom (/api/sessions/{id}/chat/stream) liefert keine
 Freigaben, deshalb läuft der Chat über Runs.
+
+Bilder: hinein als data:image-URLs in image_url-Teilen (der Server nimmt http(s)
+und data:image/...), heraus als MEDIA:<pfad>-Tags im Antworttext, die Hermes'
+Werkzeuge (Screenshot, image_generate) hinterlassen; der Runs-Endpunkt löst sie
+nicht auf, das macht split_media_tags hier. Im Verlauf kommen Nutzer-Nachrichten
+mit Bildern als Liste von Teilen zurück, split_content trennt Text und Bilder.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8642
@@ -164,6 +173,106 @@ def parse_sse(lines: Iterable[str]) -> Iterator[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Bilder: Inhaltsteile, data-URLs, MEDIA-Tags
+# ---------------------------------------------------------------------------
+
+IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+              ".webp": "image/webp", ".bmp": "image/bmp"}
+IMAGE_SUFFIXES = tuple(IMAGE_MIME)
+DATA_URL_SUFFIX = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/gif": ".gif",
+                   "image/webp": ".webp", "image/bmp": ".bmp"}
+
+# MEDIA:<pfad>-Tags, mit denen Hermes' Werkzeuge Dateien in die Antwort legen.
+# Muster nach MEDIA_TAG_CLEANUP_RE in gateway/platforms/base.py, hier nur für
+# Bild-Endungen: der Pfad darf in Backticks oder Anführungszeichen stehen, sonst
+# muss er mit / oder ~/ beginnen; Leerzeichen im Pfad sind erlaubt, solange der
+# Tag mit einer Bild-Endung endet.
+MEDIA_TAG_RE = re.compile(
+    r"""[`"'*_]{0,3}MEDIA:\s*(?P<path>`[^`\n]+?`|"[^"\n]+?"|'[^'\n]+?'"""
+    r"""|(?:~/|/)\S+?(?:[^\S\n]+\S+?)*?\.(?:png|jpe?g|gif|webp|bmp))"""
+    r"""(?=[\s`"'*_,;:)\]}\[]|MEDIA:|\.(?:\s|$)|$)[`"'*_]{0,3}\.?""", re.IGNORECASE)
+
+
+def image_part(data_url: str) -> Dict[str, Any]:
+    """Ein Bild als Inhaltsteil, so wie /v1/responses und /v1/runs ihn kennen."""
+    return {"type": "image_url", "image_url": {"url": data_url}}
+
+
+def split_content(content: Any) -> Tuple[str, List[str]]:
+    """Text und Bild-URLs aus einem Nachrichteninhalt des API-Servers: ein String
+    bleibt Text, eine Liste von Teilen liefert die Texte (mit Zeilenumbruch
+    verbunden) und die URLs der image_url-Teile (data: oder http)."""
+    if isinstance(content, str):
+        return content, []
+    texts: List[str] = []
+    images: List[str] = []
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, str):
+                if part.strip():
+                    texts.append(part)
+                continue
+            if not isinstance(part, dict):
+                continue
+            ptype = str(part.get("type") or "").strip().lower()
+            if ptype in ("text", "input_text", "output_text"):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    texts.append(text)
+            elif ptype in ("image_url", "input_image"):
+                ref = part.get("image_url")
+                url = ref.get("url") if isinstance(ref, dict) else ref
+                if isinstance(url, str) and url.strip():
+                    images.append(url.strip())
+    return "\n".join(texts), images
+
+
+def split_media_tags(text: str) -> Tuple[str, List[str]]:
+    """MEDIA:<pfad>-Tags aus einem Antworttext lösen: (Text ohne die Tags, Pfade in
+    Reihenfolge, ~ aufgelöst). Tags mit anderen Endungen (PDF, Audio) bleiben
+    stehen; ob eine Datei existiert, prüft der Aufrufer."""
+    if not text or "MEDIA:" not in text:
+        return text or "", []
+    paths: List[str] = []
+
+    def take(match: "re.Match[str]") -> str:
+        raw = match.group("path").strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "`\"'":
+            raw = raw[1:-1].strip()
+        if not raw.lower().endswith(IMAGE_SUFFIXES):
+            return match.group(0)
+        path = os.path.expanduser(raw)
+        if path not in paths:
+            paths.append(path)
+        return ""
+
+    cleaned = MEDIA_TAG_RE.sub(take, text)
+    if paths:
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, paths
+
+
+def decode_data_url(url: str) -> Tuple[str, bytes]:
+    """data:image/...;base64,... in (Dateiendung, Bytes); ValueError bei allem anderen."""
+    if not url.startswith("data:") or "," not in url:
+        raise ValueError("keine data-URL")
+    header, _, payload = url.partition(",")
+    mime = header[len("data:"):].split(";", 1)[0].strip().lower()
+    if not mime.startswith("image/"):
+        raise ValueError(f"kein Bild: {mime or 'ohne Typ'}")
+    if ";base64" not in header.lower():
+        raise ValueError("data-URL ohne base64")
+    try:
+        data = base64.b64decode(payload)
+    except ValueError as exc:
+        raise ValueError(f"base64 defekt: {exc}") from None
+    if not data:
+        raise ValueError("data-URL ohne Inhalt")
+    return DATA_URL_SUFFIX.get(mime, ".img"), data
+
+
+# ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
@@ -250,22 +359,38 @@ class GatewayClient:
             raise
 
     def history(self, session_id: str, limit: int = 40) -> List[Dict[str, Any]]:
-        """Die letzten Nachrichten des Gesprächs, chronologisch, nur Nutzer und Assistent."""
+        """Die letzten Nachrichten des Gesprächs, chronologisch, nur Nutzer und Assistent.
+        `content` ist der Text, `images` die Bild-URLs (data: oder http) einer Nachricht."""
         data = self._json("GET", f"/api/sessions/{session_id}/messages?order=latest&limit={int(limit)}")
         out: List[Dict[str, Any]] = []
         for m in data.get("data") or []:
             if not isinstance(m, dict):
                 continue
             role = str(m.get("role") or "")
-            content = m.get("content")
-            if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            if role not in ("user", "assistant"):
                 continue
-            out.append({"role": role, "content": content, "timestamp": m.get("timestamp")})
+            text, images = split_content(m.get("content"))
+            if not text.strip() and not images:
+                continue
+            out.append({"role": role, "content": text, "images": images, "timestamp": m.get("timestamp")})
         return out
 
-    def start_run(self, session_id: str, text: str) -> str:
-        """Nachricht als Run schicken; liefert die run_id (202)."""
-        data = self._json("POST", "/v1/runs", {"input": text, "session_id": session_id})
+    def start_run(self, session_id: str, text: str, images: Optional[List[str]] = None) -> str:
+        """Nachricht als Run schicken; liefert die run_id (202). Mit Bildern (data-URLs)
+        geht `input` als Nachrichtenliste mit Inhaltsteilen: der Server nimmt den
+        Inhalt der letzten Nachricht als Nutzer-Nachricht und reicht Text- und
+        Bildteile an das Modell weiter (ohne Vision-Modell beschreibt Hermes das
+        Bild selbst mit vision_analyze)."""
+        body: Dict[str, Any] = {"session_id": session_id}
+        if images:
+            parts: List[Dict[str, Any]] = []
+            if text.strip():
+                parts.append({"type": "text", "text": text})
+            parts.extend(image_part(url) for url in images)
+            body["input"] = [{"role": "user", "content": parts}]
+        else:
+            body["input"] = text
+        data = self._json("POST", "/v1/runs", body)
         run_id = str(data.get("run_id") or "")
         if not run_id:
             raise GatewayError(f"Run ohne run_id angelegt: {data}")
@@ -328,6 +453,33 @@ def self_test() -> List[str]:
         s = gateway_settings(Path(tmp))
         if s["port"] != 8643 or not s["key_usable"]:
             problems.append(f"gateway_settings: {s}")
+    text, images = split_content([{"type": "text", "text": "Schau"}, "noch",
+                                  {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+                                  {"type": "input_image", "image_url": "https://x/y.png"}, 7])
+    if text != "Schau\nnoch" or images != ["data:image/png;base64,AA==", "https://x/y.png"]:
+        problems.append(f"split_content: {text!r} {images}")
+    if split_content("nur Text") != ("nur Text", []):
+        problems.append("split_content: String muss unverändert bleiben")
+    cleaned, paths = split_media_tags("Hier: MEDIA:/tmp/shot.png\n\nund `MEDIA:~/Bilder/a b.png`. Ende")
+    if paths != ["/tmp/shot.png", os.path.expanduser("~/Bilder/a b.png")] or "MEDIA:" in cleaned \
+       or not cleaned.startswith("Hier:") or not cleaned.endswith("Ende"):
+        problems.append(f"split_media_tags: {cleaned!r} {paths}")
+    cleaned, paths = split_media_tags("Bericht: MEDIA:/tmp/report.pdf")
+    if paths or "MEDIA:/tmp/report.pdf" not in cleaned:
+        problems.append(f"split_media_tags: PDF-Tag muss stehen bleiben: {cleaned!r} {paths}")
+    if split_media_tags("") != ("", []) or split_media_tags("ohne Tag") != ("ohne Tag", []):
+        problems.append("split_media_tags: Text ohne Tag muss unverändert bleiben")
+    try:
+        if decode_data_url("data:image/png;base64,aGFsbG8=") != (".png", b"hallo"):
+            problems.append("decode_data_url: Endung oder Inhalt falsch")
+    except ValueError as exc:
+        problems.append(f"decode_data_url: {exc}")
+    for bad in ("data:text/plain;base64,aGFsbG8=", "https://x/y.png", "data:image/png,klartext"):
+        try:
+            decode_data_url(bad)
+            problems.append(f"decode_data_url: {bad!r} muss abgewiesen werden")
+        except ValueError:
+            pass
     return problems
 
 
