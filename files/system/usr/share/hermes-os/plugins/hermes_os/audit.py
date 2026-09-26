@@ -67,6 +67,7 @@ GROUP_LABEL = {
     "security": "SELinux",
     "ujust": "ujust-Rezept",
     "nesting": "Zu tief verschachtelt",
+    "firmware": "Firmware",
     "hook-error": "Grenzprüfung gescheitert",
     "hermes": "Hermes-Gefahrenerkennung",
     "app": "App-Start",

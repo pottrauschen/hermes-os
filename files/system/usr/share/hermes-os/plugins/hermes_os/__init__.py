@@ -119,9 +119,15 @@ def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, *
     Aufruf in den menschlichen Freigabe-Dialog, {'action': 'block', ...}
     verweigert ihn. Scheitert die Prüfung, fragt der Hook (fail-closed)."""
     try:
-        if tool_name != "terminal" or not isinstance(args, dict):
+        if not isinstance(args, dict):
             return None
-        hit = boundary.classify_system_command(str(args.get("command") or ""))
+        if tool_name == "terminal":
+            text = args.get("command")
+        elif tool_name == "process_manage" and args.get("action") in ("write", "submit"):
+            text = args.get("data")     # Text, der in eine Hintergrund-Shell getippt wird
+        else:
+            return None
+        hit = boundary.classify_system_command(str(text or ""))
         if not hit:
             return None
         audit.record_flagged(hit, args, **_kw)  # Protokoll (audit.py): nur merken
