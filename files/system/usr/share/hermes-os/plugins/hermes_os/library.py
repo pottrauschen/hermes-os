@@ -805,6 +805,9 @@ def mirror_entry(entry: Dict[str, str], depth: int = MIRROR_DEPTH, max_pages: in
     except (sqlite3.Error, OSError) as exc:
         status["status"] = "error"
         fail(entry["source"], f"Index: {exc}")
+    except Exception as exc:  # noqa: BLE001 — kein Lauf bleibt als „running“ im Index stehen
+        status["status"] = "error"
+        fail(entry["source"], f"{type(exc).__name__}: {exc}")
     finally:
         status["finished"] = time.time()
         status["current"] = ""

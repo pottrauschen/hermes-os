@@ -794,11 +794,11 @@ def main():
          ("libdrop", ["https://docs.kde.org/", "file:///tmp/notiz.txt"], "") in backend.calls and count("libraryRow") == 2
          and msg is not None and msg.property("visible") and "Eingetragen" in str(dropped),
          f"calls={backend.calls[-1:]} rows={count('libraryRow')} msg={dropped!r}")
-    mirror_text = child("libraryMirrorText")
+    mirror_text = root.findNamed("libraryMirrorText", None)   # Delegate: nur die QML-Seite findet ihn
     before = str(mirror_text.property("text")) if mirror_text is not None else ""
     clicked = root.clickNamed("libraryMirrorButton")
     settle(200)
-    mirror_btn = child("libraryMirrorButton")
+    mirror_btn = root.findNamed("libraryMirrorButton", None)
     running_text = str(mirror_text.property("text")) if mirror_text is not None else ""
     shot("library-mirroring")
     step("Bibliothek: Spiegeln startet backend.libraryMirrorStart, Zeile zeigt den Fortschritt, Knopf wird zu Abbrechen",
@@ -830,7 +830,7 @@ def main():
     step("Bibliothek: leere Suche räumt die Treffer weg", count("librarySearchHit") == 0, f"hits={count('librarySearchHit')}")
     edit_clicked = root.clickNamed("libraryEdit")
     settle(200)
-    title_field, note_field = child("libraryEditTitle"), child("libraryEditNote")
+    title_field, note_field = root.findNamed("libraryEditTitle", None), root.findNamed("libraryEditNote", None)
     fields_visible = title_field is not None and title_field.property("visible") and note_field is not None
     if fields_visible:
         title_field.setProperty("text", "KDE-Handbücher")
@@ -840,7 +840,8 @@ def main():
     shot("library-edited")
     step("Bibliothek: Bearbeiten öffnet die Felder, Speichern ruft backend.libraryUpdate, Notiz steht in der Zeile",
          edit_clicked and fields_visible and saved and ("libupdate", "e1", "KDE-Handbücher", "deutsch unter stable_kf6/de") in backend.calls
-         and child("libraryEditTitle") is not None and not child("libraryEditTitle").property("visible"),
+         and root.findNamed("libraryEditTitle", None) is not None
+         and not root.findNamed("libraryEditTitle", None).property("visible"),
          f"edit={edit_clicked} fields={fields_visible} saved={saved} calls={backend.calls[-1:]}")
     mcp_rows = count("libraryMcpRow")
     toggled = root.toggleNamed("libraryMcpSwitch")

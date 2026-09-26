@@ -1096,7 +1096,7 @@ Kirigami.ApplicationWindow {
                     anchors.fill: parent
                     onDropped: drop => {
                         root.libraryDropped(drop.hasUrls ? drop.urls : [], drop.hasText ? drop.text : "")
-                        drop.acceptProposedAction()
+                        drop.accept(Qt.CopyAction)   // nie „Verschieben“: die Quelle bleibt, wo sie ist
                     }
                 }
             }
@@ -1169,11 +1169,13 @@ Kirigami.ApplicationWindow {
                                 Layout.fillWidth: true
                                 level: 5
                                 text: libraryHit.modelData.title
+                                textFormat: Text.PlainText
                                 elide: Text.ElideRight
                             }
                             Controls.Label {
                                 Layout.fillWidth: true
                                 text: libraryHit.modelData.entryTitle + " · " + libraryHit.modelData.source
+                                textFormat: Text.PlainText
                                 elide: Text.ElideMiddle
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.7
@@ -1182,6 +1184,7 @@ Kirigami.ApplicationWindow {
                                 Layout.fillWidth: true
                                 visible: text !== ""
                                 text: libraryHit.modelData.snippet
+                                textFormat: Text.PlainText
                                 wrapMode: Text.WordWrap
                             }
                         }
@@ -1250,11 +1253,13 @@ Kirigami.ApplicationWindow {
                                     Layout.fillWidth: true
                                     level: 4
                                     text: libraryRow.modelData.title
+                                    textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                 }
                                 Controls.Label {
                                     Layout.fillWidth: true
                                     text: libraryRow.modelData.source
+                                    textFormat: Text.PlainText
                                     elide: Text.ElideMiddle
                                     font: Kirigami.Theme.smallFont
                                     opacity: 0.7
@@ -1263,12 +1268,14 @@ Kirigami.ApplicationWindow {
                                     Layout.fillWidth: true
                                     visible: libraryRow.modelData.note !== "" && !libraryRow.editing
                                     text: libraryRow.modelData.note
+                                    textFormat: Text.PlainText
                                     wrapMode: Text.WordWrap
                                 }
                                 Controls.Label {
                                     objectName: "libraryMirrorText"
                                     Layout.fillWidth: true
                                     text: root.libraryMirrorText(libraryRow.modelData.id)
+                                    textFormat: Text.PlainText
                                     wrapMode: Text.WordWrap
                                     font: Kirigami.Theme.smallFont
                                     opacity: 0.8
