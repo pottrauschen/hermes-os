@@ -175,16 +175,22 @@ def test_lookup(runner, hc):
     ok, text = runner.lookup_answer(FakeClient([], fail_start=True), "x")
     check(not ok and "nicht erreichbar" in text, "Gateway aus: verständlicher Fehler")
 
-    now = [0.0]
+    c = FakeClient([{"event": "message.delta", "delta": "Halbe Antw"}])
+    ok, text = runner.lookup_answer(c, "x")
+    check(not ok and "abgebrochen" in text, "Strom endet ohne run.completed: Fehler statt halber Antwort")
 
-    def slow_events():
-        for i in range(5):
-            now[0] += 100
-            yield {"event": "message.delta", "delta": "."}
+    release = threading.Event()
 
-    c = FakeClient(slow_events())
-    ok, text = runner.lookup_answer(c, "x", timeout=150, clock=lambda: now[0])
-    check(not ok and c.stopped == ["run-1"], "Frist überschritten: Run wird gestoppt")
+    def keepalive_only():
+        # wie ein Server, der nur „: keepalive“ schickt: der Generator liefert nichts
+        release.wait(10)
+        return
+        yield
+
+    c = FakeClient(keepalive_only())
+    ok, text = runner.lookup_answer(c, "x", timeout=0.3)
+    release.set()
+    check(not ok and c.stopped == ["run-1"] and "Zeit" in text, "Frist greift auch ohne Ereignisse: Run wird gestoppt")
 
 
 # ---- Drahtformat ----------------------------------------------------------------
