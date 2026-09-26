@@ -40,7 +40,7 @@ PAGES = {
 <a href="/tief2.html">noch tiefer</a></body></html>""",
     "/tief2.html": "<html><head><title>Tiefe zwei</title></head><body><p>Dritte Ebene.</p></body></html>",
     "/b.html": """<html><head><title>Dateien</title></head><body><h1>Versteckte Dateien</h1>
-<p>Mit Alt+Punkt zeigt Dolphin versteckte Dateien. Das Passwort steht nirgends.</p></body></html>""",
+<p>Mit Alt+Punkt zeigt Dolphin versteckte Dateien. Das Passwort steht nirgends. Das gilt 100% sicher.</p></body></html>""",
     "/sub/c.html": "<html><head><title>Drucken</title></head><body><p>Drucken geht über den Dialog.</p></body></html>",
     "/verboten/x.html": "<html><head><title>Intern</title></head><body><p>Geheimnis.</p></body></html>",
 }
@@ -254,6 +254,10 @@ def main():
                   f"{mode_f} {hits_f[:1]} {hits_f2[:1]} {hits_f3[:1]}")
             out_like = lib.handle_library_search({"query": "Fenster"})
             check("LIKE-Suche" in out_like, "Werkzeugtext nennt den Rückfall", out_like[:200])
+            hits_pct, _ = lib.search_index("100%")
+            hits_us, _ = lib.search_index("1__%")
+            check(hits_pct and hits_pct[0]["source"] == base + "/b.html" and not hits_us,
+                  "LIKE-Rückfall: Prozent und Unterstrich sind Zeichen, keine Platzhalter", f"{hits_pct[:1]} {hits_us[:1]}")
         finally:
             lib._FTS_STATE.update(state)
 
