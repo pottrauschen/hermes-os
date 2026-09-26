@@ -20,6 +20,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `docs/protokoll.md` | Protokoll: Seite im Chat-Fenster, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
 | `docs/krunner.md` | KRunner-Runner „Hermes fragen“: `hermes <Frage>` und `h: <Frage>`, D-Bus-Anbindung im Leisten-Symbol, Nur nachschlagen, Test, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
+| `docs/sehen-hoeren.md` | Sehen und Hören: „Was sehe ich hier?“ (Meta+Umschalt+H, Bildschirmausschnitt an Hermes) und Push-to-Talk (Meta+Leertaste, faster-whisper und Piper aus der Hermes-Venv), Kürzel, Tests, Stolperfallen |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 
 ## Arbeitsregeln
