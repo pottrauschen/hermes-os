@@ -15,6 +15,10 @@
 # (MEDIA:<pfad>-Tags), erscheinen im Verlauf; Bilder aus dem gespeicherten
 # Verlauf landen als Dateien unter ~/.cache/hermes-os/tray.
 #
+# Die Seite „Protokoll“ zeigt, was Hermes am System getan hat: Freigaben mit
+# Entscheidung, erkannte Systembefehle mit Ergebnis, App-Starts (audit.py des
+# Plugins, docs/protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
+#
 # Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
 #          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
 #                                    bekommt die den Befehl (Menü, Meta+H)
@@ -62,16 +66,24 @@ except Exception as exc:  # --check meldet es lesbar
 # Symbol mit dem Plugin: dieselbe Ablage über dieselbe Datei library.py, hier
 # über den Pfad geladen, damit das Plugin-Paket nicht importiert werden muss.
 LIBRARY_PY = os.environ.get("HERMES_OS_LIBRARY_PY", "/usr/share/hermes-os/plugins/hermes_os/library.py")
+# Das Protokoll (docs/protokoll.md) ebenso: das Plugin schreibt über seine Hooks,
+# das Symbol liest und trägt Klicks auf Freigaben ein.
+AUDIT_PY = os.environ.get("HERMES_OS_AUDIT_PY", "/usr/share/hermes-os/plugins/hermes_os/audit.py")
+AUDIT_DEBOUNCE_MS = 500       # Schreibstöße des Gateways zu einem Neuladen bündeln
 
 
-def load_library_module():
+def load_plugin_module(name, path):
     import importlib.util
-    spec = importlib.util.spec_from_file_location("hermes_os_library", LIBRARY_PY)
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"{LIBRARY_PY} nicht ladbar")
+        raise ImportError(f"{path} nicht ladbar")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_library_module():
+    return load_plugin_module("hermes_os_library", LIBRARY_PY)
 
 
 try:
@@ -79,6 +91,12 @@ try:
 except Exception as exc:  # Fenster läuft ohne Bibliothek weiter, --check meldet es
     lib = None
     _LIBRARY_IMPORT_ERROR = str(exc)
+
+try:
+    audit = load_plugin_module("hermes_os_audit", AUDIT_PY)
+except Exception as exc:  # Fenster läuft ohne Protokoll weiter, --check meldet es
+    audit = None
+    _AUDIT_IMPORT_ERROR = str(exc)
 
 STATE_TEXT = {
     "off": "Hermes ist aus",
@@ -263,6 +281,8 @@ def check_only():
         problems.extend(f"hermes_client: {p}" for p in hc.self_test())
     if lib is None:
         problems.append(f"library.py des Plugins nicht ladbar: {_LIBRARY_IMPORT_ERROR}")
+    if audit is None:
+        problems.append(f"audit.py des Plugins nicht ladbar: {_AUDIT_IMPORT_ERROR}")
     if shutil.which("notify-send") is None:
         print("WARN  notify-send fehlt: Freigaben nur im Fenster, keine Benachrichtigung")
     for p in problems:
@@ -278,8 +298,8 @@ def main():
         sys.exit(check_only())
     want_show = "--show" in sys.argv
 
-    from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, QProcess, QStandardPaths, QTimer,
-                                Qt, QByteArray, QUrl, Property, Signal, Slot)
+    from PySide6.QtCore import (QAbstractListModel, QFileSystemWatcher, QModelIndex, QObject, QProcess,
+                                QStandardPaths, QTimer, Qt, QByteArray, QUrl, Property, Signal, Slot)
     from PySide6.QtGui import QDesktopServices, QIcon
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtQml import QQmlApplicationEngine
@@ -367,6 +387,42 @@ def main():
         def clear(self):
             self.replace([])
 
+    class AuditModel(QAbstractListModel):
+        """Zeilen des Protokolls für die QML-Liste, Felder wie audit.build_rows:
+        rowId, date, time, kind (command, app), command, groupLabel, decisionLabel,
+        decider, status (ok, error, denied, pending, approved, launched, failed),
+        resultText, output, changed."""
+        FIELDS = ("rowId", "date", "time", "kind", "command", "groupLabel", "decisionLabel", "decider",
+                  "status", "resultText", "output", "changed")
+        _USER = int(Qt.ItemDataRole.UserRole)
+
+        def __init__(self):
+            super().__init__()
+            self._rows = []
+
+        def rowCount(self, parent=QModelIndex()):
+            return 0 if parent.isValid() else len(self._rows)
+
+        def data(self, index, role=int(Qt.ItemDataRole.DisplayRole)):
+            if not index.isValid() or index.row() >= len(self._rows):
+                return None
+            role = int(role)
+            if role == int(Qt.ItemDataRole.DisplayRole):
+                role = self._USER + 1 + self.FIELDS.index("command")
+            i = role - self._USER - 1
+            if 0 <= i < len(self.FIELDS):
+                return self._rows[index.row()][self.FIELDS[i]]
+            return None
+
+        def roleNames(self):
+            return {self._USER + 1 + i: QByteArray(f.encode("ascii")) for i, f in enumerate(self.FIELDS)}
+
+        def replace(self, rows):
+            self.beginResetModel()
+            self._rows = [{**{f: r.get(f, "") for f in self.FIELDS}, "rowId": r.get("id", ""),
+                           "changed": bool(r.get("changed"))} for r in rows]
+            self.endResetModel()
+
     class Backend(QObject):
         stateChanged = Signal()
         approvalChanged = Signal()
@@ -377,6 +433,8 @@ def main():
         attachmentsChanged = Signal()
         libraryChanged = Signal()
         showLibraryRequested = Signal()
+        auditChanged = Signal()
+        showAuditRequested = Signal()
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
@@ -392,6 +450,20 @@ def main():
             self._library = lib.load_entries() if lib is not None else []
             prune_cache()
             self._model = MessageModel()
+            self._audit_model = AuditModel()
+            self._audit_rows = []           # gefiltert, wie auf der Seite
+            self._audit_period = "today"
+            self._audit_changes_only = False
+            self._audit_active = False      # Seite offen: nur dann liest der Watcher neu
+            self._audit_dirty = True
+            self._audit_timer = QTimer(self)
+            self._audit_timer.setSingleShot(True)
+            self._audit_timer.setInterval(AUDIT_DEBOUNCE_MS)
+            self._audit_timer.timeout.connect(self._audit_changed_on_disk)
+            self._audit_watcher = QFileSystemWatcher(self)
+            self._audit_watcher.fileChanged.connect(lambda _p: self._audit_timer.start())
+            self._audit_watcher.directoryChanged.connect(lambda _p: self._audit_timer.start())
+            self._audit_watch()
             self._settings = hc.gateway_settings()
             self._client = self._make_client()
             self._session_id = self._load_session_id()
@@ -634,6 +706,99 @@ def main():
             self.showRequested.emit()
             self.showLibraryRequested.emit()
 
+        # ---- Protokoll: was Hermes am System getan hat (docs/protokoll.md) -------
+        def _audit_watch(self):
+            """Ordner und Datei beobachten. Den Ordner, weil die Datei erst mit dem
+            ersten Eintrag entsteht und bei der Rotation ersetzt wird; die Datei,
+            weil ein Anhängen den Ordner nicht ändert."""
+            if audit is None:
+                return
+            path = audit.audit_path()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            except OSError:
+                return
+            watched = set(self._audit_watcher.files()) | set(self._audit_watcher.directories())
+            for p in (str(path.parent), str(path)):
+                if p not in watched and os.path.exists(p):
+                    self._audit_watcher.addPath(p)
+
+        def _audit_changed_on_disk(self):
+            self._audit_watch()
+            if self._audit_active:
+                self.auditReload()
+            else:
+                self._audit_dirty = True
+
+        @Property(bool, constant=True)
+        def auditAvailable(self):
+            return audit is not None
+
+        @Property(QObject, constant=True)
+        def auditModel(self):
+            return self._audit_model
+
+        @Property(int, notify=auditChanged)
+        def auditCount(self):
+            return len(self._audit_rows)
+
+        @Property(str, notify=auditChanged)
+        def auditPeriod(self):
+            return self._audit_period
+
+        @Property(bool, notify=auditChanged)
+        def auditChangesOnly(self):
+            return self._audit_changes_only
+
+        @Property(str, constant=True)
+        def auditPath(self):
+            return str(audit.audit_path()) if audit is not None else ""
+
+        @Slot(bool)
+        def auditSetActive(self, active):
+            """Die Seite meldet sich an und ab; geschlossen wird nicht neu gelesen."""
+            self._audit_active = bool(active)
+            if self._audit_active and self._audit_dirty:
+                self.auditReload()
+
+        @Slot()
+        def auditReload(self):
+            self._audit_dirty = False
+            rows = audit.load_rows(self._audit_period, self._audit_changes_only) if audit is not None else []
+            self._audit_rows = rows
+            self._audit_model.replace(rows)
+            self.auditChanged.emit()
+
+        @Slot(str, bool)
+        def auditSetFilter(self, period, changes_only):
+            if audit is not None and period not in audit.PERIODS:
+                period = "today"
+            self._audit_period = period
+            self._audit_changes_only = bool(changes_only)
+            self.auditReload()
+
+        @Slot(result=str)
+        def auditExport(self):
+            """Gezeigte Zeilen als Textdatei über den Dateidialog; leerer Text heißt
+            abgebrochen, sonst eine Meldung fürs Fenster."""
+            if audit is None:
+                return "Das Protokoll ist nicht verfügbar (audit.py fehlt)."
+            start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
+                or os.path.expanduser("~")
+            name = "hermes-protokoll-" + datetime.datetime.now().strftime("%Y-%m-%d") + ".txt"
+            target, _ = QFileDialog.getSaveFileName(None, "Protokoll exportieren", os.path.join(start, name),
+                                                    "Textdateien (*.txt);;Alle Dateien (*)")
+            if not target:
+                return ""
+            err = audit.write_export(target, self._audit_rows, self._audit_period, self._audit_changes_only)
+            return err or f"Gespeichert: {target}"
+
+        @Slot()
+        def showAudit(self):
+            """Aus dem Menü am Symbol: Fenster zeigen und die Seite öffnen."""
+            self.showRequested.emit()
+            self.showAuditRequested.emit()
+
         def _set_state(self, state):
             if state != self._state:
                 self._state = state
@@ -873,6 +1038,10 @@ def main():
             if not self._approval or choice not in self._approval.get("choices", []):
                 return
             client, run_id, request_id = self._client, self._run_id, self._approval.get("request_id", "")
+            if audit is not None:
+                # Das Plugin sieht die Wahl auch, aber nicht, dass sie hier fiel
+                audit.record_tray_decision(self._approval.get("command", ""), choice, request_id,
+                                           self._approval.get("description", ""))
             self._model.append("info", f"Freigabe: {CHOICE_LABEL.get(choice, choice)}")
             self._clear_approval()
 
@@ -1001,6 +1170,8 @@ def main():
     act_new.triggered.connect(backend.newConversation)
     if backend.libraryAvailable:
         menu.addAction("Bibliothek").triggered.connect(backend.showLibrary)
+    if backend.auditAvailable:
+        menu.addAction("Protokoll").triggered.connect(backend.showAudit)
     if backend.dashboardAvailable:
         menu.addAction("Dashboard öffnen").triggered.connect(backend.openDashboard)
     menu.addAction("Hermes einrichten").triggered.connect(backend.openSetup)

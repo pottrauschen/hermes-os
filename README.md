@@ -30,7 +30,7 @@ Universal-Blue-Muster.
 | Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert | Bibliothek, Stufe eins, Seite im Chat-Fenster, siehe [docs/bibliothek.md](docs/bibliothek.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
-| Portal-Vermittler und unabhängiges Audit-Log | Phase 4, noch nicht gebaut |
+| Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Chat-Fenster, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
 
 ## Aufbau
 
