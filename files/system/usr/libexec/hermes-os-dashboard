@@ -92,7 +92,8 @@ PAGE_CSS = """
   .card { max-width: 40em; padding: 2em; }
   h1 { font-size: 1.4em; margin: 0 0 .6em 0; }
   p { line-height: 1.5; }
-  pre { background: #101214; padding: .8em; overflow: auto; font-size: .85em; border-radius: 4px; }
+  pre { background: #101214; padding: .8em; font-size: .85em; border-radius: 4px;
+        white-space: pre-wrap; word-break: break-all; }
   a.button { display: inline-block; margin-top: 1em; padding: .5em 1.1em; background: #3daee9; color: #101214;
              border-radius: 4px; text-decoration: none; font-weight: 600; }
   .muted { opacity: .7; }
@@ -128,6 +129,126 @@ def error_page(message, log, gateway):
                 "<a class='button' href='hermes-os://retry'>Erneut versuchen</a>")
 
 
+class Window:
+    """Fenster, Ansicht und Server zusammengebaut; main() zeigt es, der
+    Render-Test (tests/dashboard-gui-check.py) treibt es offscreen."""
+
+    def __init__(self, app, server, start_timeout=START_TIMEOUT):
+        from PySide6.QtCore import QObject, QUrl, Qt, Signal
+        from PySide6.QtGui import QAction, QIcon, QKeySequence
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWidgets import QMainWindow, QToolBar
+
+        class Bridge(QObject):
+            """Ergebnis des Server-Starts aus dem Hintergrund-Thread in den GUI-Thread."""
+            ready = Signal(object)
+            retryRequested = Signal()
+
+        class Page(QWebEnginePage):
+            """Fängt die Links der eigenen Fehlerseite (hermes-os://…) ab."""
+
+            def __init__(self, profile, bridge, parent=None):
+                super().__init__(profile, parent)
+                self._bridge = bridge
+
+            def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+                if url.scheme() == "hermes-os":
+                    if url.host() == "retry":
+                        self._bridge.retryRequested.emit()
+                    return False
+                return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+        self.app = app
+        self.server = server
+        self.start_timeout = start_timeout
+        self.url = ""
+        self.starting = False
+        self.QUrl = QUrl
+        self.bridge = Bridge()
+        # Benanntes Profil: Cookies und localStorage (Theme, Spaltenbreiten) bleiben
+        # unter ~/.local/share/hermes-os-dashboard; ein Profil ohne Namen wäre flüchtig.
+        self.profile = QWebEngineProfile("hermes-os-dashboard", app)
+        self.profile.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, False)
+        self.page = Page(self.profile, self.bridge)
+        self.view = QWebEngineView()
+        self.view.setPage(self.page)
+
+        self.window = QMainWindow()
+        self.window.setWindowTitle("Hermes-Dashboard")
+        self.window.setCentralWidget(self.view)
+        self.window.resize(1200, 820)
+
+        bar = QToolBar("Navigation")
+        bar.setMovable(False)
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.act_back = QAction(QIcon.fromTheme("go-previous"), "Zurück", self.window)
+        self.act_back.setShortcut(QKeySequence.StandardKey.Back)
+        self.act_back.triggered.connect(self.view.back)
+        self.act_reload = QAction(QIcon.fromTheme("view-refresh"), "Neu laden", self.window)
+        self.act_reload.setShortcut(QKeySequence.StandardKey.Refresh)
+        self.act_reload.triggered.connect(self.reload_or_retry)
+        bar.addAction(self.act_back)
+        bar.addAction(self.act_reload)
+        self.window.addToolBar(bar)
+
+        self.bridge.ready.connect(self.on_ready)
+        self.bridge.retryRequested.connect(self.retry)
+        self.view.loadFinished.connect(self.on_load_finished)
+        self.view.titleChanged.connect(
+            lambda t: self.window.setWindowTitle(t if t and "Hermes" in t else "Hermes-Dashboard"))
+        app.aboutToQuit.connect(self.shutdown)
+
+    # ---- Ablauf ---------------------------------------------------------------
+    def show_error(self, message, log=()):
+        self.view.setHtml(error_page(message, list(log), ds.gateway_active()), self.QUrl("hermes-os://error"))
+
+    def start_server(self):
+        if self.starting:
+            return
+        self.starting = True
+        self.view.setHtml(waiting_page(), self.QUrl("hermes-os://waiting"))
+
+        def work():
+            self.bridge.ready.emit(self.server.ensure(self.start_timeout))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_ready(self, result):
+        self.starting = False
+        if result.ok:
+            self.url = result.url
+            self.view.load(self.QUrl(result.url))
+        else:
+            self.show_error(result.message, result.log)
+
+    def retry(self):
+        if self.url and ds.is_up(self.server.port):
+            self.view.load(self.QUrl(self.url))
+        else:
+            self.start_server()
+
+    def reload_or_retry(self):
+        if self.view.url().scheme() == "hermes-os":
+            self.retry()
+        else:
+            self.view.reload()
+
+    def on_load_finished(self, ok):
+        if ok or self.view.url().scheme() == "hermes-os":
+            return
+        # Seite weggebrochen: Server tot? Dann Fehlerseite statt leerem Fenster.
+        if self.server.alive() or ds.is_up(self.server.port):
+            self.show_error("Die Seite konnte nicht geladen werden.", self.server.log)
+        else:
+            self.show_error("Der Dashboard-Server antwortet nicht mehr.", self.server.log)
+
+    def shutdown(self):
+        self.server.stop()
+        # Page vor dem Profil freigeben, sonst warnt Qt beim Beenden.
+        self.view.setPage(None)
+        self.page.deleteLater()
+
+
 def main():
     if "--check" in sys.argv:
         sys.exit(check_only())
@@ -138,30 +259,10 @@ def main():
         sys.exit(status_only())
 
     # QtWebEngine muss vor der QApplication importiert sein (teilt den OpenGL-Kontext).
-    from PySide6.QtCore import QObject, QTimer, QUrl, Qt, Signal
-    from PySide6.QtGui import QAction, QIcon, QKeySequence
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
-    from PySide6.QtWebEngineWidgets import QWebEngineView
-    from PySide6.QtWidgets import QApplication, QMainWindow, QToolBar
-
-    class Bridge(QObject):
-        """Ergebnis des Server-Starts aus dem Hintergrund-Thread in den GUI-Thread."""
-        ready = Signal(object)
-        retryRequested = Signal()
-
-    class Page(QWebEnginePage):
-        """Fängt die Links der eigenen Fehlerseite (hermes-os://…) ab."""
-
-        def __init__(self, profile, bridge, parent=None):
-            super().__init__(profile, parent)
-            self._bridge = bridge
-
-        def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-            if url.scheme() == "hermes-os":
-                if url.host() == "retry":
-                    self._bridge.retryRequested.emit()
-                return False
-            return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+    import PySide6.QtWebEngineWidgets  # noqa: F401
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
 
     QApplication.setApplicationName("hermes-os-dashboard")
     QApplication.setDesktopFileName("hermes-os-dashboard")
@@ -169,90 +270,7 @@ def main():
     app.setWindowIcon(QIcon.fromTheme("hermes-os", QIcon.fromTheme("preferences-system")))
     app.setQuitOnLastWindowClosed(True)
 
-    bridge = Bridge()
-    server = ds.Server(port=port_from_env())
-    # Benanntes Profil: Cookies und localStorage (Theme, Spaltenbreiten) bleiben
-    # unter ~/.local/share/hermes-os-dashboard; ein Profil ohne Namen wäre flüchtig.
-    profile = QWebEngineProfile("hermes-os-dashboard", app)
-    profile.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, False)
-    page = Page(profile, bridge)
-    view = QWebEngineView()
-    view.setPage(page)
-
-    window = QMainWindow()
-    window.setWindowTitle("Hermes-Dashboard")
-    window.setCentralWidget(view)
-    window.resize(1200, 820)
-
-    bar = QToolBar("Navigation")
-    bar.setMovable(False)
-    bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-    act_back = QAction(QIcon.fromTheme("go-previous"), "Zurück", window)
-    act_back.setShortcut(QKeySequence.StandardKey.Back)
-    act_back.triggered.connect(view.back)
-    act_reload = QAction(QIcon.fromTheme("view-refresh"), "Neu laden", window)
-    act_reload.setShortcut(QKeySequence.StandardKey.Refresh)
-    bar.addAction(act_back)
-    bar.addAction(act_reload)
-    window.addToolBar(bar)
-
-    state = {"url": "", "starting": False}
-
-    def show_error(message, log=()):
-        view.setHtml(error_page(message, list(log), ds.gateway_active()), QUrl("hermes-os://error"))
-
-    def start_server():
-        if state["starting"]:
-            return
-        state["starting"] = True
-        view.setHtml(waiting_page(), QUrl("hermes-os://waiting"))
-
-        def work():
-            bridge.ready.emit(server.ensure(START_TIMEOUT))
-        threading.Thread(target=work, daemon=True).start()
-
-    def on_ready(result):
-        state["starting"] = False
-        if result.ok:
-            state["url"] = result.url
-            view.load(QUrl(result.url))
-        else:
-            show_error(result.message, result.log)
-
-    def retry():
-        if state["url"] and ds.is_up(server.port):
-            view.load(QUrl(state["url"]))
-        else:
-            start_server()
-
-    def reload_or_retry():
-        if view.url().scheme() == "hermes-os":
-            retry()
-        else:
-            view.reload()
-
-    def on_load_finished(ok):
-        if ok or view.url().scheme() == "hermes-os":
-            return
-        # Seite weggebrochen: Server tot? Dann Fehlerseite statt leerem Fenster.
-        if server.alive() or ds.is_up(server.port):
-            show_error("Die Seite konnte nicht geladen werden.", server.log)
-        else:
-            show_error("Der Dashboard-Server antwortet nicht mehr.", server.log)
-
-    bridge.ready.connect(on_ready)
-    bridge.retryRequested.connect(retry)
-    act_reload.triggered.connect(reload_or_retry)
-    view.loadFinished.connect(on_load_finished)
-    view.titleChanged.connect(lambda t: window.setWindowTitle(t if t and "Hermes" in t else "Hermes-Dashboard"))
-
-    def shutdown():
-        server.stop()
-        # Page vor dem Profil freigeben, sonst warnt Qt beim Beenden.
-        view.setPage(None)
-        page.deleteLater()
-
-    app.aboutToQuit.connect(shutdown)
+    win = Window(app, ds.Server(port=port_from_env()))
 
     # SIGTERM/SIGINT (Abmelden, kill) sollen den Server mitnehmen: Python-Handler
     # laufen nur, wenn der Interpreter regelmäßig dran ist, daher der Timer.
@@ -262,8 +280,8 @@ def main():
     tick.timeout.connect(lambda: None)
     tick.start(500)
 
-    window.show()
-    QTimer.singleShot(0, start_server)
+    win.window.show()
+    QTimer.singleShot(0, win.start_server)
     sys.exit(app.exec())
 
 

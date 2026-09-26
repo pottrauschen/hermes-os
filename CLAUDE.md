@@ -41,8 +41,9 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
   Stabilitätszusage, das Leisten-Symbol die Runs-API des Gateways.
 - **Assistent und Leisten-Symbol ohne neues Image testen:**
   `tests/setup-gui-check.py` und `tests/tray-gui-check.py` rendern offscreen,
-  jede QML-Warnung ist ein Fehler; `tests/tray-client-check.py` läuft überall
-  mit Python. In der VM eine Testfassung aus dem Home starten
+  jede QML-Warnung ist ein Fehler; `tests/dashboard-gui-check.py` fährt das
+  Dashboard-Fenster offscreen gegen den echten Server; `tests/tray-client-check.py`
+  und `tests/dashboard-check.py` laufen überall mit Python. In der VM eine Testfassung aus dem Home starten
   (`systemd-run --user … -p ExitType=cgroup`), `HERMES_HOME` auf ein
   Wegwerfverzeichnis; `/tmp` ist nach jedem Neustart leer.
 - **Windows-Arbeitsplatz:** Arbeitsbaum CRLF, Index LF. Vor dem Übertragen in
