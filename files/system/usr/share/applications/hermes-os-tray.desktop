@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes
+GenericName=Systemagent
+GenericName[en]=System agent
+Comment=Mit Hermes sprechen: Fragen, Aufgaben, Freigaben
+Comment[en]=Talk to Hermes: questions, tasks, approvals
+Exec=/usr/libexec/hermes-os-tray --show
+Icon=hermes-os
+Terminal=false
+Categories=System;Utility;
+Keywords=hermes;agent;ki;ai;chat;
+StartupNotify=false
+X-KDE-Shortcuts=Meta+H

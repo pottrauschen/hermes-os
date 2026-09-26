@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes (Leisten-Symbol)
+Comment=Startet das Hermes-Symbol in der Systemleiste
+Exec=/usr/libexec/hermes-os-tray
+Icon=hermes-os
+NoDisplay=true
+Terminal=false
+X-KDE-autostart-phase=2
+OnlyShowIn=KDE;

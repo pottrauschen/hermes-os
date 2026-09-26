@@ -10,6 +10,10 @@ hermes-setup:
 hermes-setup-terminal:
     /usr/bin/hermes setup
 
+# Hermes-Fenster öffnen (sonst: Symbol in der Systemleiste oder Meta+H)
+hermes-tray:
+    /usr/libexec/hermes-os-tray --show
+
 # Hermes-Diagnose
 hermes-doctor:
     /usr/bin/hermes doctor

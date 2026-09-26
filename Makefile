@@ -34,8 +34,14 @@ clean:
 # Prüft außerdem, dass Dockerfile und Dockerfile.nvidia nur in der FROM-Zeile
 # des Basis-Images abweichen.
 lint:
-	shellcheck -x files/scripts/*.sh files/system/usr/libexec/hermes-os-first-login || true
-	python3 -c 'import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]; print("python syntax ok")' files/system/usr/share/hermes-os/plugins/hermes_os/*.py
+	shellcheck -x files/scripts/*.sh files/system/usr/libexec/hermes-os-first-login tests/*.sh || true
+	python3 -c 'import ast,sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]; print("python syntax ok")' \
+		files/system/usr/share/hermes-os/plugins/hermes_os/*.py \
+		files/system/usr/share/hermes-os/setup/hermes_bridge.py files/system/usr/libexec/hermes-os-setup \
+		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
+		tests/*.py
+	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
+	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }

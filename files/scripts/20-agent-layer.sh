@@ -10,10 +10,21 @@ set -xeuo pipefail
 SHARE=/usr/share/hermes-os
 
 # ---- Rechte ------------------------------------------------------------------
-chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup
-chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* /usr/share/applications/hermes-os-setup.desktop
+chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup /usr/libexec/hermes-os-tray
+chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* \
+  /usr/share/applications/hermes-os-setup.desktop /usr/share/applications/hermes-os-tray.desktop \
+  /usr/share/kglobalaccel/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-tray.desktop \
+  /usr/share/icons/hicolor/scalable/apps/hermes-os.svg /usr/share/icons/hicolor/scalable/status/hermes-os-tray-*.svg
 find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
 find "${SHARE}/plugins" "${SHARE}/skills" -type d -exec chmod 0755 {} +
+
+# ---- Icons des Leisten-Symbols ----------------------------------------------
+# Liegen in hicolor, damit Plasma sie über den Namen findet (StatusNotifierItem
+# überträgt Namen, keine Bilder). Ein veralteter icon-theme.cache würde neue
+# Dateien verdecken; neu bauen, wenn das Werkzeug da ist.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
+fi
 
 # ---- ujust-Rezepte -----------------------------------------------------------
 # Auroras /usr/bin/ujust ruft just mit /usr/share/ublue-os/just/00-entry.just

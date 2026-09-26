@@ -1,0 +1,651 @@
+#!/usr/bin/python3
+# =============================================================================
+# hermes-os -- Leisten-Symbol: der sichtbare Systemagent
+# =============================================================================
+# Ein Symbol in der Systemleiste (StatusNotifierItem über QSystemTrayIcon) mit
+# vier Zuständen: aus, bereit, denkt, fragt. Klick oder Meta+H öffnet ein
+# kleines Kirigami-Fenster mit Textfeld, Verlauf und Freigabe-Knöpfen. Der
+# Chat läuft über den API-Server des Gateways (tray/hermes_client.py, nur
+# Standardbibliothek); eine Freigabe-Anfrage erscheint zusätzlich als
+# KDE-Benachrichtigung mit Knöpfen (notify-send --action).
+#
+# Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
+#          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
+#                                    bekommt die den Befehl (Menü, Meta+H)
+#          hermes-os-tray --check    Trockenlauf fürs Validierungs-Gate
+# Umgebung: HERMES_OS_TRAY_DIR überschreibt /usr/share/hermes-os/tray
+#           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
+# =============================================================================
+import datetime
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+
+TRAY_DIR = os.environ.get("HERMES_OS_TRAY_DIR", "/usr/share/hermes-os/tray")
+MAIN_QML = os.path.join(TRAY_DIR, "Main.qml")
+CLIENT_PY = os.path.join(TRAY_DIR, "hermes_client.py")
+SETUP = "/usr/libexec/hermes-os-setup"
+FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
+DASHBOARD = "/usr/libexec/hermes-os-dashboard"      # kommt mit Teil 2 (docs/einrichtung.md)
+HERMES = "/usr/bin/hermes"
+GATEWAY_UNIT = "hermes-gateway.service"
+HEALTH_INTERVAL_MS = 5000
+DEFAULT_SESSION = "hermes-os-tray"
+SESSION_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+                            "hermes-os", "tray.json")
+
+sys.path.insert(0, TRAY_DIR)
+try:
+    import hermes_client as hc
+except Exception as exc:  # --check meldet es lesbar
+    hc = None
+    _CLIENT_IMPORT_ERROR = str(exc)
+
+STATE_TEXT = {
+    "off": "Hermes ist aus",
+    "nokey": "Hermes läuft, aber der Schlüssel für das Leisten-Symbol fehlt",
+    "ready": "Hermes ist bereit",
+    "busy": "Hermes arbeitet",
+    "asking": "Hermes fragt nach einer Freigabe",
+}
+STATE_ICON = {"off": "hermes-os-tray-off", "nokey": "hermes-os-tray-off", "ready": "hermes-os-tray-ready",
+              "busy": "hermes-os-tray-busy", "asking": "hermes-os-tray-asking"}
+CHOICE_LABEL = {"once": "Einmal erlauben", "session": "Für diese Sitzung", "always": "Immer erlauben",
+                "deny": "Ablehnen"}
+
+
+def approval_timeout_seconds():
+    """approvals.timeout aus config.yaml (Vorgabe 300), für die Benachrichtigung."""
+    try:
+        import yaml  # type: ignore
+        cfg = yaml.safe_load(open(os.path.join(hc.hermes_home(), "config.yaml"), encoding="utf-8")) or {}
+        return int((cfg.get("approvals") or {}).get("timeout") or 300)
+    except Exception:
+        return 300
+
+
+def check_only():
+    """Trockenlauf ohne Fenster: Importe, Dateien, Client-Selbsttest."""
+    problems = []
+    try:
+        import PySide6.QtQml  # noqa: F401
+        import PySide6.QtQuickControls2  # noqa: F401
+        import PySide6.QtWidgets  # noqa: F401
+        import PySide6.QtNetwork  # noqa: F401
+    except Exception as e:
+        problems.append(f"PySide6 fehlt: {e}")
+    if not os.path.isfile(MAIN_QML):
+        problems.append(f"{MAIN_QML} fehlt")
+    if hc is None:
+        problems.append(f"hermes_client.py nicht importierbar: {_CLIENT_IMPORT_ERROR}")
+    else:
+        problems.extend(f"hermes_client: {p}" for p in hc.self_test())
+    if shutil.which("notify-send") is None:
+        print("WARN  notify-send fehlt: Freigaben nur im Fenster, keine Benachrichtigung")
+    for p in problems:
+        print(f"FEHL  {p}")
+    if problems:
+        return 1
+    print("OK    hermes-os-tray: PySide6, QML und Client vorhanden")
+    return 0
+
+
+def main():
+    if "--check" in sys.argv:
+        sys.exit(check_only())
+    want_show = "--show" in sys.argv
+
+    from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, QProcess, QTimer, Qt,
+                                QByteArray, Property, Signal, Slot)
+    from PySide6.QtGui import QIcon
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
+    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQuickControls2 import QQuickStyle
+    from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+
+    # ---- Nur eine Instanz: die zweite reicht "show" an die erste weiter --------
+    socket_name = f"hermes-os-tray-{os.getuid()}"
+    probe = QLocalSocket()
+    probe.connectToServer(socket_name)
+    if probe.waitForConnected(300):
+        if want_show:
+            probe.write(b"show\n")
+            probe.waitForBytesWritten(300)
+        probe.disconnectFromServer()
+        return 0
+    QLocalServer.removeServer(socket_name)
+
+    class MessageModel(QAbstractListModel):
+        """Verlauf für die QML-Liste: role (user, assistant, tool, info, error), text, meta."""
+        RoleRole, TextRole, MetaRole = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3
+
+        def __init__(self):
+            super().__init__()
+            self._rows = []
+
+        def rowCount(self, parent=QModelIndex()):
+            return 0 if parent.isValid() else len(self._rows)
+
+        def data(self, index, role=Qt.DisplayRole):
+            if not index.isValid() or index.row() >= len(self._rows):
+                return None
+            row = self._rows[index.row()]
+            return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"],
+                    Qt.DisplayRole: row["text"]}.get(role)
+
+        def roleNames(self):
+            return {self.RoleRole: QByteArray(b"role"), self.TextRole: QByteArray(b"text"),
+                    self.MetaRole: QByteArray(b"meta")}
+
+        def append(self, role, text, meta=""):
+            n = len(self._rows)
+            self.beginInsertRows(QModelIndex(), n, n)
+            self._rows.append({"role": role, "text": text, "meta": meta})
+            self.endInsertRows()
+            return n
+
+        def set_text(self, row, text, meta=None):
+            if 0 <= row < len(self._rows):
+                self._rows[row]["text"] = text
+                if meta is not None:
+                    self._rows[row]["meta"] = meta
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, [self.TextRole, self.MetaRole])
+
+        def text(self, row):
+            return self._rows[row]["text"] if 0 <= row < len(self._rows) else ""
+
+        def replace(self, rows):
+            self.beginResetModel()
+            self._rows = [{"role": r["role"], "text": r["text"], "meta": r.get("meta", "")} for r in rows]
+            self.endResetModel()
+
+        def clear(self):
+            self.replace([])
+
+    class Backend(QObject):
+        stateChanged = Signal()
+        approvalChanged = Signal()
+        busyChanged = Signal()
+        versionChanged = Signal()
+        showRequested = Signal()
+        hideRequested = Signal()
+        # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
+        _healthDone = Signal(dict)
+        _historyDone = Signal(dict)
+        _runEvent = Signal(str, dict)
+
+        def __init__(self):
+            super().__init__()
+            self._state = "off"
+            self._busy = False
+            self._approval = {}
+            self._version = ""
+            self._model = MessageModel()
+            self._settings = hc.gateway_settings()
+            self._client = self._make_client()
+            self._session_id = self._load_session_id()
+            self._session_ready = False
+            self._history_loaded = False
+            self._run_id = ""
+            self._assistant_row = -1
+            self._poll_busy = False
+            self._notify_proc = None
+            self._healthDone.connect(self._on_health, Qt.QueuedConnection)
+            self._historyDone.connect(self._on_history, Qt.QueuedConnection)
+            self._runEvent.connect(self._on_run_event, Qt.QueuedConnection)
+            self._timer = QTimer(self)
+            self._timer.setInterval(HEALTH_INTERVAL_MS)
+            self._timer.timeout.connect(self.poll)
+            self._timer.start()
+            QTimer.singleShot(0, self.poll)
+
+        # ---- Einstellungen und Sitzung ---------------------------------------
+        def _make_client(self):
+            s = self._settings
+            return hc.GatewayClient(s["host"], s["port"], s["key"])
+
+        def _load_session_id(self):
+            try:
+                with open(SESSION_FILE, encoding="utf-8") as f:
+                    sid = str(json.load(f).get("session_id") or "")
+                    return sid or DEFAULT_SESSION
+            except Exception:
+                return DEFAULT_SESSION
+
+        def _save_session_id(self):
+            try:
+                os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+                with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"session_id": self._session_id}, f)
+            except OSError:
+                pass
+
+        # ---- Eigenschaften für QML ---------------------------------------------
+        @Property(str, notify=stateChanged)
+        def state(self):
+            return self._state
+
+        @Property(str, notify=stateChanged)
+        def stateText(self):
+            return STATE_TEXT.get(self._state, self._state)
+
+        @Property(str, notify=stateChanged)
+        def stateIcon(self):
+            return STATE_ICON.get(self._state, "hermes-os-tray-off")
+
+        @Property(bool, notify=busyChanged)
+        def busy(self):
+            return self._busy
+
+        @Property(bool, notify=approvalChanged)
+        def approvalPending(self):
+            return bool(self._approval)
+
+        @Property("QVariantMap", notify=approvalChanged)
+        def approval(self):
+            return dict(self._approval)
+
+        @Property(QObject, constant=True)
+        def messages(self):
+            return self._model
+
+        @Property(str, notify=versionChanged)
+        def hermesVersion(self):
+            return self._version
+
+        @Property(bool, constant=True)
+        def dashboardAvailable(self):
+            return os.access(DASHBOARD, os.X_OK)
+
+        @Property(bool, notify=stateChanged)
+        def configured(self):
+            """Ein Anbieter ist eingerichtet, sobald .env oder auth.json existiert (wie First-Login)."""
+            home = hc.hermes_home()
+            return os.path.isfile(os.path.join(home, ".env")) or os.path.isfile(os.path.join(home, "auth.json"))
+
+        @Property(str, notify=stateChanged)
+        def sessionId(self):
+            return self._session_id
+
+        def _set_state(self, state):
+            if state != self._state:
+                self._state = state
+                self.stateChanged.emit()
+
+        def _set_busy(self, value):
+            if value != self._busy:
+                self._busy = value
+                self.busyChanged.emit()
+
+        # ---- Lebenszeichen ---------------------------------------------------------
+        @Slot()
+        def poll(self):
+            if self._poll_busy:
+                return
+            self._poll_busy = True
+            settings = hc.gateway_settings()
+            if settings != self._settings:
+                self._settings = settings
+                self._client = self._make_client()
+            client = self._client
+
+            def work():
+                result = {"ok": False, "version": "", "key_usable": settings["key_usable"], "error": ""}
+                try:
+                    h = client.health()
+                    result["ok"] = str(h.get("status", "")).lower() == "ok"
+                    result["version"] = str(h.get("version") or "")
+                except hc.GatewayError as exc:
+                    result["error"] = str(exc)
+                self._healthDone.emit(result)
+
+            threading.Thread(target=work, name="hermes-health", daemon=True).start()
+
+        def _on_health(self, result):
+            self._poll_busy = False
+            if result.get("version") and result["version"] != self._version:
+                self._version = result["version"]
+                self.versionChanged.emit()
+            if not result.get("ok"):
+                self._set_state("off")
+                self._session_ready = False
+                return
+            if not result.get("key_usable"):
+                self._set_state("nokey")
+                return
+            if self._approval:
+                self._set_state("asking")
+            elif self._busy:
+                self._set_state("busy")
+            else:
+                self._set_state("ready")
+            if not self._history_loaded:
+                self._history_loaded = True
+                self._load_history()
+
+        # ---- Verlauf -------------------------------------------------------------
+        def _load_history(self):
+            client, sid = self._client, self._session_id
+
+            def work():
+                out = {"ok": False, "rows": [], "error": ""}
+                try:
+                    client.ensure_session(sid)
+                    out["rows"] = client.history(sid)
+                    out["ok"] = True
+                except hc.GatewayError as exc:
+                    out["error"] = str(exc)
+                self._historyDone.emit(out)
+
+            threading.Thread(target=work, name="hermes-history", daemon=True).start()
+
+        def _on_history(self, out):
+            if not out.get("ok"):
+                self._history_loaded = False
+                self._model.append("info", f"Verlauf nicht geladen: {out.get('error')}")
+                return
+            self._session_ready = True
+            self._model.replace([{"role": r["role"], "text": r["content"]} for r in out["rows"]])
+
+        @Slot()
+        def newConversation(self):
+            self._session_id = "hermes-os-tray-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            self._save_session_id()
+            self._session_ready = False
+            self._model.clear()
+            self.stateChanged.emit()
+            self._history_loaded = True
+            self._load_history()
+
+        # ---- Senden und Ereignisse ---------------------------------------------
+        @Slot(str)
+        def send(self, text):
+            text = text.strip()
+            if not text or self._busy or self._state not in ("ready",):
+                return
+            self._model.append("user", text)
+            self._assistant_row = -1
+            self._set_busy(True)
+            self._set_state("busy")
+            client, sid = self._client, self._session_id
+
+            def work():
+                run_id = ""
+                try:
+                    client.ensure_session(sid)
+                    run_id = client.start_run(sid, text)
+                    self._runEvent.emit("run.accepted", {"run_id": run_id})
+                    for event in client.events(run_id):
+                        self._runEvent.emit(str(event.get("event") or ""), event)
+                    self._runEvent.emit("stream.closed", {"run_id": run_id})
+                except hc.GatewayError as exc:
+                    self._runEvent.emit("client.error", {"run_id": run_id, "message": str(exc)})
+
+            threading.Thread(target=work, name="hermes-run", daemon=True).start()
+
+        def _assistant(self):
+            if self._assistant_row < 0:
+                self._assistant_row = self._model.append("assistant", "")
+            return self._assistant_row
+
+        def _on_run_event(self, name, event):
+            if name == "run.accepted":
+                self._run_id = str(event.get("run_id") or "")
+            elif name == "message.delta":
+                row = self._assistant()
+                self._model.set_text(row, self._model.text(row) + str(event.get("delta") or ""))
+            elif name == "tool.started":
+                tool = str(event.get("tool") or "")
+                preview = str(event.get("preview") or "").strip().splitlines()
+                self._model.append("tool", f"{tool}: {preview[0][:160]}" if preview else tool, "started")
+            elif name == "tool.completed":
+                tool = str(event.get("tool") or "")
+                mark = "Fehler" if event.get("error") else f"{event.get('duration', 0)} s"
+                self._model.append("tool", f"{tool} fertig ({mark})", "completed")
+            elif name == "approval.request":
+                choices = [c for c in (event.get("choices") or ["once", "deny"]) if c in hc.APPROVAL_CHOICES]
+                self._approval = {
+                    "request_id": str(event.get("request_id") or ""),
+                    "command": str(event.get("command") or ""),
+                    "description": str(event.get("description") or ""),
+                    "choices": choices,
+                    "labels": [CHOICE_LABEL[c] for c in choices],
+                }
+                self.approvalChanged.emit()
+                self._set_state("asking")
+                self._notify_approval()
+            elif name == "approval.responded":
+                self._clear_approval()
+            elif name in ("run.completed", "run.failed", "run.cancelled", "run.interrupted"):
+                output = event.get("output")
+                if isinstance(output, str) and output.strip():
+                    self._model.set_text(self._assistant(), output)
+                if name == "run.failed":
+                    reason = str(event.get("turn_exit_reason") or event.get("error") or "unbekannt")
+                    self._model.append("error", f"Hermes hat abgebrochen: {reason}")
+                elif name != "run.completed":
+                    self._model.append("info", "Abgebrochen.")
+                self._finish()
+            elif name == "client.error":
+                self._model.append("error", str(event.get("message") or "Fehler"))
+                self._finish()
+            elif name == "stream.closed":
+                if self._busy:
+                    self._finish()
+
+        def _finish(self):
+            self._clear_approval()
+            self._run_id = ""
+            self._assistant_row = -1
+            self._set_busy(False)
+            if self._state in ("busy", "asking"):
+                self._set_state("ready")
+            QTimer.singleShot(0, self.poll)
+
+        @Slot()
+        def stopRun(self):
+            client, run_id = self._client, self._run_id
+            if not run_id:
+                return
+
+            def work():
+                try:
+                    client.stop(run_id)
+                except hc.GatewayError as exc:
+                    self._runEvent.emit("client.error", {"run_id": run_id, "message": str(exc)})
+
+            threading.Thread(target=work, name="hermes-stop", daemon=True).start()
+
+        # ---- Freigaben -----------------------------------------------------------
+        @Slot(str)
+        def approve(self, choice):
+            if not self._approval or choice not in self._approval.get("choices", []):
+                return
+            client, run_id, request_id = self._client, self._run_id, self._approval.get("request_id", "")
+            self._model.append("info", f"Freigabe: {CHOICE_LABEL.get(choice, choice)}")
+            self._clear_approval()
+
+            def work():
+                try:
+                    client.approve(run_id, choice, request_id)
+                except hc.GatewayError as exc:
+                    self._runEvent.emit("client.error", {"run_id": run_id, "message": f"Freigabe: {exc}"})
+
+            threading.Thread(target=work, name="hermes-approve", daemon=True).start()
+
+        def _clear_approval(self):
+            if self._approval:
+                self._approval = {}
+                self.approvalChanged.emit()
+            if self._state == "asking":
+                self._set_state("busy" if self._busy else "ready")
+            if self._notify_proc is not None:
+                proc, self._notify_proc = self._notify_proc, None
+                proc.kill()
+
+        def _notify_approval(self):
+            """KDE-Benachrichtigung mit Knöpfen; notify-send wartet und schreibt die Wahl auf stdout."""
+            if shutil.which("notify-send") is None or not self._approval:
+                return
+            a = self._approval
+            args = ["-a", "hermes-os", "-i", "hermes-os-tray-asking", "-u", "critical",
+                    "-t", str(approval_timeout_seconds() * 1000)]
+            for c in a["choices"]:
+                args += ["-A", f"{c}={CHOICE_LABEL[c]}"]
+            body = a["command"]
+            if a["description"]:
+                body += "\n" + a["description"]
+            proc = QProcess(self)
+            proc.setProgram("notify-send")
+            proc.setArguments(args + ["Hermes fragt nach einer Freigabe", body])
+
+            def finished(code, status):
+                out = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace").strip()
+                if self._notify_proc is proc:
+                    self._notify_proc = None
+                if out in hc.APPROVAL_CHOICES and self._approval:
+                    self.approve(out)
+
+            proc.finished.connect(finished)
+            self._notify_proc = proc
+            proc.start()
+
+        # ---- Sprünge nach draußen -----------------------------------------------
+        def _konsole(self, *cmd):
+            if QProcess.startDetached("konsole", ["-e", *cmd]):
+                return
+            QProcess.startDetached("xdg-terminal-exec", [*cmd])
+
+        @Slot()
+        def openSetup(self):
+            QProcess.startDetached(SETUP, [])
+
+        @Slot()
+        def openDashboard(self):
+            if self.dashboardAvailable:
+                QProcess.startDetached(DASHBOARD, [])
+
+        @Slot()
+        def startGateway(self):
+            # Der First-Login-Skript-Weg: legt den API-Schlüssel an, wenn er fehlt,
+            # und schaltet das Gateway ein, sobald ein Anbieter eingerichtet ist.
+            if os.path.isfile(FIRST_LOGIN):
+                QProcess.startDetached(FIRST_LOGIN, [])
+            else:
+                QProcess.startDetached("systemctl", ["--user", "start", GATEWAY_UNIT])
+            QTimer.singleShot(2000, self.poll)
+
+        @Slot()
+        def openTerminalChat(self):
+            self._konsole(HERMES)
+
+        @Slot()
+        def hideWindow(self):
+            self.hideRequested.emit()
+
+        @Slot()
+        def showWindow(self):
+            self.showRequested.emit()
+
+    # ---- Anwendung ---------------------------------------------------------------
+    QQuickStyle.setStyle("org.kde.desktop")
+    QApplication.setApplicationName("hermes-os-tray")
+    QApplication.setDesktopFileName("hermes-os-tray")
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(QIcon.fromTheme("hermes-os", QIcon.fromTheme("dialog-messages")))
+
+    backend = Backend()
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("backend", backend)
+    engine.load(MAIN_QML)
+    if not engine.rootObjects():
+        print(f"hermes-os-tray: {MAIN_QML} konnte nicht geladen werden", file=sys.stderr)
+        return 1
+    window = engine.rootObjects()[0]
+
+    def show_window():
+        window.show()
+        window.raise_()
+        window.requestActivate()
+
+    def toggle_window():
+        if window.isVisible():
+            window.hide()
+        else:
+            show_window()
+
+    backend.showRequested.connect(show_window)
+    backend.hideRequested.connect(window.hide)
+
+    def icon_for(state):
+        name = STATE_ICON.get(state, "hermes-os-tray-off")
+        return QIcon.fromTheme(name, QIcon.fromTheme("dialog-messages"))
+
+    tray = QSystemTrayIcon(icon_for(backend.state))
+    menu = QMenu()
+    act_open = menu.addAction("Hermes öffnen")
+    act_open.triggered.connect(toggle_window)
+    act_new = menu.addAction("Neues Gespräch")
+    act_new.triggered.connect(backend.newConversation)
+    if backend.dashboardAvailable:
+        menu.addAction("Dashboard öffnen").triggered.connect(backend.openDashboard)
+    menu.addAction("Hermes einrichten").triggered.connect(backend.openSetup)
+    act_gateway = menu.addAction("Gateway starten")
+    act_gateway.triggered.connect(backend.startGateway)
+    menu.addAction("Chat im Terminal").triggered.connect(backend.openTerminalChat)
+    menu.addSeparator()
+    menu.addAction("Beenden").triggered.connect(app.quit)
+    tray.setContextMenu(menu)
+
+    def refresh_tray():
+        tray.setIcon(icon_for(backend.state))
+        tip = backend.stateText
+        if backend.hermesVersion:
+            tip += "\n" + backend.hermesVersion
+        tray.setToolTip(tip)
+        act_gateway.setEnabled(backend.state == "off")
+
+    backend.stateChanged.connect(refresh_tray)
+    backend.versionChanged.connect(refresh_tray)
+    refresh_tray()
+
+    def activated(reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick, QSystemTrayIcon.MiddleClick):
+            toggle_window()
+
+    tray.activated.connect(activated)
+    tray.show()
+
+    # ---- Befehle der zweiten Instanz -------------------------------------------
+    server = QLocalServer()
+
+    def incoming():
+        conn = server.nextPendingConnection()
+        if conn is None:
+            return
+
+        def read():
+            data = bytes(conn.readAll())
+            if b"show" in data:
+                show_window()
+            conn.disconnectFromServer()
+
+        conn.readyRead.connect(read)
+
+    server.newConnection.connect(incoming)
+    if not server.listen(socket_name):
+        print(f"hermes-os-tray: kein lokaler Socket ({server.errorString()}), Meta+H erreicht diese Instanz nicht",
+              file=sys.stderr)
+
+    if want_show:
+        show_window()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
