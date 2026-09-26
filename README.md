@@ -65,10 +65,17 @@ nie in der read-only Venv. Die Variable setzen der Launcher und
 
 ## Die Grenze
 
-Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle.
-Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`, Firewall,
-Nutzer, Root-Shells, Partitionen, systemweite Sprache und Tastatur (`localectl set-*`).
-Neustart und Herunterfahren führt der Agent nie aus.
+Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle,
+auch mit sudo. Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`,
+Firewall, Nutzer, sudo mit allem außer reinen Lesebefehlen, Root-Shells, Partitionen,
+systemweite Sprache und Tastatur (`localectl set-*`). Neustart und Herunterfahren
+verweigert der Hook; der Agent bittet den Nutzer darum.
+
+Das ist eine Systemgrenze, keine Datengrenze: Alles im Home ist frei, auch User-Units,
+Autostart, `~/.ssh` und Netzwerkzugriffe. Die eigentliche Barriere gegen Systemänderungen
+ist, dass der Nutzer ohne Passwort kein Root hat; der Hook sorgt dafür, dass der Agent
+fragt, bevor er es versucht. Er erkennt Befehle, keine Wirkungen: Was ein Skript oder
+`python3 -c` im Inneren tut, sieht er nicht.
 
 Drei Stellen setzen das durch:
 
@@ -77,10 +84,14 @@ Drei Stellen setzen das durch:
 - **`approvals.smart_policy`** in `config.yaml.default` für den Guardian. Der sieht nur
   Befehle, die Hermes' eigener Detektor als gefährlich erkennt (rm -r, Schreiben nach
   /etc, systemctl stop/mask).
-- **`pre_tool_call`-Hook** im Plugin für alles, was der Detektor nicht kennt: bootc,
-  rpm-ostree, `ujust update`, systemctl ohne `--user`, Nutzer- und Partitionsverwaltung,
-  Root-Shells, Schreiben nach /etc, /usr, /boot. Der Hook schickt den Aufruf in Hermes'
-  Freigabe-Dialog (CLI-Prompt, Gateway `/approve`; ohne Menschen fail-closed).
+- **`pre_tool_call`-Hook** in `plugins/hermes_os/boundary.py` für alles, was der Detektor
+  nicht kennt. Er zerlegt den Befehl wie eine Shell, entschachtelt `sh -c`, `xargs`,
+  `find -exec`, `flatpak-spawn --host` und andere Hüllen und schickt Treffer in Hermes'
+  Freigabe-Dialog (CLI-Prompt, Gateway `/approve`; ohne Menschen verweigert). Scheitert
+  die Prüfung selbst, fragt er ebenfalls.
+
+Vertrag, Abdeckung, Allowlist und Restlücken in [docs/grenze.md](docs/grenze.md), die
+Angriffsbatterie in `tests/boundary-check.py`.
 
 ## Bauen
 
