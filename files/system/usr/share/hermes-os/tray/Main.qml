@@ -5,7 +5,8 @@
 // backend.messages ist ein Listenmodell mit den Rollen role (user, assistant,
 // tool, info, error), text, meta, images (Liste von URLs) und time;
 // backend.attachments sind die Bilder, die mit der nächsten Nachricht gehen
-// (Dateidialog, Strg+V, ins Fenster gezogen).
+// (Dateidialog, Strg+V, ins Fenster gezogen); backend.auditModel sind die
+// Zeilen der Seite Protokoll (docs/protokoll.md).
 // Das Fenster wird von Python gezeigt und versteckt; Schließen versteckt nur.
 import QtQuick
 import QtQuick.Layouts
@@ -105,16 +106,66 @@ Kirigami.ApplicationWindow {
         return true
     }
 
+    // Protokoll: was Hermes am System getan hat, eigene Seite wie die Bibliothek.
+    // Solange sie offen ist, liest das Backend die Datei bei jeder Änderung neu.
+    readonly property var auditPeriods: [
+        { text: "Heute", value: "today" },
+        { text: "Letzte 7 Tage", value: "week" },
+        { text: "Alles", value: "all" }
+    ]
+    function auditOpen() { return pageStack.currentItem === auditPage }
+    function openAudit() {
+        if (auditOpen()) return true
+        if (libraryOpen()) pageStack.pop()
+        auditMessage.text = ""
+        pageStack.push(auditPage)
+        backend.auditSetActive(true)
+        backend.auditReload()
+        return auditOpen()
+    }
+    function closeAudit() {
+        if (auditOpen()) pageStack.pop()
+        backend.auditSetActive(false)
+        inputField.forceActiveFocus()
+    }
+    function setAuditFilter(period, changesOnly) {
+        backend.auditSetFilter(period, changesOnly)
+    }
+    function toggleAuditChanges() {
+        auditChangesBox.toggle()
+        auditChangesBox.toggled()
+    }
+    function auditExportCurrent() {
+        var msg = backend.auditExport()
+        auditMessage.text = msg
+        return msg
+    }
+    function auditStatusIcon(status) {
+        if (status === "ok") return "dialog-ok-apply"
+        if (status === "error" || status === "failed") return "dialog-error"
+        if (status === "denied") return "dialog-cancel"
+        if (status === "launched") return "system-run"
+        if (status === "approved") return "dialog-ok"
+        return "chronometer"
+    }
+    function auditStatusColor(status) {
+        if (status === "ok" || status === "launched") return Kirigami.Theme.positiveTextColor
+        if (status === "error" || status === "failed") return Kirigami.Theme.negativeTextColor
+        if (status === "denied") return Kirigami.Theme.neutralTextColor
+        return Kirigami.Theme.disabledTextColor
+    }
+
     onVisibleChanged: if (visible) inputField.forceActiveFocus()
 
     Shortcut {
         sequence: "Escape"
-        onActivated: libraryOpen() ? closeLibrary() : backend.hideWindow()
+        onActivated: libraryOpen() ? closeLibrary() : (auditOpen() ? closeAudit() : backend.hideWindow())
     }
 
     Connections {
         target: backend
-        function onShowLibraryRequested() { root.openLibrary() }
+        function onShowLibraryRequested() { if (root.auditOpen()) root.closeAudit(); root.openLibrary() }
+        function onShowAuditRequested() { root.openAudit() }
     }
 
     // Ein Bild in einer Sprechblase: so groß wie das Bild, höchstens maxWidth
@@ -232,6 +283,17 @@ Kirigami.ApplicationWindow {
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: root.openLibrary()
+                }
+                Controls.ToolButton {
+                    objectName: "auditButton"
+                    icon.name: "view-history"
+                    display: Controls.AbstractButton.IconOnly
+                    text: "Protokoll"
+                    visible: backend.auditAvailable
+                    Controls.ToolTip.text: "Protokoll: was Hermes am System getan hat"
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    onClicked: root.openAudit()
                 }
                 Controls.ToolButton {
                     icon.name: "list-add"
@@ -1050,6 +1112,216 @@ Kirigami.ApplicationWindow {
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: backend.libraryRemove(libraryRow.modelData.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Seite Protokoll: was Hermes am System getan hat (docs/protokoll.md) --
+    Kirigami.ScrollablePage {
+        id: auditPage
+        objectName: "auditPage"
+        title: "Protokoll"
+
+        header: Controls.ToolBar {
+            contentItem: ColumnLayout {
+                spacing: Kirigami.Units.smallSpacing
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+                    Controls.ToolButton {
+                        objectName: "auditBack"
+                        icon.name: "go-previous"
+                        display: Controls.AbstractButton.IconOnly
+                        text: "Zurück zum Chat"
+                        Controls.ToolTip.text: text
+                        Controls.ToolTip.visible: hovered
+                        Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        onClicked: root.closeAudit()
+                    }
+                    Kirigami.Icon {
+                        source: "view-history"
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                        Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                    }
+                    Kirigami.Heading {
+                        Layout.fillWidth: true
+                        level: 3
+                        text: "Protokoll"
+                        elide: Text.ElideRight
+                    }
+                    Controls.Label {
+                        objectName: "auditCount"
+                        text: backend.auditCount === 1 ? "1 Eintrag" : backend.auditCount + " Einträge"
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.7
+                    }
+                }
+                // Filter und Export; bei schmalem Fenster brechen sie um
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+                    Controls.ComboBox {
+                        id: auditPeriodBox
+                        objectName: "auditPeriod"
+                        model: root.auditPeriods
+                        textRole: "text"
+                        valueRole: "value"
+                        currentIndex: Math.max(0, indexOfValue(backend.auditPeriod))
+                        onActivated: backend.auditSetFilter(currentValue, auditChangesBox.checked)
+                    }
+                    Controls.CheckBox {
+                        id: auditChangesBox
+                        objectName: "auditChangesOnly"
+                        text: "Nur Änderungen"
+                        checked: backend.auditChangesOnly
+                        Controls.ToolTip.text: "Nur Systembefehle, die wirklich gelaufen sind"
+                        Controls.ToolTip.visible: hovered
+                        Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        onToggled: backend.auditSetFilter(backend.auditPeriod, checked)
+                    }
+                    Controls.Button {
+                        objectName: "auditExport"
+                        text: "Exportieren"
+                        icon.name: "document-save-as"
+                        enabled: backend.auditCount > 0
+                        onClicked: root.auditExportCurrent()
+                    }
+                }
+                Controls.Label {
+                    id: auditMessage
+                    objectName: "auditMessage"
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    wrapMode: Text.WordWrap
+                    font: Kirigami.Theme.smallFont
+                    color: text.indexOf("fehlgeschlagen") >= 0 || text.indexOf("nicht verfügbar") >= 0
+                        ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                }
+            }
+        }
+
+        ListView {
+            id: auditList
+            objectName: "auditList"
+            model: backend.auditModel
+            spacing: Kirigami.Units.smallSpacing
+            topMargin: Kirigami.Units.smallSpacing
+            bottomMargin: Kirigami.Units.smallSpacing
+            readonly property string today: Qt.formatDate(new Date(), "dd.MM.yyyy")
+
+            Kirigami.PlaceholderMessage {
+                anchors.centerIn: parent
+                width: parent.width - Kirigami.Units.gridUnit * 4
+                visible: auditList.count === 0
+                icon.name: "view-history"
+                text: backend.auditChangesOnly ? "Keine Änderungen am System" : "Noch nichts protokolliert"
+                explanation: "Hier steht, was Hermes am System getan hat: jede Freigabe-Anfrage mit Entscheidung, "
+                    + "jeder Systembefehl mit Ergebnis und jeder App-Start. Andere Zeiträume stehen oben zur Wahl."
+            }
+
+            delegate: Rectangle {
+                id: auditRow
+                objectName: "auditRow"
+                required property int index
+                required property string rowId
+                required property string date
+                required property string time
+                required property string kind
+                required property string command
+                required property string groupLabel
+                required property string decisionLabel
+                required property string decider
+                required property string status
+                required property string resultText
+                required property string output
+                required property bool changed
+                property bool expanded: false
+                width: ListView.view ? ListView.view.width : 0
+                implicitHeight: auditContent.implicitHeight + Kirigami.Units.largeSpacing * 2
+                height: implicitHeight
+                radius: Kirigami.Units.largeSpacing
+                color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.05)
+                border.width: 1
+                border.color: Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15)
+
+                RowLayout {
+                    id: auditContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: Kirigami.Units.largeSpacing
+                    spacing: Kirigami.Units.largeSpacing
+                    Kirigami.Icon {
+                        objectName: "auditStatusIcon"
+                        source: root.auditStatusIcon(auditRow.status)
+                        color: root.auditStatusColor(auditRow.status)
+                        isMask: true
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                        Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                        Layout.alignment: Qt.AlignTop
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing
+                            Controls.Label {
+                                text: auditRow.date === auditList.today ? auditRow.time
+                                                                        : auditRow.date + " " + auditRow.time.substring(0, 5)
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.7
+                            }
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                text: auditRow.groupLabel
+                                elide: Text.ElideRight
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.7
+                            }
+                        }
+                        Kirigami.SelectableLabel {
+                            Layout.fillWidth: true
+                            text: auditRow.command
+                            font: Kirigami.Theme.fixedWidthFont
+                            wrapMode: TextEdit.Wrap
+                        }
+                        Controls.Label {
+                            Layout.fillWidth: true
+                            text: [auditRow.decisionLabel + (auditRow.decider !== "" ? " (" + auditRow.decider + ")" : ""),
+                                   auditRow.resultText].filter(function (t) { return t !== "" }).join(" · ")
+                            wrapMode: Text.WordWrap
+                            color: root.auditStatusColor(auditRow.status)
+                        }
+                        Controls.ToolButton {
+                            objectName: "auditOutputToggle"
+                            visible: auditRow.output !== ""
+                            text: auditRow.expanded ? "Ausgabe ausblenden" : "Ausgabe zeigen"
+                            icon.name: auditRow.expanded ? "arrow-up" : "arrow-down"
+                            display: Controls.AbstractButton.TextBesideIcon
+                            font: Kirigami.Theme.smallFont
+                            onClicked: auditRow.expanded = !auditRow.expanded
+                        }
+                        Rectangle {
+                            objectName: "auditOutput"
+                            Layout.fillWidth: true
+                            visible: auditRow.expanded && auditRow.output !== ""
+                            implicitHeight: outputLabel.implicitHeight + Kirigami.Units.smallSpacing * 2
+                            radius: Kirigami.Units.smallSpacing
+                            color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.08)
+                            Kirigami.SelectableLabel {
+                                id: outputLabel
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Kirigami.Units.smallSpacing
+                                text: auditRow.output
+                                font: Kirigami.Theme.fixedWidthFont
+                                wrapMode: TextEdit.Wrap
+                            }
                         }
                     }
                 }

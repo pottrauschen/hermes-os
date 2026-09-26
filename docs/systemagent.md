@@ -38,7 +38,11 @@ Plasma-Sitzung noch nicht gebootet.
 - **Bibliothek**: Der Knopf im Kopf und der Menüpunkt am Symbol öffnen eine
   Seite, auf der Adressen, Dateien und Ordner eingetragen werden, die Hermes
   bei Bedarf liest; Details in [bibliothek.md](bibliothek.md).
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Hermes
+- **Protokoll**: Der Knopf mit der Uhr im Kopf und der Menüpunkt am Symbol
+  öffnen eine Seite mit allem, was Hermes am System getan hat: Freigaben mit
+  Entscheidung, Systembefehle mit Ergebnis, App-Starts; Details in
+  [protokoll.md](protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
+- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Hermes
   einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
   sobald Teil 2 aus [einrichtung.md](einrichtung.md) das Startskript
   `/usr/libexec/hermes-os-dashboard` liefert.
@@ -208,7 +212,9 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   Widget mit echtem Popup wäre der nächste Schritt, wenn das stört.
 - **Nur eine Instanz.** Ein lokaler Socket `hermes-os-tray-<uid>` reicht
   „show" an die laufende Instanz weiter; Menüeintrag und Meta+H rufen
-  `hermes-os-tray --show`. Bleibt der Socket nach einem Absturz stehen, räumt
+  `hermes-os-tray --show`. Der Knopf „Im Chat besprechen" am Morgenbericht
+  schickt auf demselben Weg `discuss <pfad>` (`--discuss`), siehe
+  [morgenbericht.md](morgenbericht.md). Bleibt der Socket nach einem Absturz stehen, räumt
   der nächste Start ihn weg.
 - **Kurzbefehl**: KGlobalAccel liest Vorgaben aus
   `/usr/share/kglobalaccel/*.desktop` (`X-KDE-Shortcuts`), startet aber die

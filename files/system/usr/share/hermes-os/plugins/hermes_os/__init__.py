@@ -18,11 +18,10 @@ weil es schreibend ist und eine eigene Gefahrenstufe braucht.
 from __future__ import annotations
 
 import logging
-import re
-import shlex
 from typing import Any, Dict, Optional
 
-from . import library, tools
+from . import audit, boundary, library, report, tools
+from .boundary import classify_system_command  # noqa: F401  (Tests, Abwärtskompatibilität)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,11 @@ _TOOLS = (
 _LIBRARY_TOOLS = (
     ("library_list",  library.LIBRARY_LIST_SCHEMA,  library.handle_library_list,  "📚"),
     ("library_fetch", library.LIBRARY_FETCH_SCHEMA, library.handle_library_fetch, "📖"),
+)
+# Morgenbericht (report.py): Zusammenfassung und Desktop-Benachrichtigung
+_REPORT_TOOLS = (
+    ("os_report",      report.OS_REPORT_SCHEMA,      report.handle_os_report,      "🌅"),
+    ("desktop_notify", report.DESKTOP_NOTIFY_SCHEMA, report.handle_desktop_notify, "🔔"),
 )
 
 # Wird einmal pro neuer Session in den System-Prompt eingefroren.
@@ -107,112 +111,35 @@ Aussage als "erledigt" und wird auch so formuliert.
 
 
 # ---------------------------------------------------------------------------
-# Freigabe-Hook: Befehle, die das laufende System berühren
+# Freigabe-Hook: Befehle, die das laufende System berühren (boundary.py)
 # ---------------------------------------------------------------------------
 
-# (Gruppe, Regex auf den bereinigten Befehl). Bereinigt heißt: sudo/pkexec/
-# env-Präfixe und `sh -c '...'`-Hüllen entfernt, Verkettungen aufgetrennt.
-_SYSTEM_PATTERNS = (
-    ("image", re.compile(r"^bootc\s+(upgrade|update|switch|rollback|install|edit|usr-overlay)\b")),
-    ("image", re.compile(r"^rpm-ostree\s+(install|uninstall|override|kargs|rebase|rollback|deploy|upgrade|update|reset|initramfs|cleanup|cancel)\b")),
-    ("image", re.compile(r"^ujust\s+(update|upgrade|update-system|rollback|rebase-helper|rollback-helper|toggle-updates|toggle-devmode)\b")),
-    ("services", re.compile(r"^systemctl\s+(?:--\S+\s+)*(start|stop|restart|reload|reload-or-restart|enable|disable|mask|unmask|isolate|set-default|daemon-reload|edit|kill)\b")),
-    ("network", re.compile(r"^(firewall-cmd|nft|iptables|ip6tables|ufw)\b")),
-    ("users", re.compile(r"^(useradd|usermod|userdel|passwd|chpasswd|gpasswd|groupadd|groupdel|visudo|chsh|chage)\b")),
-    ("boot", re.compile(r"^(grubby|grub2-mkconfig|grub2-install|dracut|bootc\s+kargs)\b")),
-    ("ssh", re.compile(r"^ssh-keygen\b")),
-    ("disks", re.compile(r"^(fdisk|sfdisk|parted|sgdisk|gdisk|wipefs|mkfs(\.\w+)?|mkswap|dd|cryptsetup|lvm|pvcreate|vgcreate|lvcreate)\b")),
-    ("system-files", re.compile(r"^(tee|cp|mv|install|ln|rm|rmdir|chmod|chown|chattr|truncate|sed\s+-i\S*|touch|mkdir)\b.*\s/(etc|usr|boot|var/lib|ostree)(/|\s|$)")),
-    ("flatpak-system", re.compile(r"^flatpak\s+(?:--\S+\s+)*(install|remove|uninstall|update|override|repair)\b.*\s(--system|-s)\b")),
-    ("system-config", re.compile(r"^(localectl|timedatectl|hostnamectl)\s+(?:--\S+\s+)*set-\w+")),
-)
-
-# Root-Shells werden VOR dem Entfernen der Präfixe erkannt, weil `sudo -i`
-# oder `sudo bash` sonst als leerer Rest durchrutschen würden.
-_ROOT_SHELL_RE = re.compile(r"^(?:sudo|doas|pkexec)\s+(?:-[A-Za-z]+\s+)*(?:-i|-s|su|bash|sh|zsh|fish)\b(?!\s+-c)|^su\b(?!do)")
-_PREFIX_RE = re.compile(r"^(?:(?:sudo|doas|pkexec)(?:\s+-[A-Za-z]+(?:\s+\S+)?)*\s+|env\s+(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+|nice\s+(?:-n\s*\S+\s+)?|nohup\s+|time\s+)+")
-_SHELL_WRAP_RE = re.compile(r"^(?:ba|z|da)?sh\s+(?:-[a-zA-Z]*)?-?c\s+(.+)$")
-_SPLIT_RE = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
-
-
-def _strip_prefixes(segment: str) -> str:
-    seg = segment.strip()
-    for _ in range(4):
-        new = _PREFIX_RE.sub("", seg, count=1)
-        if new == seg:
-            break
-        seg = new.strip()
-    return seg
-
-
-def _unwrap_shell(segment: str) -> str:
-    """`bash -c 'inner'` -> inner (eine Ebene)."""
-    m = _SHELL_WRAP_RE.match(segment)
-    if not m:
-        return segment
-    inner = m.group(1).strip()
-    try:
-        parts = shlex.split(inner)
-        return parts[0] if len(parts) == 1 else inner.strip("'\"")
-    except ValueError:
-        return inner.strip("'\"")
-
-
-def _segments(command: str):
-    for raw in _SPLIT_RE.split(command):
-        seg = _strip_prefixes(raw)
-        if not seg:
-            continue
-        yield seg
-        inner = _unwrap_shell(seg)
-        if inner != seg:
-            for sub in _SPLIT_RE.split(inner):
-                sub = _strip_prefixes(sub)
-                if sub:
-                    yield sub
-
-
-def classify_system_command(command: str) -> Optional[Dict[str, str]]:
-    """Gibt {'group', 'segment'} zurück, wenn der Befehl das laufende System
-    berührt, sonst None. Reine Lesebefehle und alles mit --user bleiben frei."""
-    if not isinstance(command, str) or not command.strip():
-        return None
-    for raw in _SPLIT_RE.split(command):
-        raw = raw.strip()
-        if raw and _ROOT_SHELL_RE.match(raw):
-            return {"group": "root-shell", "segment": raw}
-    for seg in _segments(command):
-        if seg.startswith("systemctl") and re.search(r"(^|\s)--user(\s|$)", seg):
-            continue
-        for group, pattern in _SYSTEM_PATTERNS:
-            if pattern.search(seg):
-                return {"group": group, "segment": seg}
-    return None
-
-
 def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, **_kw: Any) -> Optional[Dict[str, str]]:
-    """Hermes' Vertrag: {'action': 'approve', ...} schickt den Aufruf in den
-    menschlichen Freigabe-Dialog (CLI-Prompt, Gateway /approve; ohne Mensch
-    fail-closed, in Cron verweigert). Nie werfen, nie blocken."""
+    """Hermes' Vertrag (docs/grenze.md): {'action': 'approve', ...} schickt den
+    Aufruf in den menschlichen Freigabe-Dialog, {'action': 'block', ...}
+    verweigert ihn. Scheitert die Prüfung, fragt der Hook (fail-closed)."""
     try:
-        if tool_name != "terminal" or not isinstance(args, dict):
+        if not isinstance(args, dict):
             return None
-        hit = classify_system_command(str(args.get("command") or ""))
+        if tool_name == "terminal":
+            text = args.get("command")
+        elif tool_name == "process_manage" and args.get("action") in ("write", "submit"):
+            text = args.get("data")     # Text, der in eine Hintergrund-Shell getippt wird
+        else:
+            return None
+        hit = boundary.classify_system_command(str(text or ""))
         if not hit:
             return None
-        return {
-            "action": "approve",
-            "message": f"hermes-os: `{hit['segment'][:120]}` berührt das laufende System ({hit['group']}). Freigabe nötig.",
-            "rule_key": f"hermes-os:{hit['group']}",
-        }
+        audit.record_flagged(hit, args, **_kw)  # Protokoll (audit.py): nur merken
+        return boundary.directive_for(hit)
     except Exception as exc:  # pragma: no cover
-        logger.warning("hermes-os pre_tool_call failed open: %s", exc)
-        return None
+        logger.warning("hermes-os pre_tool_call failed closed: %s", exc)
+        return boundary.fail_closed_directive(exc)
 
 
 def register(ctx) -> None:
     """Vom Plugin-Loader einmal aufgerufen."""
-    for name, schema, handler, emoji in _TOOLS:
+    for name, schema, handler, emoji in _TOOLS + _REPORT_TOOLS:
         ctx.register_tool(
             name=name, toolset=TOOLSET, schema=schema, handler=handler,
             check_fn=tools.check_requirements, emoji=emoji,
@@ -226,5 +153,6 @@ def register(ctx) -> None:
     # Die Bibliothek als Callable: wird bei jeder neuen Sitzung frisch gelesen.
     ctx.register_system_prompt_section("hermes-os.library", library.prompt_section)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    audit.register_hooks(ctx, classify_system_command)  # Protokoll: Freigaben, Ergebnisse, app_launch
     logger.info("hermes-os plugin: %d tools, prompt sections and approval hook registered",
-                len(_TOOLS) + len(_LIBRARY_TOOLS))
+                len(_TOOLS) + len(_LIBRARY_TOOLS) + len(_REPORT_TOOLS))

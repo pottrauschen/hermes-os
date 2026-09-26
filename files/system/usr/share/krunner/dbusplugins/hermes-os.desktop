@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Service
+Name=Hermes fragen
+Name[en]=Ask Hermes
+Comment=Fragen an Hermes: „hermes <Frage>“ oder „h: <Frage>“
+Comment[en]=Questions for Hermes: "hermes <question>" or "h: <question>"
+Icon=hermes-os
+X-KDE-PluginInfo-Name=hermes-os
+X-KDE-PluginInfo-Author=hermes-os
+X-KDE-PluginInfo-Version=1.0
+X-KDE-PluginInfo-License=MIT
+X-KDE-PluginInfo-EnabledByDefault=true
+X-Plasma-API=DBus
+X-Plasma-DBusRunner-Service=io.github.pottrauschen.hermesos.tray*
+X-Plasma-DBusRunner-Path=/runner
+X-Plasma-Request-Actions-Once=true
+X-Plasma-Runner-Min-Letter-Count=3
+X-Plasma-Runner-Match-Regex=(?i)^ *(hermes[ :,]|h *:)
+X-Plasma-Runner-Syntaxes=hermes :q:,h: :q:
+X-Plasma-Runner-Syntax-Descriptions=Fragt Hermes; Enter öffnet das Chat-Fenster mit der Frage,Kurzform von hermes :q:
