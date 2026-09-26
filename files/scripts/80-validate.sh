@@ -313,6 +313,33 @@ else
   echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
 fi
 
+# 7h. KRunner-Runner „Hermes fragen“: Registrierung für KRunner, Runner-Logik
+#     und D-Bus-Draht des Leisten-Symbols. Der Test prüft Präfix, Treffer, Run,
+#     das Drahtformat und die Desktop-Datei; gibt es dbus-daemon und dbus-send,
+#     spielt er Match und Run über einen privaten Bus durch.
+for f in /usr/share/krunner/dbusplugins/hermes-os.desktop \
+         /usr/share/hermes-os/tray/runner.py \
+         /usr/share/hermes-os/tray/dbus_peer.py; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  if desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop; then
+    pass "desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop"
+  else
+    fail "desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop"
+  fi
+fi
+if [ -f /ctx/tests/runner-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/runner-check.py --tray-dir /usr/share/hermes-os/tray \
+       --desktop-file /usr/share/krunner/dbusplugins/hermes-os.desktop; then
+    pass "krunner runner: prefix, matches, run, wire format and desktop file"
+  else
+    fail "krunner runner check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
+fi
+
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi
 
