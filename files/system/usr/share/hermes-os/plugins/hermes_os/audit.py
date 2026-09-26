@@ -26,6 +26,7 @@ from __future__ import annotations
 import collections
 import datetime
 import json
+import math
 import os
 import re
 import socket
@@ -57,6 +58,16 @@ GROUP_LABEL = {
     "flatpak-system": "Flatpak systemweit",
     "system-config": "Sprache, Zeit, Rechnername",
     "root-shell": "Root-Shell",
+    # Gruppen der gehärteten Grenze (boundary.py, docs/grenze.md)
+    "power": "Neustart und Ausschalten",
+    "sleep": "Ruhezustand",
+    "sudo": "Mit Root-Rechten",
+    "session": "Sitzungen",
+    "kernel": "Kernel-Module",
+    "security": "SELinux",
+    "ujust": "ujust-Rezept",
+    "nesting": "Zu tief verschachtelt",
+    "hook-error": "Grenzprüfung gescheitert",
     "hermes": "Hermes-Gefahrenerkennung",
     "app": "App-Start",
 }
@@ -168,6 +179,12 @@ def append(record: Dict[str, Any], path: Optional[Path] = None, max_bytes: int =
         return False
 
 
+def _valid_ts(ts: Any) -> bool:
+    """Epoche in Sekunden, endlich und in einem Bereich, den datetime darstellen
+    kann (1e999 aus einer handbearbeiteten Zeile wäre sonst unendlich)."""
+    return isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts) and 0 <= ts < 32503680000
+
+
 def read_events(path: Optional[Path] = None) -> List[Dict[str, Any]]:
     """Alle Ereignisse, ältere Datei zuerst. Zeilen, die kein JSON-Objekt mit
     Zeitstempel sind, werden übergangen (abgebrochenes Schreiben, Handarbeit)."""
@@ -181,7 +198,7 @@ def read_events(path: Optional[Path] = None) -> List[Dict[str, Any]]:
                         ev = json.loads(raw.decode("utf-8", "replace"))
                     except ValueError:
                         continue
-                    if isinstance(ev, dict) and isinstance(ev.get("ts"), (int, float)) and isinstance(ev.get("kind"), str):
+                    if isinstance(ev, dict) and _valid_ts(ev.get("ts")) and isinstance(ev.get("kind"), str):
                         events.append(ev)
         except OSError:
             continue
@@ -194,8 +211,8 @@ def read_events(path: Optional[Path] = None) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def group_from_pattern(pattern_key: str) -> str:
-    """plugin_rule:hermes-os:<gruppe>[:<befehl>] kommt aus unserem Hook
-    (boundary.py), alles andere aus Hermes' eigener Gefahrenerkennung."""
+    """plugin_rule:hermes-os:<gruppe>[:<befehl>] kommt aus unserem Hook, alles andere
+    aus Hermes' eigener Gefahrenerkennung."""
     m = re.match(r"^plugin_rule:hermes-os:([\w-]+)(?::.*)?$", str(pattern_key or ""))
     return m.group(1) if m else "hermes"
 
@@ -519,10 +536,10 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             text = str(result or "")
             append({"kind": "app.launch", "call": call or None,
                     "session": str(kw.get("session_id") or "") or None,
-                    "command": shorten(str(args.get("app_id") or "")
-                                       + (f" {args.get('target')}" if args.get("target") else ""), MAX_COMMAND),
+                    "command": redact(shorten(str(args.get("app_id") or "")
+                                              + (f" {args.get('target')}" if args.get("target") else ""), MAX_COMMAND)),
                     "status": "ok" if text.startswith("Gestartet") and not blocked else "error",
-                    "output": shorten(text), "duration_ms": kw.get("duration_ms"), "source": "hook"})
+                    "output": redact(shorten(text)), "duration_ms": kw.get("duration_ms"), "source": "hook"})
             return
         if tool_name != "terminal":
             return
