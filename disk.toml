@@ -1,0 +1,10 @@
+# bootc-image-builder Konfiguration für Datenträger (qcow2, raw). Anders als
+# die ISO (iso.toml) gibt es hier keinen Installer: das System bootet direkt,
+# und ohne Nutzer käme niemand hinein. Der Eintrag unten ist ein Muster.
+# Für eine Test-VM eine Kopie als disk.local.toml anlegen (steht in .gitignore),
+# dort Passwort und SSH-Schlüssel eintragen; das Makefile nimmt sie von selbst.
+[[customizations.user]]
+name = "stephan"
+password = "aendern"
+# key = "ssh-ed25519 AAAA... name@rechner"
+groups = ["wheel"]
