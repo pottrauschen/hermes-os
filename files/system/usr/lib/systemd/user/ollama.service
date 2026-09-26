@@ -12,6 +12,9 @@ Type=simple
 ExecStart=/usr/bin/ollama serve
 # Nur lokal erreichbar; Hermes spricht http://127.0.0.1:11434/v1.
 Environment=OLLAMA_HOST=127.0.0.1:11434
+# Ohne Cloud: keine Anmeldung bei ollama.com, keine Cloud-Modelle, keine
+# Weiterleitung. Modelle kommen weiter aus der Bibliothek (Download).
+Environment=OLLAMA_NO_CLOUD=1
 # Modelle im Home des Nutzers, nicht unter /usr (read-only) und nicht in
 # ~/.ollama (Ollamas Vorgabe, versteckt). Ein Image-Update lässt sie in Ruhe.
 Environment=OLLAMA_MODELS=%h/.local/share/ollama/models
@@ -31,8 +34,10 @@ Environment=OLLAMA_KEEP_ALIVE=1h
 # Hälfte des Cache-Speichers, Qualitätsverlust bei q8_0 nicht messbar.
 Environment=OLLAMA_FLASH_ATTENTION=1
 Environment=OLLAMA_KV_CACHE_TYPE=q8_0
-# Ohne NVIDIA-Karte (AMD/Intel-Variante, keine ROCm-Bibliotheken im Image)
-# rechnet Ollama auf der CPU; das erkennt es selbst beim Start.
+# Backends sucht Ollama beim Start selbst unter /usr/lib/ollama: CUDA 13
+# über den NVIDIA-Treiber (NVIDIA-Image), Vulkan über Mesa (AMD, Intel) oder
+# den NVIDIA-Treiber als Ausweich, sonst CPU. Keine ROCm-Bibliotheken im
+# Image; AMD läuft über Vulkan.
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM
