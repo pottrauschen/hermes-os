@@ -2,9 +2,10 @@
 # Podman/Buildah lesen diese Datei wie .dockerignore (Go-Glob mit ** für
 # beliebige Tiefe). Muster ohne führenden Pfad gelten im Wurzelverzeichnis,
 # die **-Varianten in Unterordnern.
+# tests/ bleibt im Kontext: die ctx-Stufe kopiert es nach /tests, das Gate
+# (80-validate.sh, Abschnitt 7c) rendert damit den Assistenten offscreen.
 .git
 output
-tests
 docs
 __pycache__
 **/__pycache__
