@@ -12,7 +12,9 @@ Drahtformat lesen und beantworten. Diese Datei kann genau so viel.
 Der Aufrufer hängt fileno() an seine Ereignisschleife (QSocketNotifier im
 Leisten-Symbol, select() im Test) und ruft read_ready(), sobald Daten da sind.
 Ankommende Methodenaufrufe gehen an handler(message) -> (signature, body) oder
-DBusError; der Rückgabewert wird zur Antwort.
+DBusError; der Rückgabewert wird zur Antwort. Signale (etwa von KGlobalAccel
+für Push-to-Talk, tray/desktop.py) landen bei subscribe()-Rückrufen, nachdem
+add_match() den Bus um sie gebeten hat.
 
 Unterstützte Typen: y b n q i u x t d s o g a ( ) { } v, Byte-Reihenfolge beim
 Senden immer little endian, beim Lesen beide.
@@ -351,6 +353,7 @@ class BusConnection:
         self._serial = 0
         self._buf = b""
         self._handlers: Dict[str, Handler] = {}
+        self._signals: Dict[Tuple[Optional[str], str, str], Callable[[Message], None]] = {}
         self._auth()
         self.unique_name = self.call(BUS_NAME, BUS_PATH, BUS_IFACE, "Hello")[0]
 
@@ -402,6 +405,14 @@ class BusConnection:
                 raise OSError("Bus hat die Verbindung geschlossen")
             self._buf += chunk
 
+    def emit_signal(self, path: str, interface: str, member: str, signature: str = "",
+                    body: Tuple[Any, ...] = (), destination: str = "") -> None:
+        """Ein Signal senden (im Test spielt so ein nachgebautes kglobalacceld Drücken und Loslassen)."""
+        fields = {F_PATH: path, F_INTERFACE: interface, F_MEMBER: member}
+        if destination:
+            fields[F_DESTINATION] = destination
+        self.send(encode_message(SIGNAL, self._next_serial(), fields, signature, body, FLAG_NO_REPLY_EXPECTED))
+
     def request_name(self, name: str) -> bool:
         """True, wenn wir den Namen jetzt besitzen (1 primär, 4 schon unser)."""
         result = self.call(BUS_NAME, BUS_PATH, BUS_IFACE, "RequestName", "su", (name, NAME_FLAG_DO_NOT_QUEUE))[0]
@@ -409,6 +420,16 @@ class BusConnection:
 
     def export(self, path: str, handler: Handler) -> None:
         self._handlers[path] = handler
+
+    def add_match(self, rule: str) -> None:
+        """Den Bus um Signale bitten, etwa "type='signal',interface='...',member='...'"."""
+        self.call(BUS_NAME, BUS_PATH, BUS_IFACE, "AddMatch", "s", (rule,))
+
+    def subscribe(self, path: Optional[str], interface: str, member: str,
+                  callback: Callable[[Message], None]) -> None:
+        """Rückruf für ein Signal; path None heißt: von jedem Objekt. add_match() muss
+        der Aufrufer selbst ausführen, damit der Bus das Signal auch zustellt."""
+        self._signals[(path, interface, member)] = callback
 
     # -- Lesen
     def fileno(self) -> int:
@@ -442,8 +463,17 @@ class BusConnection:
         return True
 
     def _dispatch(self, msg: Message) -> None:
+        if msg.type == SIGNAL:
+            callback = self._signals.get((msg.path, msg.interface, msg.member)) \
+                or self._signals.get((None, msg.interface, msg.member))
+            if callback is not None:
+                try:
+                    callback(msg)
+                except Exception:  # ein Fehler im Rückruf darf die Verbindung nicht beenden
+                    pass
+            return
         if msg.type != METHOD_CALL:
-            return  # Signale (NameAcquired) und verspätete Antworten interessieren nicht
+            return  # verspätete Antworten interessieren nicht
         reply_wanted = not (msg.flags & FLAG_NO_REPLY_EXPECTED)
         handler = self._handlers.get(msg.path)
         try:
