@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from . import boundary, library, tools
+from . import audit, boundary, library, tools
 from .boundary import classify_system_command  # noqa: F401  (Tests, Abwärtskompatibilität)
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,13 @@ def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, *
     Aufruf in den menschlichen Freigabe-Dialog, {'action': 'block', ...}
     verweigert ihn. Scheitert die Prüfung, fragt der Hook (fail-closed)."""
     try:
-        return boundary.pre_tool_call_directive(tool_name, args)
+        if tool_name != "terminal" or not isinstance(args, dict):
+            return None
+        hit = boundary.classify_system_command(str(args.get("command") or ""))
+        if not hit:
+            return None
+        audit.record_flagged(hit, args, **_kw)  # Protokoll (audit.py): nur merken
+        return boundary.directive_for(hit)
     except Exception as exc:  # pragma: no cover
         logger.warning("hermes-os pre_tool_call failed closed: %s", exc)
         return boundary.fail_closed_directive(exc)
@@ -136,5 +142,6 @@ def register(ctx) -> None:
     # Die Bibliothek als Callable: wird bei jeder neuen Sitzung frisch gelesen.
     ctx.register_system_prompt_section("hermes-os.library", library.prompt_section)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    audit.register_hooks(ctx, classify_system_command)  # Protokoll: Freigaben, Ergebnisse, app_launch
     logger.info("hermes-os plugin: %d tools, prompt sections and approval hook registered",
                 len(_TOOLS) + len(_LIBRARY_TOOLS))

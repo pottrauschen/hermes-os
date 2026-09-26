@@ -38,7 +38,11 @@ Plasma-Sitzung noch nicht gebootet.
 - **Bibliothek**: Der Knopf im Kopf und der Menüpunkt am Symbol öffnen eine
   Seite, auf der Adressen, Dateien und Ordner eingetragen werden, die Hermes
   bei Bedarf liest; Details in [bibliothek.md](bibliothek.md).
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Hermes
+- **Protokoll**: Der Knopf mit der Uhr im Kopf und der Menüpunkt am Symbol
+  öffnen eine Seite mit allem, was Hermes am System getan hat: Freigaben mit
+  Entscheidung, Systembefehle mit Ergebnis, App-Starts; Details in
+  [protokoll.md](protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
+- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Hermes
   einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
   sobald Teil 2 aus [einrichtung.md](einrichtung.md) das Startskript
   `/usr/libexec/hermes-os-dashboard` liefert.

@@ -6,7 +6,7 @@
 # Lädt tray/Main.qml mit einem Stub statt des echten Backends und spielt die
 # Zustände durch: Gateway aus, bereit, Nachricht senden, Bilder anhängen und
 # entfernen, Streaming mit Bildern in den Blasen, Freigabe mit Knöpfen,
-# Schlüssel fehlt. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
+# Schlüssel fehlt, Bibliothek, Protokoll mit Filtern und Export. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
 # oder ein umbenanntes Kirigami-Element schon im Image-Build auffällt.
 #
 # Aufruf:
@@ -15,6 +15,7 @@
 # Image-Build (80-validate.sh, 7d), in der Test-VM, auf einem Aurora-Desktop.
 # =============================================================================
 import argparse
+import datetime
 import os
 import sys
 import tempfile
@@ -80,6 +81,52 @@ class StubModel(QAbstractListModel):
         self.endResetModel()
 
 
+class StubAuditModel(QAbstractListModel):
+    """Dieselben Rollen wie AuditModel in hermes-os-tray."""
+    FIELDS = ("rowId", "date", "time", "kind", "command", "groupLabel", "decisionLabel", "decider",
+              "status", "resultText", "output", "changed")
+    _USER = int(Qt.ItemDataRole.UserRole)
+
+    def __init__(self):
+        super().__init__()
+        self._rows = []
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self._rows)
+
+    def data(self, index, role=int(Qt.ItemDataRole.DisplayRole)):
+        i = int(role) - self._USER - 1
+        if not index.isValid() or not 0 <= i < len(self.FIELDS):
+            return None
+        return self._rows[index.row()][self.FIELDS[i]]
+
+    def roleNames(self):
+        return {self._USER + 1 + i: QByteArray(f.encode("ascii")) for i, f in enumerate(self.FIELDS)}
+
+    def replace(self, rows):
+        self.beginResetModel()
+        self._rows = [dict(r) for r in rows]
+        self.endResetModel()
+
+
+def audit_row(row_id, status, command, changed, output="", date=""):
+    return {"rowId": row_id, "date": date or datetime.date.today().strftime("%d.%m.%Y"), "time": "14:03:12",
+            "kind": "app" if status == "launched" else "command", "command": command,
+            "groupLabel": "Systemdienste", "decisionLabel": "Einmal erlaubt" if changed else "Abgelehnt",
+            "decider": "Nutzer im Leisten-Symbol", "status": status,
+            "resultText": "Ausgeführt, Exit 0" if changed else "Nicht ausgeführt", "output": output,
+            "changed": changed}
+
+
+AUDIT_ROWS = [
+    audit_row("c:1", "ok", "sudo systemctl restart sshd", True, "Job for sshd.service finished.\nok"),
+    audit_row("c:2", "denied", "rm -rf /etc/foo", False),
+    audit_row("c:3", "error", "sudo systemctl restart foo", True, "Unit foo.service not found.", date="01.01.2026"),
+    audit_row("c:4", "launched", "org.mozilla.firefox", False),
+    audit_row("c:5", "pending", "sudo bootc upgrade", False),
+]
+
+
 class StubBackend(QObject):
     """Dieselbe Schnittstelle wie Backend in hermes-os-tray, ohne Gateway."""
     stateChanged = Signal()
@@ -91,6 +138,8 @@ class StubBackend(QObject):
     attachmentsChanged = Signal()
     libraryChanged = Signal()
     showLibraryRequested = Signal()
+    auditChanged = Signal()
+    showAuditRequested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -101,7 +150,68 @@ class StubBackend(QObject):
         self._attachments = []
         self._library = []
         self._model = StubModel()
+        self._audit = StubAuditModel()
+        self._audit_rows = []
+        self._audit_period = "today"
+        self._audit_changes = False
+        self.audit_source = list(AUDIT_ROWS)
         self.calls = []
+
+    # Protokoll wie im echten Backend: Model, Filter, Export
+    @Property(bool, constant=True)
+    def auditAvailable(self):
+        return True
+
+    @Property(QObject, constant=True)
+    def auditModel(self):
+        return self._audit
+
+    @Property(int, notify=auditChanged)
+    def auditCount(self):
+        return len(self._audit_rows)
+
+    @Property(str, notify=auditChanged)
+    def auditPeriod(self):
+        return self._audit_period
+
+    @Property(bool, notify=auditChanged)
+    def auditChangesOnly(self):
+        return self._audit_changes
+
+    @Property(str, constant=True)
+    def auditPath(self):
+        return "/tmp/audit.jsonl"
+
+    @Slot(bool)
+    def auditSetActive(self, active):
+        self.calls.append(("auditactive", bool(active)))
+
+    @Slot()
+    def auditReload(self):
+        self.calls.append(("auditreload",))
+        rows = [r for r in self.audit_source if r["changed"] or not self._audit_changes]
+        if self._audit_period == "today":
+            rows = [r for r in rows if r["date"] == datetime.date.today().strftime("%d.%m.%Y")]
+        self._audit_rows = rows
+        self._audit.replace(rows)
+        self.auditChanged.emit()
+
+    @Slot(str, bool)
+    def auditSetFilter(self, period, changes_only):
+        self.calls.append(("auditfilter", period, bool(changes_only)))
+        self._audit_period = period
+        self._audit_changes = bool(changes_only)
+        self.auditReload()
+
+    @Slot(result=str)
+    def auditExport(self):
+        self.calls.append(("auditexport",))
+        return "Gespeichert: /tmp/hermes-protokoll.txt"
+
+    @Slot()
+    def showAudit(self):
+        self.calls.append(("auditshow",))
+        self.showAuditRequested.emit()
 
     # Bibliothek wie im echten Backend: Liste von {"id", "kind", "source", "title", "note", "added"}
     @Property(bool, constant=True)
@@ -566,6 +676,62 @@ def main():
     step("Bibliothek: Signal aus dem Menü hält die Seite offen, Zurück zeigt wieder den Chat",
          still_open and not root.libraryOpen() and inp is not None and inp.property("enabled"),
          f"still_open={still_open} open={root.libraryOpen()}")
+
+    # 10. Protokoll: Seite öffnen, Zeilen mit Symbol je Ergebnis, Ausgabe aufklappen,
+    #     Filter Zeitraum und Änderungen, Export, zurück
+    opened = root.openAudit()
+    settle()
+    shot("audit-today")
+    rows_today = count("auditRow")
+    step("Protokoll: Seite öffnet sich, meldet sich an und zeigt die Zeilen von heute mit Symbol",
+         bool(opened) and root.auditOpen() and ("auditactive", True) in backend.calls and rows_today == 4
+         and count("auditStatusIcon") == 4,
+         f"opened={opened} rows={rows_today} icons={count('auditStatusIcon')} calls={backend.calls[-3:]}")
+    clicked = root.clickNamed("auditOutputToggle")
+    settle(200)
+    out = root.findNamed("auditOutput", None)
+    step("Protokoll: Ausgabe klappt auf",
+         clicked and out is not None and out.property("visible"), f"clicked={clicked}")
+    root.setAuditFilter("all", False)
+    settle()
+    step("Protokoll: Zeitraum alles zeigt auch ältere Einträge",
+         ("auditfilter", "all", False) in backend.calls and count("auditRow") == 5, f"rows={count('auditRow')}")
+    changes = child("auditChangesOnly")
+    root.toggleAuditChanges()
+    settle()
+    shot("audit-changes")
+    step("Protokoll: Häkchen nur Änderungen filtert auf gelaufene Systembefehle",
+         ("auditfilter", "all", True) in backend.calls and count("auditRow") == 2
+         and changes is not None and changes.property("checked"),
+         f"rows={count('auditRow')} calls={backend.calls[-2:]}")
+    period_box = child("auditPeriod")
+    step("Protokoll: Zeitraum-Auswahl folgt dem Backend",
+         period_box is not None and period_box.property("currentIndex") == 2,
+         f"index={period_box and period_box.property('currentIndex')}")
+    exported = root.clickNamed("auditExport")
+    settle(200)
+    msg = child("auditMessage")
+    step("Protokoll: Export ruft backend.auditExport und zeigt die Meldung",
+         exported and ("auditexport",) in backend.calls and msg is not None and msg.property("visible")
+         and "Gespeichert" in str(msg.property("text")), f"exported={exported}")
+    backend.audit_source = []
+    root.setAuditFilter("today", False)
+    settle()
+    shot("audit-empty")
+    step("Protokoll: leer ohne Warnung", count("auditRow") == 0, f"rows={count('auditRow')}")
+    root.closeAudit()
+    settle()
+    backend.showAudit()
+    settle(200)
+    via_menu = root.auditOpen()
+    backend.showLibrary()
+    settle(200)
+    switched = root.libraryOpen() and not root.auditOpen()
+    root.closeLibrary()
+    settle()
+    step("Protokoll: Menü öffnet die Seite, Bibliothek löst sie ab, zurück zum Chat meldet ab",
+         via_menu and switched and ("auditactive", False) in backend.calls and not root.auditOpen()
+         and not root.libraryOpen(), f"menu={via_menu} switched={switched}")
 
     root.close()
     print("ERGEBNIS: " + ("ok" if fail == 0 else "Fehler, siehe FEHL"))

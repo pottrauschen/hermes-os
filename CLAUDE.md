@@ -16,6 +16,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/bibliothek.md` | Bibliothek: Wissensquellen im Chat-Fenster, Ablage, Werkzeuge `library_list` und `library_fetch`, Grenzen, Stufe zwei |
 | `docs/grenze.md` | Die Grenze: Hook-Vertrag laut Hermes-Upstream, was Hermes selbst fängt, was der Hook fängt, Allowlist, Restlücken |
+| `docs/protokoll.md` | Protokoll: Seite im Chat-Fenster, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 
