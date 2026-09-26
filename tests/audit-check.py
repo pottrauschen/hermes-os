@@ -171,6 +171,12 @@ def main():
          and rows["c:call-9"]["command"] == "org.mozilla.firefox" and not rows["c:call-9"]["changed"],
          str(rows.get("c:call-9")))
 
+    # Regel-Schlüssel der gehärteten Grenze: hermes-os:<gruppe>:<befehl>
+    step("Gruppe auch aus hermes-os:<gruppe>:<befehl>",
+         audit.group_from_pattern("plugin_rule:hermes-os:disks:mkfs.ext4") == "disks"
+         and audit.group_from_pattern("plugin_rule:hermes-os:services") == "services"
+         and audit.group_from_pattern("plugin_rule:recursive_delete") == "hermes", "")
+
     # Kaputte Zeilen: abgebrochenes Schreiben, Unsinn, JSON ohne Zeitstempel
     with open(path, "ab") as f:
         f.write(b'{"v":1,"ts":17\n\xff\xfe kaputt\n[1,2]\n{"kind":"app.launch"}\n'

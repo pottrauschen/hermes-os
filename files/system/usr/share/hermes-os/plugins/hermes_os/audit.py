@@ -58,6 +58,16 @@ GROUP_LABEL = {
     "flatpak-system": "Flatpak systemweit",
     "system-config": "Sprache, Zeit, Rechnername",
     "root-shell": "Root-Shell",
+    # Gruppen der gehärteten Grenze (boundary.py, docs/grenze.md)
+    "power": "Neustart und Ausschalten",
+    "sleep": "Ruhezustand",
+    "sudo": "Mit Root-Rechten",
+    "session": "Sitzungen",
+    "kernel": "Kernel-Module",
+    "security": "SELinux",
+    "ujust": "ujust-Rezept",
+    "nesting": "Zu tief verschachtelt",
+    "hook-error": "Grenzprüfung gescheitert",
     "hermes": "Hermes-Gefahrenerkennung",
     "app": "App-Start",
 }
@@ -201,9 +211,9 @@ def read_events(path: Optional[Path] = None) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def group_from_pattern(pattern_key: str) -> str:
-    """plugin_rule:hermes-os:<gruppe> kommt aus unserem Hook, alles andere aus
-    Hermes' eigener Gefahrenerkennung."""
-    m = re.match(r"^plugin_rule:hermes-os:([\w-]+)$", str(pattern_key or ""))
+    """plugin_rule:hermes-os:<gruppe>[:<befehl>] kommt aus unserem Hook, alles andere
+    aus Hermes' eigener Gefahrenerkennung."""
+    m = re.match(r"^plugin_rule:hermes-os:([\w-]+)(?::.*)?$", str(pattern_key or ""))
     return m.group(1) if m else "hermes"
 
 
