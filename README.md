@@ -27,6 +27,7 @@ Universal-Blue-Muster.
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
 | Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
+| Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert | Bibliothek, Stufe eins, Seite im Chat-Fenster, siehe [docs/bibliothek.md](docs/bibliothek.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Portal-Vermittler und unabhängiges Audit-Log | Phase 4, noch nicht gebaut |

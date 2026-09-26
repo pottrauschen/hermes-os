@@ -1,6 +1,6 @@
 name: hermes-os
-version: "0.3.0"
-description: "hermes-os system layer: read-only, root-free introspection of the running bootc/KDE system (image, services, apps, hardware, network, journal, updates, locale and keyboard), a harmless app launcher, a system prompt section stating the permission boundary, and a pre_tool_call hook that routes system-touching terminal commands (bootc, rpm-ostree, ujust update, systemctl without --user, users, disks, /etc writes) to Hermes' human approval gate."
+version: "0.4.0"
+description: "hermes-os system layer: read-only, root-free introspection of the running bootc/KDE system (image, services, apps, hardware, network, journal, updates, locale and keyboard), a harmless app launcher, the user's library of knowledge sources (URLs, files, folders) with a fetch tool, a system prompt section stating the permission boundary, and a pre_tool_call hook that routes system-touching terminal commands (bootc, rpm-ostree, ujust update, systemctl without --user, users, disks, /etc writes) to Hermes' human approval gate."
 author: "pottrauschen"
 provides_tools:
   - os_status
@@ -12,5 +12,7 @@ provides_tools:
   - os_updates
   - os_locale
   - app_launch
+  - library_list
+  - library_fetch
 provides_hooks:
   - pre_tool_call

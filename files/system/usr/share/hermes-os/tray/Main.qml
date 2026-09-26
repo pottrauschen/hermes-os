@@ -75,11 +75,46 @@ Kirigami.ApplicationWindow {
         return true
     }
 
+    // Bibliothek: eigene Seite auf dem Stapel, zurück zum Chat mit dem Pfeil oder Escape
+    function libraryOpen() { return pageStack.currentItem === libraryPage }
+    function openLibrary() {
+        if (libraryOpen()) return true
+        backend.libraryReload()
+        pageStack.push(libraryPage)
+        librarySource.forceActiveFocus()
+        return libraryOpen()
+    }
+    function closeLibrary() {
+        if (libraryOpen()) pageStack.pop()
+        inputField.forceActiveFocus()
+    }
+    function typeLibrary(source, title, note) {
+        librarySource.text = source
+        libraryTitle.text = title
+        libraryNote.text = note
+    }
+    function libraryAddCurrent() {
+        var source = librarySource.text.trim()
+        if (source.length === 0) return false
+        var err = backend.libraryAdd(source, libraryTitle.text.trim(), libraryNote.text.trim())
+        libraryError.text = err
+        if (err !== "") return false
+        librarySource.text = ""
+        libraryTitle.text = ""
+        libraryNote.text = ""
+        return true
+    }
+
     onVisibleChanged: if (visible) inputField.forceActiveFocus()
 
     Shortcut {
         sequence: "Escape"
-        onActivated: backend.hideWindow()
+        onActivated: libraryOpen() ? closeLibrary() : backend.hideWindow()
+    }
+
+    Connections {
+        target: backend
+        function onShowLibraryRequested() { root.openLibrary() }
     }
 
     // Ein Bild in einer Sprechblase: so groß wie das Bild, höchstens maxWidth
@@ -186,6 +221,17 @@ Kirigami.ApplicationWindow {
                     visible: backend.busy
                     Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                     Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                }
+                Controls.ToolButton {
+                    objectName: "libraryButton"
+                    icon.name: "bookmarks"
+                    display: Controls.AbstractButton.IconOnly
+                    text: "Bibliothek"
+                    visible: backend.libraryAvailable
+                    Controls.ToolTip.text: "Bibliothek: Adressen, Dateien und Ordner, die Hermes kennen soll"
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    onClicked: root.openLibrary()
                 }
                 Controls.ToolButton {
                     icon.name: "list-add"
@@ -810,6 +856,201 @@ Kirigami.ApplicationWindow {
                         Controls.Button { action: approveSessionAction; visible: approveSessionAction.visible }
                         Controls.Button { action: approveAlwaysAction; visible: approveAlwaysAction.visible }
                         Controls.Button { action: approveDenyAction }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Seite Bibliothek: Wissensquellen für Hermes (docs/bibliothek.md) -----
+    Kirigami.ScrollablePage {
+        id: libraryPage
+        objectName: "libraryPage"
+        title: "Bibliothek"
+
+        header: Controls.ToolBar {
+            contentItem: RowLayout {
+                spacing: Kirigami.Units.smallSpacing
+                Controls.ToolButton {
+                    objectName: "libraryBack"
+                    icon.name: "go-previous"
+                    display: Controls.AbstractButton.IconOnly
+                    text: "Zurück zum Chat"
+                    Controls.ToolTip.text: text
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    onClicked: root.closeLibrary()
+                }
+                Kirigami.Icon {
+                    source: "bookmarks"
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                }
+                Kirigami.Heading {
+                    Layout.fillWidth: true
+                    level: 3
+                    text: "Bibliothek"
+                    elide: Text.ElideRight
+                }
+                Controls.Label {
+                    text: backend.libraryCount === 1 ? "1 Eintrag" : backend.libraryCount + " Einträge"
+                    font: Kirigami.Theme.smallFont
+                    opacity: 0.7
+                }
+            }
+        }
+
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.8
+                text: "Adressen, Dateien und Ordner, die Hermes kennen soll. Er liest sie bei Bedarf, folgt "
+                    + "Verweisen auf derselben Seite und nennt die Quelle. Neue Einträge gelten ab dem nächsten Gespräch."
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                Controls.TextField {
+                    id: librarySource
+                    objectName: "librarySource"
+                    Kirigami.FormData.label: "Adresse oder Pfad:"
+                    Layout.fillWidth: true
+                    placeholderText: "https://docs.kde.org/ oder ein Ordner im Home"
+                    onAccepted: root.libraryAddCurrent()
+                }
+                RowLayout {
+                    Kirigami.FormData.label: " "
+                    spacing: Kirigami.Units.smallSpacing
+                    Controls.Button {
+                        text: "Datei wählen"
+                        icon.name: "document-open"
+                        onClicked: { var p = backend.libraryPickFile(); if (p !== "") librarySource.text = p }
+                    }
+                    Controls.Button {
+                        text: "Ordner wählen"
+                        icon.name: "folder-open"
+                        onClicked: { var p = backend.libraryPickFolder(); if (p !== "") librarySource.text = p }
+                    }
+                }
+                Controls.TextField {
+                    id: libraryTitle
+                    objectName: "libraryTitle"
+                    Kirigami.FormData.label: "Titel:"
+                    Layout.fillWidth: true
+                    placeholderText: "optional, sonst Host oder Dateiname"
+                    onAccepted: root.libraryAddCurrent()
+                }
+                Controls.TextField {
+                    id: libraryNote
+                    objectName: "libraryNote"
+                    Kirigami.FormData.label: "Notiz für Hermes:"
+                    Layout.fillWidth: true
+                    placeholderText: "z. B. deutsche Handbücher unter stable_kf6/de"
+                    onAccepted: root.libraryAddCurrent()
+                }
+                RowLayout {
+                    Kirigami.FormData.label: " "
+                    spacing: Kirigami.Units.smallSpacing
+                    Controls.Button {
+                        objectName: "libraryAdd"
+                        text: "Hinzufügen"
+                        icon.name: "list-add"
+                        highlighted: true
+                        enabled: librarySource.text.trim().length > 0
+                        onClicked: root.libraryAddCurrent()
+                    }
+                    Controls.Label {
+                        id: libraryError
+                        objectName: "libraryError"
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: Kirigami.Theme.negativeTextColor
+                        visible: text !== ""
+                    }
+                }
+            }
+
+            Kirigami.Separator { Layout.fillWidth: true }
+
+            Kirigami.PlaceholderMessage {
+                Layout.fillWidth: true
+                visible: backend.libraryCount === 0
+                icon.name: "bookmarks"
+                text: "Noch keine Einträge"
+                explanation: "Trag oben eine Adresse ein, zum Beispiel https://docs.kde.org/, oder wähle eine Datei oder einen Ordner."
+            }
+
+            Repeater {
+                model: backend.library
+                delegate: Rectangle {
+                    id: libraryRow
+                    objectName: "libraryRow"
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: rowContent.implicitHeight + Kirigami.Units.largeSpacing * 2
+                    radius: Kirigami.Units.largeSpacing
+                    color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.05)
+                    border.width: 1
+                    border.color: Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15)
+                    RowLayout {
+                        id: rowContent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Kirigami.Units.largeSpacing
+                        spacing: Kirigami.Units.largeSpacing
+                        Kirigami.Icon {
+                            source: libraryRow.modelData.kind === "url" ? "globe"
+                                  : (libraryRow.modelData.kind === "folder" ? "folder" : "text-x-generic")
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.medium
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+                            Layout.alignment: Qt.AlignTop
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Kirigami.Heading {
+                                Layout.fillWidth: true
+                                level: 4
+                                text: libraryRow.modelData.title
+                                elide: Text.ElideRight
+                            }
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                text: libraryRow.modelData.source
+                                elide: Text.ElideMiddle
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.7
+                            }
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                visible: libraryRow.modelData.note !== ""
+                                text: libraryRow.modelData.note
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                        Controls.ToolButton {
+                            icon.name: "document-open"
+                            display: Controls.AbstractButton.IconOnly
+                            text: "Öffnen"
+                            Controls.ToolTip.text: text
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: backend.libraryOpen(libraryRow.modelData.id)
+                        }
+                        Controls.ToolButton {
+                            objectName: "libraryRemove"
+                            icon.name: "edit-delete"
+                            display: Controls.AbstractButton.IconOnly
+                            text: "Entfernen"
+                            Controls.ToolTip.text: text
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: backend.libraryRemove(libraryRow.modelData.id)
+                        }
                     }
                 }
             }

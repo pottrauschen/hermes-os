@@ -35,8 +35,11 @@ Plasma-Sitzung noch nicht gebootet.
   kommt eine KDE-Benachrichtigung mit denselben Knöpfen, damit man antworten
   kann, ohne das Fenster zu öffnen. Ohne Antwort läuft der Befehl nach
   `approvals.timeout` (Vorgabe 5 Minuten) nicht.
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Hermes einrichten,
-  Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
+- **Bibliothek**: Der Knopf im Kopf und der Menüpunkt am Symbol öffnen eine
+  Seite, auf der Adressen, Dateien und Ordner eingetragen werden, die Hermes
+  bei Bedarf liest; Details in [bibliothek.md](bibliothek.md).
+- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Hermes
+  einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
   sobald Teil 2 aus [einrichtung.md](einrichtung.md) das Startskript
   `/usr/libexec/hermes-os-dashboard` liefert.
 - **Autostart** bei jeder Plasma-Sitzung. Beim allerersten Login sagt das

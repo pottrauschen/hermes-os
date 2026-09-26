@@ -62,8 +62,8 @@ done
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
-names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch")))
-assert len(names) == 9, names
+names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_")))
+assert len(names) == 11, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})

@@ -58,6 +58,28 @@ except Exception as exc:  # --check meldet es lesbar
     hc = None
     _CLIENT_IMPORT_ERROR = str(exc)
 
+# Die Bibliothek (Adressen, Dateien, Ordner für den Agenten) teilt sich das
+# Symbol mit dem Plugin: dieselbe Ablage über dieselbe Datei library.py, hier
+# über den Pfad geladen, damit das Plugin-Paket nicht importiert werden muss.
+LIBRARY_PY = os.environ.get("HERMES_OS_LIBRARY_PY", "/usr/share/hermes-os/plugins/hermes_os/library.py")
+
+
+def load_library_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hermes_os_library", LIBRARY_PY)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{LIBRARY_PY} nicht ladbar")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+try:
+    lib = load_library_module()
+except Exception as exc:  # Fenster läuft ohne Bibliothek weiter, --check meldet es
+    lib = None
+    _LIBRARY_IMPORT_ERROR = str(exc)
+
 STATE_TEXT = {
     "off": "Hermes ist aus",
     "nokey": "Hermes läuft, aber der Schlüssel für das Leisten-Symbol fehlt",
@@ -239,6 +261,8 @@ def check_only():
         problems.append(f"hermes_client.py nicht importierbar: {_CLIENT_IMPORT_ERROR}")
     else:
         problems.extend(f"hermes_client: {p}" for p in hc.self_test())
+    if lib is None:
+        problems.append(f"library.py des Plugins nicht ladbar: {_LIBRARY_IMPORT_ERROR}")
     if shutil.which("notify-send") is None:
         print("WARN  notify-send fehlt: Freigaben nur im Fenster, keine Benachrichtigung")
     for p in problems:
@@ -351,6 +375,8 @@ def main():
         showRequested = Signal()
         hideRequested = Signal()
         attachmentsChanged = Signal()
+        libraryChanged = Signal()
+        showLibraryRequested = Signal()
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
@@ -363,6 +389,7 @@ def main():
             self._approval = {}
             self._version = ""
             self._attachments = []      # {"path", "url", "name"} je Bild für die nächste Nachricht
+            self._library = lib.load_entries() if lib is not None else []
             prune_cache()
             self._model = MessageModel()
             self._settings = hc.gateway_settings()
@@ -539,6 +566,73 @@ def main():
             """Bild im Bildbetrachter öffnen (Klick auf ein Bild im Verlauf)."""
             if url:
                 QDesktopServices.openUrl(QUrl(url))
+
+        # ---- Bibliothek: Wissensquellen für den Agenten (docs/bibliothek.md) ------
+        @Property(bool, constant=True)
+        def libraryAvailable(self):
+            return lib is not None
+
+        @Property("QVariantList", notify=libraryChanged)
+        def library(self):
+            return [dict(e) for e in self._library]
+
+        @Property(int, notify=libraryChanged)
+        def libraryCount(self):
+            return len(self._library)
+
+        @Slot()
+        def libraryReload(self):
+            """Datei neu lesen, etwa beim Öffnen der Seite; der Agent oder ein zweites
+            Fenster könnten sie geändert haben."""
+            if lib is not None:
+                self._library = lib.load_entries()
+            self.libraryChanged.emit()
+
+        @Slot(str, str, str, result=str)
+        def libraryAdd(self, source, title, note):
+            """Eintrag anlegen; leerer Text heißt Erfolg, sonst der Fehler fürs Fenster."""
+            if lib is None:
+                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+            entry, err = lib.add_entry(source, title, note)
+            self.libraryReload()
+            if err:
+                return err
+            self._model.append("info", f"Bibliothek: {entry['title']} eingetragen, gilt ab dem nächsten Gespräch.")
+            return ""
+
+        @Slot(str)
+        def libraryRemove(self, entry_id):
+            if lib is not None and lib.remove_entry(entry_id):
+                self.libraryReload()
+
+        @Slot(result=str)
+        def libraryPickFile(self):
+            start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
+                or os.path.expanduser("~")
+            path, _ = QFileDialog.getOpenFileName(None, "Datei für die Bibliothek", start,
+                                                  "Texte und Dokumente (*.pdf *.md *.txt *.html *.htm *.rst *.csv *.json *.yaml *.yml);;Alle Dateien (*)")
+            return path or ""
+
+        @Slot(result=str)
+        def libraryPickFolder(self):
+            start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
+                or os.path.expanduser("~")
+            return QFileDialog.getExistingDirectory(None, "Ordner für die Bibliothek", start) or ""
+
+        @Slot(str)
+        def libraryOpen(self, entry_id):
+            """Eintrag im Browser oder Dateimanager öffnen."""
+            for e in self._library:
+                if e["id"] == entry_id:
+                    url = QUrl(e["source"]) if e["kind"] == "url" else QUrl.fromLocalFile(e["source"])
+                    QDesktopServices.openUrl(url)
+                    return
+
+        @Slot()
+        def showLibrary(self):
+            """Aus dem Menü am Symbol: Fenster zeigen und die Seite öffnen."""
+            self.showRequested.emit()
+            self.showLibraryRequested.emit()
 
         def _set_state(self, state):
             if state != self._state:
@@ -905,6 +999,8 @@ def main():
     act_open.triggered.connect(toggle_window)
     act_new = menu.addAction("Neues Gespräch")
     act_new.triggered.connect(backend.newConversation)
+    if backend.libraryAvailable:
+        menu.addAction("Bibliothek").triggered.connect(backend.showLibrary)
     if backend.dashboardAvailable:
         menu.addAction("Dashboard öffnen").triggered.connect(backend.openDashboard)
     menu.addAction("Hermes einrichten").triggered.connect(backend.openSetup)

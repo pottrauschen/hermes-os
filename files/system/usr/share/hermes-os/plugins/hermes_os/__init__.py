@@ -22,7 +22,7 @@ import re
 import shlex
 from typing import Any, Dict, Optional
 
-from . import tools
+from . import library, tools
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,11 @@ _TOOLS = (
     ("os_updates",  tools.OS_UPDATES_SCHEMA,  tools.handle_os_updates,  "⬆️"),
     ("os_locale",   tools.OS_LOCALE_SCHEMA,   tools.handle_os_locale,   "🌍"),
     ("app_launch",  tools.APP_LAUNCH_SCHEMA,  tools.handle_app_launch,  "🚀"),
+)
+# Bibliothek (library.py): Wissensquellen des Nutzers, eigener Abrufer, kein Root
+_LIBRARY_TOOLS = (
+    ("library_list",  library.LIBRARY_LIST_SCHEMA,  library.handle_library_list,  "📚"),
+    ("library_fetch", library.LIBRARY_FETCH_SCHEMA, library.handle_library_fetch, "📖"),
 )
 
 # Wird einmal pro neuer Session in den System-Prompt eingefroren.
@@ -212,6 +217,14 @@ def register(ctx) -> None:
             name=name, toolset=TOOLSET, schema=schema, handler=handler,
             check_fn=tools.check_requirements, emoji=emoji,
         )
+    for name, schema, handler, emoji in _LIBRARY_TOOLS:
+        ctx.register_tool(
+            name=name, toolset=TOOLSET, schema=schema, handler=handler,
+            check_fn=library.check_requirements, emoji=emoji,
+        )
     ctx.register_system_prompt_section("hermes-os.system", SYSTEM_PROMPT_SECTION)
+    # Die Bibliothek als Callable: wird bei jeder neuen Sitzung frisch gelesen.
+    ctx.register_system_prompt_section("hermes-os.library", library.prompt_section)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
-    logger.info("hermes-os plugin: %d tools, prompt section and approval hook registered", len(_TOOLS))
+    logger.info("hermes-os plugin: %d tools, prompt sections and approval hook registered",
+                len(_TOOLS) + len(_LIBRARY_TOOLS))
