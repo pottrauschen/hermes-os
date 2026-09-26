@@ -95,7 +95,8 @@ if [ -f "${PLUGIN}/plugin.yaml" ] && [ -f "${PLUGIN}/__init__.py" ]; then
   ln -sfn "${PLUGIN}" "${HERMES_HOME}/plugins/hermes_os"
   cp /usr/share/hermes-os/config.yaml.default "${HERMES_HOME}/config.yaml"
   if /usr/bin/hermes plugins enable hermes-os >/dev/null 2>&1 \
-     && (cd /usr/lib/hermes-agent && /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+     && (cd /usr/lib/hermes-agent && XDG_STATE_HOME="${HERMES_HOME}/state" /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+import json, os
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
@@ -116,7 +117,19 @@ d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo locale
 assert d.action == "approve", d
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de"})
 assert d.action is None, d
-print("tools:", ", ".join(names), "| approval hook active")
+# Protokoll (audit.py): Hooks hängen, ein erkannter Befehl landet mit Ergebnis in der Datei
+for h in ("pre_approval_request", "post_approval_response", "post_tool_call"):
+    assert hp.has_hook(h), h
+from hermes_cli.lifecycle import invoke_hook
+invoke_hook("post_tool_call", tool_name="terminal", args={"command": "sudo systemctl restart sshd"},
+            result=json.dumps({"output": "", "exit_code": 0, "error": None}), task_id="", session_id="",
+            tool_call_id="gate-1", turn_id="", api_request_id="", duration_ms=1, status="ok",
+            error_type=None, error_message=None, middleware_trace=[])
+path = os.path.join(os.environ["XDG_STATE_HOME"], "hermes-os", "audit.jsonl")
+last = json.loads(open(path, encoding="utf-8").read().splitlines()[-1])
+assert last["kind"] == "command.result" and last["group"] == "services" and last["exit_code"] == 0, last
+assert oct(os.stat(path).st_mode & 0o777) == "0o600", oct(os.stat(path).st_mode)
+print("tools:", ", ".join(names), "| approval hook active | audit log written")
 PY
   ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
 else
@@ -311,6 +324,20 @@ if [ -f /ctx/tests/library-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
+fi
+
+# 7h. Protokoll: Ablage, Zusammenführen, Rotation, Filter und Export des Plugins
+#     (audit.py), mit der Venv-Python wie im Gateway. Das Leisten-Symbol liest
+#     dieselbe Datei; seine Seite prüft tray-gui-check.py in 7d.
+if [ -f /ctx/tests/audit-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/audit-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os; then
+    pass "audit: write, read, rotation, filters and export work"
+  else
+    fail "audit check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/audit-check.py not in build context, audit check skipped"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
