@@ -22,7 +22,7 @@ import re
 import shlex
 from typing import Any, Dict, Optional
 
-from . import library, tools
+from . import audit, library, tools
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,7 @@ def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, *
         hit = classify_system_command(str(args.get("command") or ""))
         if not hit:
             return None
+        audit.record_flagged(hit, args, **_kw)  # Protokoll (audit.py): nur merken
         return {
             "action": "approve",
             "message": f"hermes-os: `{hit['segment'][:120]}` berührt das laufende System ({hit['group']}). Freigabe nötig.",
@@ -226,5 +227,6 @@ def register(ctx) -> None:
     # Die Bibliothek als Callable: wird bei jeder neuen Sitzung frisch gelesen.
     ctx.register_system_prompt_section("hermes-os.library", library.prompt_section)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    audit.register_hooks(ctx, classify_system_command)  # Protokoll: Freigaben, Ergebnisse, app_launch
     logger.info("hermes-os plugin: %d tools, prompt sections and approval hook registered",
                 len(_TOOLS) + len(_LIBRARY_TOOLS))
