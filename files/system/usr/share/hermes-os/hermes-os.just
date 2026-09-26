@@ -51,3 +51,59 @@ hermes-os-info:
 hermes-os-relink:
     /usr/libexec/hermes-os-first-login
     @tail -5 ~/.hermes/hermes-os-first-login.log
+
+# Morgenbericht einschalten: täglich eine Benachrichtigung zum Systemzustand (Uhrzeit HH:MM, Vorgabe 08:30)
+hermes-morgenbericht-ein zeit="":
+    #!/usr/bin/bash
+    set -euo pipefail
+    zeit={{ quote(zeit) }}
+    if [ -z "$zeit" ] && [ -t 0 ]; then
+        read -r -p "Uhrzeit für den Morgenbericht (HH:MM) [08:30]: " zeit || true
+    fi
+    zeit="${zeit:-08:30}"
+    if [[ ! "$zeit" =~ ^([01]?[0-9]|2[0-3]):([0-5][0-9])$ ]]; then
+        echo "Uhrzeit bitte als HH:MM angeben, etwa: ujust hermes-morgenbericht-ein 07:45"
+        exit 1
+    fi
+    stunde=$((10#${BASH_REMATCH[1]}))
+    minute=$((10#${BASH_REMATCH[2]}))
+    # Hermes führt Skript-Jobs nur aus ~/.hermes/scripts aus (auch kein Symlink
+    # nach draußen); die Datei springt nur ins Image, die Logik bleibt dort.
+    scripts="${HERMES_HOME:-$HOME/.hermes}/scripts"
+    mkdir -p "$scripts"
+    printf '%s\n' '#!/usr/bin/bash' \
+        '# hermes-os: Morgenbericht, angelegt von ujust hermes-morgenbericht-ein.' \
+        '# Die Logik liegt im Image (/usr/libexec/hermes-os-morgenbericht).' \
+        'exec /usr/libexec/hermes-os-morgenbericht' > "$scripts/hermes-os-morgenbericht.sh"
+    for _ in 1 2 3 4 5; do
+        /usr/bin/hermes cron remove hermes-os-morgenbericht >/dev/null 2>&1 || break
+    done
+    # Skript-Job ohne Modell: kostet nichts, braucht keinen Anbieter, darf nichts ändern.
+    # deliver local: nichts an Messaging-Plattformen, die Ausgabe liegt unter ~/.hermes/cron/output.
+    if ! out="$(/usr/bin/hermes cron create "$minute $stunde * * *" --name hermes-os-morgenbericht \
+            --script hermes-os-morgenbericht.sh --no-agent --deliver local 2>&1)"; then
+        echo "$out"
+        echo "Morgenbericht nicht eingerichtet."
+        exit 1
+    fi
+    printf 'Morgenbericht eingeschaltet: täglich um %02d:%02d (Zeitzone des Systems oder timezone in ~/.hermes/config.yaml).\n' "$stunde" "$minute"
+    echo "Probelauf ohne Benachrichtigung: /usr/libexec/hermes-os-morgenbericht --probe"
+    if ! systemctl --user is-active --quiet hermes-gateway.service 2>/dev/null; then
+        echo "Hinweis: Das Gateway läuft nicht; ohne Gateway kommt kein Bericht. Einschalten: ujust hermes-gateway-enable"
+    fi
+
+# Morgenbericht ausschalten
+hermes-morgenbericht-aus:
+    #!/usr/bin/bash
+    set -uo pipefail
+    n=0
+    for _ in 1 2 3 4 5; do
+        /usr/bin/hermes cron remove hermes-os-morgenbericht >/dev/null 2>&1 || break
+        n=$((n + 1))
+    done
+    rm -f "${HERMES_HOME:-$HOME/.hermes}/scripts/hermes-os-morgenbericht.sh"
+    if [ "$n" -gt 0 ]; then
+        echo "Morgenbericht ausgeschaltet."
+    else
+        echo "Es war kein Morgenbericht eingerichtet."
+    fi
