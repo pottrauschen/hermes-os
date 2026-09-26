@@ -20,6 +20,7 @@ Universal-Blue-Muster.
 |---|---|
 | Schreibgeschützte Basis, Updates mit Rollback | Aurora, fertig |
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
+| Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
@@ -35,8 +36,9 @@ Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
   + Hermes v2026.9.24 (0.21.5)  /usr/lib/hermes-agent, eigene Python-3.13-Venv (uv), vorkompiliert
   + uv                          /usr/bin/uv, Installer für Nachinstallationen ins Home
   + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage, ujust-Rezepte
+  + Einrichtung                 /usr/libexec/hermes-os-setup (Kirigami, PySide6 aus Aurora) + setup/hermes_bridge.py in der Venv
   + Dienst                      hermes-gateway.service (User-Unit, an graphical-session gebunden)
-  + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill
+  + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill, öffnet den Assistenten
 Nutzerdaten                     ~/.hermes: Config, Sessions, Memory, Checkpoints, lazy-packages
 Apps                            Flatpak
 Entwicklung                     Distrobox / Podman
@@ -115,8 +117,11 @@ Visibility). Ein per Actions erzeugtes Paket ist anfangs privat.
 
 ## Nach dem ersten Login
 
-Das First-Login-Skript öffnet ein Terminal mit `hermes setup`. Dort Provider und Modell
-wählen. Danach:
+Das First-Login-Skript öffnet den Einrichtungsassistenten: Anbieter aus Hermes' Katalog,
+Schlüssel eintragen und prüfen, Modell wählen. Er schreibt `.env` und `config.yaml` über
+Hermes' eigene Helfer und schaltet das Gateway ein. Später erreichbar als „Hermes
+einrichten" im Menü oder `ujust hermes-setup`; der volle Terminal-Wizard bleibt unter
+`ujust hermes-setup-terminal`. Details in [docs/einrichtung.md](docs/einrichtung.md). Danach:
 
 ```sh
 hermes                        # chatten; Sprache: /voice on (Push-to-Talk)
@@ -142,9 +147,13 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
   Venv, das Plugin lädt über den echten Plugin-Loader, der Freigabe-Hook greift,
   Sprachpakete sind importierbar, `hermes update` verweigert, `ujust --list` zeigt die
   Rezepte. `bootc container lint` ist sauber. Der Hermes-Baum im Image ist rund 1 GB groß.
-- **Noch nie gebootet.** Der nächste Schritt ist ein Boot in einer VM (`make qcow2`,
-  `make run-qemu-qcow`) oder ein `bootc switch` auf einem Testrechner. Erst dort zeigt
-  sich, ob First-Login, Gateway-Unit und der a11y-Bus für Phase 3 wie gedacht greifen.
+- **Erster Boot am 2026-09-26** in einer Proxmox-VM, Ablauf und Befunde in
+  [docs/testumgebung.md](docs/testumgebung.md): Image, Hermes, Plugin, Skill, Rezepte
+  und First-Login greifen. Offen bleibt der Boot auf echter Hardware per `bootc switch`.
+- **Oberfläche:** Der Assistent für den ersten Login ist gebaut. Als zweiter Schritt
+  soll Hermes' eigenes Web-Dashboard (`hermes dashboard`) ins Image: Frontend in CI mit
+  Node bauen, im Image als Fenster über QtWebEngine öffnen. Siehe
+  [docs/einrichtung.md](docs/einrichtung.md).
 - **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
   Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
   kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes einrichten
+Name[en]=Set up Hermes
+Comment=Anbieter, Schlüssel und Modell für den Hermes-Agenten festlegen
+Comment[en]=Choose provider, API key and model for the Hermes agent
+Exec=/usr/libexec/hermes-os-setup
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;
+Keywords=hermes;agent;ki;ai;setup;
+StartupNotify=true

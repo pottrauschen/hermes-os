@@ -2,8 +2,12 @@
 # /usr/share/ublue-os/just/60-custom.just ab, die einzige Datei, die Auroras
 # ujust zusätzlich zu seiner festen Liste importiert.
 
-# Hermes einrichten (Provider, Modell, Tools)
+# Hermes einrichten: Fenster für Anbieter, Schlüssel und Modell
 hermes-setup:
+    /usr/libexec/hermes-os-setup
+
+# Hermes im Terminal einrichten (voller Wizard: Modell, TTS, Terminal, Gateway, Tools)
+hermes-setup-terminal:
     /usr/bin/hermes setup
 
 # Hermes-Diagnose

@@ -71,3 +71,13 @@ tts:
 # ---- Anzeige -----------------------------------------------------------------
 display:
   interface: cli
+
+# ---- Fremde Anmeldungen ------------------------------------------------------
+# Hermes würde sonst eine Anmeldung von Claude Code (~/.claude/.credentials.json)
+# oder der Codex-CLI (~/.codex/auth.json) von selbst übernehmen, sobald es
+# keinen eigenen Login hat. Für Claude ist das nicht erlaubt: Anthropic
+# gestattet das Abo nur in den eigenen Programmen, nicht in einem fremden
+# Agenten (docs/einrichtung.md, Abschnitt Abo). Hermes nutzt hier nur, was
+# der Nutzer ausdrücklich einträgt.
+auth:
+  adopt_external_logins: false

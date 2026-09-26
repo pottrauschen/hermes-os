@@ -10,8 +10,8 @@ set -xeuo pipefail
 SHARE=/usr/share/hermes-os
 
 # ---- Rechte ------------------------------------------------------------------
-chmod 0755 /usr/libexec/hermes-os-first-login
-chmod 0644 "${SHARE}/config.yaml.default"
+chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup
+chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* /usr/share/applications/hermes-os-setup.desktop
 find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
 find "${SHARE}/plugins" "${SHARE}/skills" -type d -exec chmod 0755 {} +
 

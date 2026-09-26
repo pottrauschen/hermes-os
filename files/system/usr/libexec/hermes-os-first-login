@@ -8,7 +8,8 @@
 #      ein Image-Update sie automatisch aktualisiert)
 #   3. Plugin aktivieren
 #   4. Gateway-Dienst einschalten, sobald ein Provider konfiguriert ist
-#   5. Beim allerersten Mal: Hinweis und Setup in einem Terminal anbieten
+#   5. Beim allerersten Mal: Einrichtungsassistent öffnen (Kirigami-Fenster,
+#      /usr/libexec/hermes-os-setup); ohne ihn ein Terminal mit `hermes setup`
 # =============================================================================
 set -euo pipefail
 
@@ -55,14 +56,24 @@ if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then
   systemctl --user start hermes-gateway.service || echo "WARN: gateway start fehlgeschlagen"
 fi
 
-# 5. Erster Start: Setup anbieten
+# 5. Erster Start: Einrichtung anbieten. Der Assistent ist ein eigenes
+#    Fenster; der Assistent selbst ruft dieses Skript nach dem Speichern
+#    erneut auf, damit Schritt 4 das Gateway einschaltet. Fällt er aus
+#    (PySide6 fehlt, QML kaputt), bleibt das Terminal mit `hermes setup`.
 if [ "${FIRST_RUN}" = "1" ]; then
-  notify-send -a hermes-os "Hermes ist bereit zur Einrichtung" \
-    "Ein Terminal öffnet sich mit 'hermes setup'. Dort Provider und Modell wählen. Sprache am Desktop danach mit: hermes, dann /voice on" || true
-  if command -v konsole >/dev/null 2>&1; then
-    setsid konsole -e /usr/bin/hermes setup >/dev/null 2>&1 &
-  elif command -v xdg-terminal-exec >/dev/null 2>&1; then
-    setsid xdg-terminal-exec /usr/bin/hermes setup >/dev/null 2>&1 &
+  if [ -x /usr/libexec/hermes-os-setup ] && /usr/libexec/hermes-os-setup --check >/dev/null 2>&1; then
+    notify-send -a hermes-os "Hermes ist bereit zur Einrichtung" \
+      "Ein Fenster führt durch Anbieter, Schlüssel und Modell. Später erreichbar über: Hermes einrichten im Menü oder ujust hermes-setup" || true
+    setsid /usr/libexec/hermes-os-setup >/dev/null 2>&1 &
+  else
+    echo "WARN: hermes-os-setup nicht lauffähig, nehme Terminal"
+    notify-send -a hermes-os "Hermes ist bereit zur Einrichtung" \
+      "Ein Terminal öffnet sich mit 'hermes setup'. Dort Provider und Modell wählen. Sprache am Desktop danach mit: hermes, dann /voice on" || true
+    if command -v konsole >/dev/null 2>&1; then
+      setsid konsole -e /usr/bin/hermes setup >/dev/null 2>&1 &
+    elif command -v xdg-terminal-exec >/dev/null 2>&1; then
+      setsid xdg-terminal-exec /usr/bin/hermes setup >/dev/null 2>&1 &
+    fi
   fi
 fi
 echo "done"
