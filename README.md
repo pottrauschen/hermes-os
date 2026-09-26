@@ -31,7 +31,7 @@ Universal-Blue-Muster.
 | Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert | Bibliothek, Stufe eins, Seite im Chat-Fenster, siehe [docs/bibliothek.md](docs/bibliothek.md) |
 | Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, Test in der VM offen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
-| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; Test in VM 112 offen, siehe [docs/dashboard.md](docs/dashboard.md) |
+| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; offscreen gegen das echte Hermes geprüft, Plasma-Sitzung in VM 112 offen, siehe [docs/dashboard.md](docs/dashboard.md) |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Chat-Fenster, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
 
@@ -180,9 +180,9 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
   das Symbol lief bisher nur durch Gate und Tests, nicht in der VM. Hermes' eigenes
   Web-Dashboard (`hermes dashboard`) ist im Image: das Frontend baut eine Node-Stufe im
   Dockerfile, ein QtWebEngine-Fenster zeigt es, erreichbar aus Menü, Leisten-Symbol,
-  Assistent und `ujust hermes-dashboard`. Das Gate startet den echten Server im Build;
-  das Fenster selbst ist in VM 112 noch nicht gelaufen. Siehe
-  [docs/dashboard.md](docs/dashboard.md).
+  Assistent und `ujust hermes-dashboard`. Fenster und Server sind offscreen gegen das
+  echte Hermes geprüft, das Gate wiederholt das im Build; in der Plasma-Sitzung von
+  VM 112 ist das Fenster noch nicht gelaufen. Siehe [docs/dashboard.md](docs/dashboard.md).
 - **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
   Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
   kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).

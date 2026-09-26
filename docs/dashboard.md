@@ -5,8 +5,9 @@ Web-Oberfläche mit: Modelle und Schlüssel, Sessions, Cron, Plugins, Skills,
 Umgebungsvariablen, Systemstatus. In hermes-os ist sie ins Image gebaut und
 als Fenster erreichbar, weil im Image kein Browser liegt. Gebaut, durch
 `make lint` und den Test gegen Attrappen gelaufen; das Frontend lokal mit
-Node 22 gebaut; das Gate startet den echten Server im Image-Build. Das Fenster
-selbst ist in VM 112 noch nicht gelaufen.
+Node 22 gebaut; das Fenster offscreen mit echtem QtWebEngine gegen das echte
+`hermes dashboard` gefahren; das Gate wiederholt beides im Image-Build. In
+der Plasma-Sitzung von VM 112 ist das Fenster noch nicht gelaufen.
 
 ## Was es tut
 
@@ -43,6 +44,7 @@ Auth-Gate mit Login-Seite greift nur bei einem Bind auf eine andere Adresse.
 | ujust-Rezept `hermes-dashboard` | `files/system/usr/share/hermes-os/hermes-os.just` |
 | `HERMES_WEB_DIST` für Launcher und Units | `files/scripts/10-hermes.sh`, `files/system/usr/lib/environment.d/60-hermes-os.conf` |
 | Test gegen Attrappen | `tests/dashboard-check.py` |
+| Fenster offscreen gegen den echten Server | `tests/dashboard-gui-check.py` |
 | Gate | `files/scripts/80-validate.sh`, Abschnitt 7h |
 
 Im Image: `/usr/lib/hermes-agent/hermes_cli/web_dist` (Frontend mit Stempel
@@ -139,11 +141,32 @@ Logauszug, belegter Port (Exit 75), „already running" mit anderer Adresse,
 Betrieb ohne User-Manager, Timeout ohne Doppelstart; dazu Desktop-Datei,
 Startprogramm und Rezept.
 
+Das Fenster selbst, offscreen mit QtWebEngine gegen das echte
+`hermes dashboard` (Sandbox von Chromium nur für den Test aus):
+
+```sh
+tests/dashboard-gui-check.py --launcher files/system/usr/libexec/hermes-os-dashboard \
+  --dashboard-dir files/system/usr/share/hermes-os/dashboard --out /tmp/shots
+```
+
+Spielt durch: Warteseite, geladene Seite mit Hermes' Titel, Server von
+außen beendet und „Neu laden" führt zur Fehlerseite, „Erneut versuchen"
+startet ihn wieder, Beenden stoppt ihn; legt optional ein PNG je Zustand ab.
+Exit 3 heißt, QtWebEngine läuft in dieser Umgebung nicht (Bindings fehlen,
+Render-Prozess stirbt). Gelaufen am 2026-09-26 in der Cloud mit PySide6
+6.11.2 aus PyPI und Hermes 0.21.5 aus einer lokal gebauten Venv: alle zehn
+Schritte grün, die Seite zeigt Hermes' Seitenleiste (Chat, Sessions, Files,
+Models, Logs, Cron, Skills, Plugins, MCP, Channels, Webhooks, Pairing,
+Profiles, Config, Keys).
+
 Das Gate (`80-validate.sh`, 7h) prüft im Image-Build außerdem: `web_dist`
 mit Stempel aus demselben Release wie die Venv, `hermes-os-dashboard
 --check` (PySide6-WebEngine, Modul, Frontend), `desktop-file-validate`,
-`ujust --list`, und startet das echte `hermes dashboard` aus der Venv:
-`/api/health`, `index.html` mit Sitzungs-Token, ein Asset-Bundle, Stopp.
+`ujust --list`, startet das echte `hermes dashboard` aus der Venv
+(`/api/health`, `index.html` mit Sitzungs-Token, ein Asset-Bundle, Stopp),
+prüft, dass danach nichts Neues unter `/usr/lib/hermes-agent` liegt, und
+fährt das Fenster offscreen (Exit 3 nur als WARN, weil Chromium in einem
+Build-Container scheitern kann).
 
 Frontend lokal bauen (ohne Podman, mit Node ab 22.22):
 

@@ -520,6 +520,28 @@ else
   fail "dashboard run wrote into /usr/lib/hermes-agent:"
   echo "${STRAY}" | sed 's/^/    /'
 fi
+# Das Fenster selbst, offscreen mit QtWebEngine gegen das echte Dashboard:
+# Warteseite, geladene Seite mit Hermes' Titel, Fehlerseite nach Serverende,
+# Neustart über „Erneut versuchen", Stopp beim Beenden. Exit 3 heißt, Chromium
+# läuft im Build-Container nicht (Sandbox, /dev/shm); das ist kein Fehler des
+# Fensters und bleibt ein WARN, alles andere ist ein FAIL.
+if [ -f /ctx/tests/dashboard-gui-check.py ]; then
+  mkdir -p /tmp/hermes-validate-xdg
+  set +e
+  HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
+    /usr/bin/python3 /ctx/tests/dashboard-gui-check.py --launcher /usr/libexec/hermes-os-dashboard \
+      --dashboard-dir /usr/share/hermes-os/dashboard --timeout 120
+  GUI_RC=$?
+  set -e
+  case "${GUI_RC}" in
+    0) pass "dashboard window drives start, load, error page, retry and quit offscreen" ;;
+    3) echo "  WARN: QtWebEngine not usable in the build container, window check skipped (see above)" ;;
+    *) fail "dashboard window check failed (exit ${GUI_RC}, see above)" ;;
+  esac
+  rm -rf /tmp/hermes-validate-xdg
+else
+  echo "  WARN: /ctx/tests/dashboard-gui-check.py not in build context, window check skipped"
+fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi
