@@ -111,7 +111,10 @@ Zurückblättern.
 `hermes-os-setup --check` durchläuft; sonst wie bisher ein Terminal mit
 `hermes setup`. `ujust hermes-setup` startet den Assistenten,
 `ujust hermes-setup-terminal` den vollen Wizard mit TTS, Terminal-Backend,
-Gateway und Tools.
+Gateway und Tools. Sobald ein Anbieter eingerichtet ist, legt das Skript
+außerdem den Schlüssel für den lokalen API-Server des Gateways in `.env` an,
+über den das Leisten-Symbol mit Hermes spricht
+([docs/systemagent.md](systemagent.md)).
 
 ### Testen
 
@@ -160,11 +163,15 @@ Test in die echte Konfiguration.
   über ein neues Skript `15-hermes-dashboard.sh`. Der CI-Grep auf die
   Aurora-FROM-Zeile nimmt `tail -1`, `make lint` blendet nur die Aurora-Zeile
   aus; eine identische Node-Zeile in beiden Dockerfiles stört beides nicht.
-- **Start am Desktop**: Menüeintrag „Hermes" ruft ein Startskript, das
-  `hermes dashboard --status` prüft, sonst `hermes dashboard --skip-build
+- **Start am Desktop**: ein Startskript `/usr/libexec/hermes-os-dashboard`,
+  das `hermes dashboard --status` prüft, sonst `hermes dashboard --skip-build
   --no-open` startet, auf Port 9119 wartet und ein QtWebEngine-Fenster auf
   `127.0.0.1:9119` öffnet. Auf localhost braucht das Dashboard keine Anmeldung.
+  Der Menüeintrag „Hermes" gehört schon dem Leisten-Symbol; das Dashboard
+  bekommt „Hermes-Dashboard".
 - **Gate**: `web_dist/index.html` vorhanden, `hermes dashboard --status` läuft.
 - **Zusammenspiel**: Der Assistent bekommt auf der Fertig-Seite den Knopf
-  „Dashboard öffnen"; ab dem zweiten Login startet das First-Login-Skript nur
-  das Gateway.
+  „Dashboard öffnen"; das Leisten-Symbol zeigt den Menüpunkt „Dashboard
+  öffnen", sobald `/usr/libexec/hermes-os-dashboard` ausführbar ist
+  (`hermes-os-tray` prüft den Pfad beim Start). Ab dem zweiten Login startet
+  das First-Login-Skript nur das Gateway.

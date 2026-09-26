@@ -21,6 +21,7 @@ Universal-Blue-Muster.
 | Schreibgeschützte Basis, Updates mit Rollback | Aurora, fertig |
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
+| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H, Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, noch nicht in der VM gebootet, siehe [docs/systemagent.md](docs/systemagent.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
@@ -37,8 +38,9 @@ Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
   + uv                          /usr/bin/uv, Installer für Nachinstallationen ins Home
   + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage, ujust-Rezepte
   + Einrichtung                 /usr/libexec/hermes-os-setup (Kirigami, PySide6 aus Aurora) + setup/hermes_bridge.py in der Venv
+  + Leisten-Symbol              /usr/libexec/hermes-os-tray (Kirigami, PySide6) + tray/hermes_client.py, spricht mit dem API-Server des Gateways (127.0.0.1:8642)
   + Dienst                      hermes-gateway.service (User-Unit, an graphical-session gebunden)
-  + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill, öffnet den Assistenten
+  + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill, legt den API-Schlüssel an, öffnet den Assistenten
 Nutzerdaten                     ~/.hermes: Config, Sessions, Memory, Checkpoints, lazy-packages
 Apps                            Flatpak
 Entwicklung                     Distrobox / Podman
@@ -121,7 +123,12 @@ Das First-Login-Skript öffnet den Einrichtungsassistenten: Anbieter aus Hermes'
 Schlüssel eintragen und prüfen, Modell wählen. Er schreibt `.env` und `config.yaml` über
 Hermes' eigene Helfer und schaltet das Gateway ein. Später erreichbar als „Hermes
 einrichten" im Menü oder `ujust hermes-setup`; der volle Terminal-Wizard bleibt unter
-`ujust hermes-setup-terminal`. Details in [docs/einrichtung.md](docs/einrichtung.md). Danach:
+`ujust hermes-setup-terminal`. Details in [docs/einrichtung.md](docs/einrichtung.md).
+
+Ab dem Login sitzt Hermes als Symbol in der Systemleiste: grau, solange das Gateway
+aus ist, blau wenn bereit, orange während er arbeitet, gelb wenn er eine Freigabe
+braucht. Klick oder Meta+H öffnet das Chat-Fenster, eine Freigabe kommt zusätzlich als
+Benachrichtigung mit Knöpfen. Details in [docs/systemagent.md](docs/systemagent.md). Danach:
 
 ```sh
 hermes                        # chatten; Sprache: /voice on (Push-to-Talk)
@@ -150,10 +157,11 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
 - **Erster Boot am 2026-09-26** in einer Proxmox-VM, Ablauf und Befunde in
   [docs/testumgebung.md](docs/testumgebung.md): Image, Hermes, Plugin, Skill, Rezepte
   und First-Login greifen. Offen bleibt der Boot auf echter Hardware per `bootc switch`.
-- **Oberfläche:** Der Assistent für den ersten Login ist gebaut. Als zweiter Schritt
+- **Oberfläche:** Der Assistent für den ersten Login und das Leisten-Symbol sind gebaut;
+  das Symbol lief bisher nur durch Gate und Tests, nicht in der VM. Als nächster Schritt
   soll Hermes' eigenes Web-Dashboard (`hermes dashboard`) ins Image: Frontend in CI mit
-  Node bauen, im Image als Fenster über QtWebEngine öffnen. Siehe
-  [docs/einrichtung.md](docs/einrichtung.md).
+  Node bauen, im Image als Fenster über QtWebEngine öffnen, erreichbar aus dem
+  Leisten-Symbol. Siehe [docs/einrichtung.md](docs/einrichtung.md).
 - **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
   Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
   kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).

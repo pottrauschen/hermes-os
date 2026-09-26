@@ -7,7 +7,9 @@
 #   2. Plugin und Skill aus /usr/share/hermes-os verlinken (Symlinks, damit
 #      ein Image-Update sie automatisch aktualisiert)
 #   3. Plugin aktivieren
-#   4. Gateway-Dienst einschalten, sobald ein Provider konfiguriert ist
+#   4. Gateway-Dienst einschalten, sobald ein Provider konfiguriert ist;
+#      vorher den Schlüssel für den lokalen API-Server des Gateways anlegen,
+#      über den das Leisten-Symbol (hermes-os-tray) mit Hermes spricht
 #   5. Beim allerersten Mal: Einrichtungsassistent öffnen (Kirigami-Fenster,
 #      /usr/libexec/hermes-os-setup); ohne ihn ein Terminal mit `hermes setup`
 # =============================================================================
@@ -52,8 +54,33 @@ link "${SHARE}/skills/hermes-os-system" "${HERMES_HOME}/skills/hermes-os-system"
 #    reenable statt enable: ältere Installationen hatten die Unit noch an
 #    default.target hängen; reenable räumt den alten Symlink weg.
 if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then
+  # 4a. API-Server des Gateways freischalten. Hermes startet ihn, sobald
+  #     API_SERVER_KEY (mindestens 16 Zeichen) in .env steht; er lauscht nur
+  #     auf 127.0.0.1:8642. Der Schlüssel ist ein Zufallswert je Nutzer und
+  #     bleibt in .env (0600). Kam er neu dazu, während das Gateway schon
+  #     lief, braucht das Gateway einen Neustart, sonst nur einen Start.
+  ENV_FILE="${HERMES_HOME}/.env"
+  API_ADDED=0
+  if [ ! -f "${ENV_FILE}" ]; then
+    (umask 077 && : > "${ENV_FILE}")
+  fi
+  if ! grep -qE '^(export )?API_SERVER_KEY=' "${ENV_FILE}"; then
+    API_KEY="$(/usr/bin/python3 -c 'import secrets; print(secrets.token_hex(24))' 2>/dev/null \
+               || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    printf '\n# hermes-os: lokaler API-Server des Gateways (nur 127.0.0.1) fuer das Leisten-Symbol\nAPI_SERVER_ENABLED=true\nAPI_SERVER_KEY=%s\n' "${API_KEY}" >> "${ENV_FILE}"
+    API_ADDED=1
+    echo "API_SERVER_KEY in .env angelegt"
+  elif ! grep -qE '^(export )?API_SERVER_ENABLED=' "${ENV_FILE}"; then
+    printf 'API_SERVER_ENABLED=true\n' >> "${ENV_FILE}"
+    API_ADDED=1
+  fi
+  chmod 0600 "${ENV_FILE}" || true
   systemctl --user reenable hermes-gateway.service || echo "WARN: gateway reenable fehlgeschlagen"
-  systemctl --user start hermes-gateway.service || echo "WARN: gateway start fehlgeschlagen"
+  if [ "${API_ADDED}" = "1" ] && systemctl --user is-active --quiet hermes-gateway.service; then
+    systemctl --user restart hermes-gateway.service || echo "WARN: gateway restart fehlgeschlagen"
+  else
+    systemctl --user start hermes-gateway.service || echo "WARN: gateway start fehlgeschlagen"
+  fi
 fi
 
 # 5. Erster Start: Einrichtung anbieten. Der Assistent ist ein eigenes

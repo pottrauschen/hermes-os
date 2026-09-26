@@ -13,6 +13,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage, Plan für das Dashboard |
+| `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 
@@ -26,13 +27,16 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
   nummeriert unter `files/scripts/`. Beide Dockerfiles bleiben bis auf die
   FROM-Zeile identisch, `make lint` prüft das.
 - **Hermes ist gepinnt** (`HERMES_REF` im Dockerfile, Linie 0.21.x). Vor einem
-  Bump `tests/venv-smoke.sh`, `hermes-os-setup --check` und
-  `tests/setup-gui-check.py` laufen lassen; die Brücke des Assistenten nutzt
-  interne Hermes-Helfer ohne Stabilitätszusage.
-- **Assistent ohne neues Image testen:** `tests/setup-gui-check.py` rendert
-  offscreen, jede QML-Warnung ist ein Fehler. In der VM eine Testfassung aus
-  dem Home starten (`systemd-run --user … -p ExitType=cgroup`), `HERMES_HOME`
-  auf ein Wegwerfverzeichnis; `/tmp` ist nach jedem Neustart leer.
+  Bump `tests/venv-smoke.sh`, `hermes-os-setup --check`,
+  `tests/setup-gui-check.py` und `tests/tray-client-check.py` laufen lassen;
+  die Brücke des Assistenten nutzt interne Hermes-Helfer ohne
+  Stabilitätszusage, das Leisten-Symbol die Runs-API des Gateways.
+- **Assistent und Leisten-Symbol ohne neues Image testen:**
+  `tests/setup-gui-check.py` und `tests/tray-gui-check.py` rendern offscreen,
+  jede QML-Warnung ist ein Fehler; `tests/tray-client-check.py` läuft überall
+  mit Python. In der VM eine Testfassung aus dem Home starten
+  (`systemd-run --user … -p ExitType=cgroup`), `HERMES_HOME` auf ein
+  Wegwerfverzeichnis; `/tmp` ist nach jedem Neustart leer.
 - **Windows-Arbeitsplatz:** Arbeitsbaum CRLF, Index LF. Vor dem Übertragen in
   die VM `sed 's/\r$//'`; Skripte mit `sed 's/\r$//' | bash -n` prüfen;
   Dateien mit Apostrophen nicht per Heredoc schreiben.

@@ -188,6 +188,89 @@ else
   fail "setup assistant files missing (hermes-os-setup, Main.qml, .desktop)"
 fi
 
+# 7d. Leisten-Symbol: Startprogramm, QML, Client, Icons, Desktop-Dateien
+#     (Menü, Autostart, Kurzbefehl Meta+H über kglobalaccel). --check prüft
+#     PySide6 und den Client, der Client-Test spielt einen ganzen Chat samt
+#     Freigabe gegen ein nachgebautes Gateway durch, der Render-Test die
+#     Zustände des Fensters offscreen. Beide Tests kommen aus /ctx/tests.
+for f in /usr/libexec/hermes-os-tray \
+         /usr/share/hermes-os/tray/Main.qml \
+         /usr/share/hermes-os/tray/hermes_client.py \
+         /usr/share/applications/hermes-os-tray.desktop \
+         /usr/share/kglobalaccel/hermes-os-tray.desktop \
+         /etc/xdg/autostart/hermes-os-tray.desktop \
+         /usr/share/icons/hicolor/scalable/apps/hermes-os.svg \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-ready.svg \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-busy.svg \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-asking.svg \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-off.svg; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if [ -x /usr/libexec/hermes-os-tray ]; then
+  if /usr/libexec/hermes-os-tray --check; then
+    pass "hermes-os-tray --check (PySide6, QML, client)"
+  else
+    fail "hermes-os-tray --check failed"
+  fi
+fi
+if diff -q /usr/share/applications/hermes-os-tray.desktop /usr/share/kglobalaccel/hermes-os-tray.desktop >/dev/null 2>&1 \
+   && grep -q '^X-KDE-Shortcuts=' /usr/share/kglobalaccel/hermes-os-tray.desktop; then
+  pass "tray desktop file and its kglobalaccel copy are identical and carry a shortcut"
+else
+  fail "tray desktop file and kglobalaccel copy differ or lack X-KDE-Shortcuts"
+fi
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  for d in /usr/share/applications/hermes-os-tray.desktop /usr/share/applications/hermes-os-setup.desktop \
+           /etc/xdg/autostart/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-first-login.desktop; do
+    if desktop-file-validate "$d"; then pass "desktop-file-validate $d"; else fail "desktop-file-validate $d"; fi
+  done
+fi
+if [ -f /ctx/tests/tray-client-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/tray-client-check.py --tray-dir /usr/share/hermes-os/tray; then
+    pass "tray client completes a chat with approval against a fake gateway"
+  else
+    fail "tray client check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/tray-client-check.py not in build context, client check skipped"
+fi
+if [ -f /ctx/tests/tray-gui-check.py ]; then
+  mkdir -p /tmp/hermes-validate-xdg
+  if HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
+     /usr/bin/python3 /ctx/tests/tray-gui-check.py --qml-dir /usr/share/hermes-os/tray; then
+    pass "tray window renders every state offscreen"
+  else
+    fail "tray window offscreen render failed (see above)"
+  fi
+  rm -rf /tmp/hermes-validate-xdg
+else
+  echo "  WARN: /ctx/tests/tray-gui-check.py not in build context, render check skipped"
+fi
+
+# 7e. First-Login legt den Schlüssel für den API-Server an. Trockenlauf mit
+#     dem Gate-HERMES_HOME: config.yaml liegt seit 6. (also kein erster Lauf,
+#     kein Fenster), eine .env mit Anbieter-Schlüssel steht für eine fertige
+#     Einrichtung; systemctl gibt es im Build-Container nicht, das Skript
+#     meldet das nur als WARN im Log. Der zweite Lauf darf nichts mehr ändern.
+printf 'OPENROUTER_API_KEY=sk-or-test\n' > "${HERMES_HOME}/.env"
+if HOME="${HOME:-/root}" /usr/libexec/hermes-os-first-login \
+   && grep -qE '^API_SERVER_KEY=[0-9a-f]{48}$' "${HERMES_HOME}/.env" \
+   && grep -q '^API_SERVER_ENABLED=true$' "${HERMES_HOME}/.env" \
+   && grep -q '^OPENROUTER_API_KEY=sk-or-test$' "${HERMES_HOME}/.env"; then
+  pass "first-login adds API_SERVER_KEY to .env and keeps the provider key"
+else
+  fail "first-login did not add API_SERVER_KEY (log follows)"
+  sed 's/^/  /' "${HERMES_HOME}/hermes-os-first-login.log" 2>/dev/null | tail -20
+fi
+KEYS_BEFORE="$(grep -c '^API_SERVER_KEY=' "${HERMES_HOME}/.env" || true)"
+HOME="${HOME:-/root}" /usr/libexec/hermes-os-first-login || true
+if [ "$(grep -c '^API_SERVER_KEY=' "${HERMES_HOME}/.env" || true)" = "${KEYS_BEFORE}" ] && [ "${KEYS_BEFORE}" = "1" ]; then
+  pass "first-login is idempotent for API_SERVER_KEY"
+else
+  fail "first-login duplicated or lost API_SERVER_KEY on the second run"
+fi
+if [ "$(stat -c %a "${HERMES_HOME}/.env")" = "600" ]; then pass ".env is 0600"; else fail ".env mode is $(stat -c %a "${HERMES_HOME}/.env"), expected 600"; fi
+
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi
 
