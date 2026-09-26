@@ -39,10 +39,11 @@ lint:
 		files/system/usr/share/hermes-os/plugins/hermes_os/*.py \
 		files/system/usr/share/hermes-os/setup/hermes_bridge.py files/system/usr/libexec/hermes-os-setup \
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
-		tests/*.py
+		files/system/usr/libexec/hermes-os-morgenbericht tests/*.py
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
 	python3 tests/library-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
+	python3 tests/report-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }
