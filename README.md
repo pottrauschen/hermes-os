@@ -25,7 +25,6 @@ Universal-Blue-Muster.
 | Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Chat-Fenster mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Ohne Cloud: lokales Modell auf der eigenen GPU (Ollama im Image, Nutzerdienst, Vorgabe `qwen3.5:9b` für 12 GB) | Karte im Assistenten, `ujust hermes-lokal-ein`, siehe [docs/lokales-modell.md](docs/lokales-modell.md); Lauf auf der GPU noch nicht in VM 112 geprüft |
-| Ohne Cloud: lokales Modell auf der eigenen GPU (Ollama im Image, Nutzerdienst, Vorgabe `qwen3.5:9b` für 12 GB) | Karte im Assistenten, `ujust hermes-lokal-ein`, siehe [docs/lokales-modell.md](docs/lokales-modell.md); Lauf auf der GPU noch nicht in VM 112 geprüft |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
@@ -42,7 +41,6 @@ Universal-Blue-Muster.
 Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
   + Hermes v2026.9.24 (0.21.5)  /usr/lib/hermes-agent, eigene Python-3.13-Venv (uv), vorkompiliert
   + uv                          /usr/bin/uv, Installer für Nachinstallationen ins Home
-  + Ollama 0.34.4               /usr/bin/ollama, /usr/lib/ollama (CPU, CUDA 13, Vulkan), Nutzerdienst ollama.service, Modelle unter ~/.local/share/ollama
   + Ollama 0.34.4               /usr/bin/ollama, /usr/lib/ollama (CPU, CUDA 13, Vulkan), Nutzerdienst ollama.service, Modelle unter ~/.local/share/ollama
   + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage, ujust-Rezepte
   + Einrichtung                 /usr/libexec/hermes-os-setup (Kirigami, PySide6 aus Aurora) + setup/hermes_bridge.py in der Venv
