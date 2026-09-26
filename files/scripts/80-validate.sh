@@ -101,7 +101,7 @@ import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
 names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_", "desktop_notify")))
-assert len(names) == 13, names
+assert len(names) == 15, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 assert registry.get_toolset_for_tool("os_locale") == "hermes_os"
 assert registry.get_toolset_for_tool("os_report") == "hermes_os"
@@ -334,6 +334,30 @@ if [ -f /ctx/tests/library-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
+fi
+#     Stufe zwei: Spiegel, SQLite-Index mit FTS5 (die Venv-Python muss es
+#     mitbringen; der Test meldet, ob es da ist, und prüft den LIKE-Rückfall
+#     ebenfalls), Suche, MCP-Schalter gegen eine Wegwerf-config.yaml.
+if [ -f /ctx/tests/library2-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/library2-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os \
+       --config-template /usr/share/hermes-os/config.yaml.default; then
+    pass "library stage two: mirror, FTS5 index, search, MCP switches"
+  else
+    fail "library stage two check failed (see above)"
+  fi
+  if /usr/lib/hermes-agent/.venv/bin/python -c 'import sqlite3; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(a)")' 2>/dev/null; then
+    pass "venv sqlite has FTS5"
+  else
+    echo "  WARN: venv sqlite lacks FTS5, library_search falls back to LIKE"
+  fi
+  if /usr/bin/python3 -c 'import sqlite3; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(a)")' 2>/dev/null; then
+    pass "system python sqlite has FTS5 (tray search)"
+  else
+    echo "  WARN: system python sqlite lacks FTS5, tray search falls back to LIKE"
+  fi
+else
+  echo "  WARN: /ctx/tests/library2-check.py not in build context, library stage two check skipped"
 fi
 
 # 7h. Grenze: Angriffsbatterie gegen den Klassifikator des Plugins (boundary.py),
