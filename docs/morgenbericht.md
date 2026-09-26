@@ -82,7 +82,9 @@ Gateway (hermes-gateway.service, Cron-Ticker alle 60 s)
   ist der Befehl `discuss <pfad>`. Das Symbol liest nur Dateien aus
   `$XDG_STATE_HOME/hermes-os/notify/` (`hermes_client.read_context_file`),
   zeigt den Bericht als Blase von Hermes und stellt ihn der nächsten Nachricht
-  als Kontext voran (`hermes_client.with_context`).
+  als Kontext voran, markiert als Fremdtext, weil Journal-Meldungen darin
+  stehen, die jeder lokale Prozess schreiben kann (`hermes_client.with_context`).
+  `desktop_notify` maskiert `& < >`, weil Plasma einfaches HTML deutet.
 - **Verpasste Läufe:** Das Gateway hängt an der Plasma-Sitzung. Wer sich erst
   nach der Uhrzeit anmeldet, bekommt den Bericht einmal nachgeholt, sobald das
   Gateway startet (`cron.catch_up_missed`, in Hermes vorgegeben an); mehrere

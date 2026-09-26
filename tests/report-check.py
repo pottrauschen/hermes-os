@@ -285,6 +285,8 @@ def main():
     check(fake.calls and fake.calls[-1][0] == "notify-send" and "-A" not in fake.calls[-1] and res.startswith("Benachrichtigung gezeigt"),
           "ohne Knopf: notify-send direkt, ohne Aktion", str(fake.calls))
     check(report.handle_desktop_notify({"body": ""}).startswith("Kein Text"), "leerer Text abgewiesen")
+    argv = report.notify_argv("A<b>", "x < y & <b>z</b>", "normal", False)
+    check(argv[-2:] == ["A<b>", "x &lt; y &amp; &lt;b&gt;z&lt;/b&gt;"], "HTML im Text maskiert, Titel unverändert", str(argv[-2:]))
     os.environ.pop("DBUS_SESSION_BUS_ADDRESS")
     os.environ["XDG_RUNTIME_DIR"] = str(Path(tmp) / "kein-runtime")
     check(report.handle_desktop_notify({"body": "x"}).startswith("Keine Desktop-Sitzung"), "ohne Session-Bus ehrlich abgelehnt")

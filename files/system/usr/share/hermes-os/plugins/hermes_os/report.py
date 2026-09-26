@@ -434,6 +434,8 @@ def _prune_notify_dir(directory: Path, now: float) -> None:
 
 
 def notify_argv(title: str, body: str, urgency: str, discuss: bool) -> List[str]:
+    """Plasma deutet einfaches HTML im Text: & < > maskieren, der Titel bleibt Klartext."""
+    body = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     argv = ["notify-send", "-a", "hermes-os", "-i", "hermes-os", "-u", urgency]
     if discuss:
         # "default" ist der Klick auf die Benachrichtigung selbst
