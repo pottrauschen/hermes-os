@@ -123,6 +123,10 @@ for f in /usr/share/hermes-os/skills/hermes-os-system/SKILL.md \
          /usr/lib/systemd/user/hermes-gateway.service \
          /etc/xdg/autostart/hermes-os-first-login.desktop \
          /usr/libexec/hermes-os-first-login \
+         /usr/libexec/hermes-os-setup \
+         /usr/share/hermes-os/setup/Main.qml \
+         /usr/share/hermes-os/setup/hermes_bridge.py \
+         /usr/share/applications/hermes-os-setup.desktop \
          /usr/share/ublue-os/just/60-custom.just; do
   if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
 done
@@ -145,6 +149,43 @@ else
   sed 's/^/  /' /usr/bin/ujust 2>/dev/null | head -5
   echo "  --- /usr/share/ublue-os/just/ ---"
   ls -la /usr/share/ublue-os/just/ 2>/dev/null | sed 's/^/  /'
+fi
+
+# 7a. Die Config-Vorlage sperrt das Übernehmen fremder Anmeldungen. Hermes
+#     würde sonst eine Claude-Code-Anmeldung im Home von selbst benutzen,
+#     was Anthropics Bedingungen verletzt (docs/einrichtung.md).
+if /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+import yaml
+cfg = yaml.safe_load(open("/usr/share/hermes-os/config.yaml.default"))
+assert cfg["auth"]["adopt_external_logins"] is False, cfg.get("auth")
+PY
+then pass "config template: auth.adopt_external_logins is false"; else fail "config template does not disable adopt_external_logins"; fi
+
+# 7c. Einrichtungsassistent: PySide6 und Kirigami aus dem Basis-Image, die
+#     Brücke in die Hermes-Venv, und jede QML-Seite rendert offscreen ohne
+#     QML-Warnung. Das Render-Skript liegt im Repo unter tests/ und kommt über
+#     den Build-Kontext (/ctx/tests), nicht ins Image.
+if [ -x /usr/libexec/hermes-os-setup ] && [ -f /usr/share/hermes-os/setup/Main.qml ] \
+   && [ -f /usr/share/applications/hermes-os-setup.desktop ]; then
+  if /usr/libexec/hermes-os-setup --check; then
+    pass "hermes-os-setup --check (PySide6, QML, bridge)"
+  else
+    fail "hermes-os-setup --check failed"
+  fi
+  if [ -f /ctx/tests/setup-gui-check.py ]; then
+    mkdir -p /tmp/hermes-validate-xdg
+    if HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
+       /usr/bin/python3 /ctx/tests/setup-gui-check.py --qml-dir /usr/share/hermes-os/setup; then
+      pass "setup assistant renders every page offscreen"
+    else
+      fail "setup assistant offscreen render failed (see above)"
+    fi
+    rm -rf /tmp/hermes-validate-xdg
+  else
+    echo "  WARN: /ctx/tests/setup-gui-check.py not in build context, render check skipped"
+  fi
+else
+  fail "setup assistant files missing (hermes-os-setup, Main.qml, .desktop)"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)

@@ -1,0 +1,240 @@
+#!/usr/bin/python3
+# =============================================================================
+# hermes-os -- Einrichtungsassistent (Kirigami)
+# =============================================================================
+# Der erste Login zeigt dieses Fenster statt eines Terminals mit `hermes
+# setup`: Provider wählen, Schlüssel eintragen und prüfen, Modell wählen,
+# fertig. Läuft mit Fedoras Python und PySide6, beides Teil von Aurora DX.
+# Alles Hermes-Spezifische erledigt setup/hermes_bridge.py in der Hermes-Venv,
+# angesprochen als Unterprozess mit JSON; der Schlüssel wandert nur über die
+# Umgebung, nie über die Kommandozeile.
+#
+# Aufruf:  hermes-os-setup            Fenster
+#          hermes-os-setup --check    Trockenlauf fürs Validierungs-Gate
+# Umgebung: HERMES_OS_SETUP_DIR überschreibt /usr/share/hermes-os/setup
+#           (zum Testen aus einem anderen Verzeichnis).
+# =============================================================================
+import json
+import os
+import subprocess
+import sys
+
+VENV_PY = "/usr/lib/hermes-agent/.venv/bin/python"
+HERMES = "/usr/bin/hermes"
+FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
+SETUP_DIR = os.environ.get("HERMES_OS_SETUP_DIR", "/usr/share/hermes-os/setup")
+BRIDGE = os.path.join(SETUP_DIR, "hermes_bridge.py")
+MAIN_QML = os.path.join(SETUP_DIR, "Main.qml")
+
+
+def bridge_sync(args, key=""):
+    """Brücke synchron aufrufen (nur für schnelle, netzfreie Befehle)."""
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if key:
+        env["HERMES_OS_SETUP_KEY"] = key
+    proc = subprocess.run([VENV_PY, BRIDGE, *args], capture_output=True, text=True,
+                          env=env, timeout=60)
+    line = (proc.stdout.strip().splitlines() or [""])[-1]
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": (proc.stderr.strip() or line or "keine Antwort")[-400:]}
+
+
+def check_only():
+    """Trockenlauf ohne Fenster: Importe, QML-Datei, Brücke."""
+    problems = []
+    try:
+        import PySide6.QtQml  # noqa: F401
+        import PySide6.QtQuickControls2  # noqa: F401
+    except Exception as e:
+        problems.append(f"PySide6 fehlt: {e}")
+    if not os.path.isfile(MAIN_QML):
+        problems.append(f"{MAIN_QML} fehlt")
+    if not os.path.isfile(BRIDGE):
+        problems.append(f"{BRIDGE} fehlt")
+    else:
+        r = bridge_sync(["check"])
+        if not r.get("ok"):
+            problems.append(f"Brücke: {r.get('error')}")
+    for p in problems:
+        print(f"FEHL  {p}")
+    if problems:
+        return 1
+    print("OK    hermes-os-setup: PySide6, QML und Brücke vorhanden")
+    return 0
+
+
+def main():
+    if "--check" in sys.argv:
+        sys.exit(check_only())
+
+    from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QUrl, Property, Signal, Slot
+    from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon
+    from PySide6.QtQml import QQmlApplicationEngine
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    class Backend(QObject):
+        busyChanged = Signal()
+        modelsReady = Signal("QVariantList", str, str)   # Modelle, Vorgabe, Schlüsselprüfung
+        modelsFailed = Signal(str)
+        saved = Signal(str, str)                          # Provider, Modell
+        saveFailed = Signal(str)
+
+        def __init__(self):
+            super().__init__()
+            self._busy = False
+            self._proc = None
+            self._providers = []
+            self._catalog_error = ""
+            self._configured_provider = ""
+            self._load_catalog()
+            self._read_current()
+
+        # ---- Daten beim Start ------------------------------------------------
+        def _load_catalog(self):
+            r = bridge_sync(["catalog"])
+            if r.get("ok"):
+                self._providers = r["providers"]
+            else:
+                self._catalog_error = r.get("error", "Katalog nicht lesbar")
+
+        def _read_current(self):
+            try:
+                out = subprocess.run([HERMES, "config", "get", "model.provider"],
+                                     capture_output=True, text=True, timeout=20).stdout.strip()
+                if out and out.lower() not in ("none", "null", "auto", ""):
+                    self._configured_provider = out
+            except Exception:
+                pass
+
+        @Property("QVariantList", constant=True)
+        def providers(self):
+            return self._providers
+
+        @Property(str, constant=True)
+        def catalogError(self):
+            return self._catalog_error
+
+        @Property(str, constant=True)
+        def configuredProvider(self):
+            return self._configured_provider
+
+        @Property(str, constant=True)
+        def hermesVersion(self):
+            try:
+                v = subprocess.run([HERMES, "--version"], capture_output=True, text=True,
+                                   timeout=20).stdout.strip().splitlines()
+                return v[0] if v else ""
+            except Exception:
+                return ""
+
+        @Property(bool, notify=busyChanged)
+        def busy(self):
+            return self._busy
+
+        def _set_busy(self, value):
+            if self._busy != value:
+                self._busy = value
+                self.busyChanged.emit()
+
+        # ---- Brücke asynchron ----------------------------------------------
+        def _start(self, args, key, on_result):
+            if self._proc is not None:
+                return
+            self._set_busy(True)
+            proc = QProcess(self)
+            env = QProcessEnvironment.systemEnvironment()
+            env.insert("PYTHONDONTWRITEBYTECODE", "1")
+            env.insert("HERMES_OS_SETUP_KEY", key)
+            proc.setProcessEnvironment(env)
+            proc.setProgram(VENV_PY)
+            proc.setArguments([BRIDGE, *args])
+
+            def finished(code, status):
+                out = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace")
+                err = bytes(proc.readAllStandardError()).decode("utf-8", "replace")
+                self._proc = None
+                self._set_busy(False)
+                line = (out.strip().splitlines() or [""])[-1]
+                try:
+                    result = json.loads(line)
+                except json.JSONDecodeError:
+                    result = {"ok": False, "error": (err.strip() or line or "keine Antwort")[-400:]}
+                on_result(result)
+
+            proc.finished.connect(finished)
+            self._proc = proc
+            proc.start()
+
+        @Slot(str, str)
+        def checkKey(self, slug, key):
+            def done(r):
+                if r.get("ok"):
+                    self.modelsReady.emit(list(r.get("models") or []), r.get("default", ""),
+                                          r.get("key_check", "unknown"))
+                else:
+                    self.modelsFailed.emit(r.get("error", "unbekannter Fehler"))
+            self._start(["models", slug], key.strip(), done)
+
+        @Slot(str, str, str)
+        def save(self, slug, key, model):
+            def done(r):
+                if r.get("ok"):
+                    # Gateway einschalten: das First-Login-Skript ist idempotent
+                    # und macht genau das, sobald .env existiert.
+                    if os.path.isfile(FIRST_LOGIN):
+                        QProcess.startDetached(FIRST_LOGIN, [])
+                    self.saved.emit(r.get("provider", slug), r.get("model", model))
+                else:
+                    self.saveFailed.emit(r.get("error", "unbekannter Fehler"))
+            self._start(["save", slug, model.strip()], key.strip(), done)
+
+        # ---- Sprünge nach draußen ------------------------------------------
+        @Slot(str)
+        def openUrl(self, url):
+            QDesktopServices.openUrl(QUrl(url))
+
+        @Slot(str)
+        def copyToClipboard(self, text):
+            QGuiApplication.clipboard().setText(text)
+
+        def _konsole(self, *cmd):
+            if QProcess.startDetached("konsole", ["-e", *cmd]):
+                return
+            QProcess.startDetached("xdg-terminal-exec", [*cmd])
+
+        @Slot()
+        def openTerminalSetup(self):
+            self._konsole(HERMES, "setup")
+
+        @Slot(str)
+        def openLogin(self, slug):
+            """Abo-Anbieter: Hermes' eigenen Login-Flow im Terminal starten.
+            Welcher Befehl, sagt der Katalog (Feld login); Nous richtet danach
+            alles selbst ein, die anderen enden in der Modellwahl."""
+            cmd = next((r.get("login") for r in self._providers if r.get("slug") == slug), None)
+            self._konsole(HERMES, *(cmd or ["model"]))
+
+        @Slot()
+        def openChat(self):
+            self._konsole(HERMES)
+
+    QQuickStyle.setStyle("org.kde.desktop")
+    QGuiApplication.setApplicationName("hermes-os-setup")
+    QGuiApplication.setDesktopFileName("hermes-os-setup")
+    app = QGuiApplication(sys.argv)
+    app.setWindowIcon(QIcon.fromTheme("preferences-system"))
+    backend = Backend()
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("backend", backend)
+    engine.load(MAIN_QML)
+    if not engine.rootObjects():
+        print(f"hermes-os-setup: {MAIN_QML} konnte nicht geladen werden", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
