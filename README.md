@@ -22,6 +22,7 @@ Universal-Blue-Muster.
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
 | Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
+| Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Chat-Fenster mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |

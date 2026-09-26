@@ -19,6 +19,10 @@
 # Entscheidung, erkannte Systembefehle mit Ergebnis, App-Starts (audit.py des
 # Plugins, docs/protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
 #
+# KRunner: „hermes <Frage>“ oder „h: <Frage>“ landet über D-Bus hier
+# (tray/runner.py, docs/krunner.md) und geht ins Fenster oder als
+# Benachrichtigung zurück.
+#
 # Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
 #          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
 #                                    bekommt die den Befehl (Menü, Meta+H)
@@ -287,6 +291,10 @@ def check_only():
         problems.append(f"library.py des Plugins nicht ladbar: {_LIBRARY_IMPORT_ERROR}")
     if audit is None:
         problems.append(f"audit.py des Plugins nicht ladbar: {_AUDIT_IMPORT_ERROR}")
+    try:
+        import runner  # noqa: F401  (KRunner-Runner samt dbus_peer)
+    except Exception as e:
+        problems.append(f"runner.py nicht importierbar: {e}")
     if shutil.which("notify-send") is None:
         print("WARN  notify-send fehlt: Freigaben nur im Fenster, keine Benachrichtigung")
     for p in problems:
@@ -1259,6 +1267,13 @@ def main():
     if not server.listen(socket_name):
         print(f"hermes-os-tray: kein lokaler Socket ({server.errorString()}), Meta+H erreicht diese Instanz nicht",
               file=sys.stderr)
+
+    # ---- KRunner: „hermes <Frage>“ (tray/runner.py) ------------------------------
+    try:
+        import runner
+        krunner = runner.install(backend, show_window, window, backend._make_client, hc.split_media_tags)  # noqa: F841
+    except Exception as exc:  # das Symbol läuft auch ohne KRunner
+        print(f"hermes-os-tray: KRunner-Runner nicht geladen: {exc}", file=sys.stderr)
 
     if discuss_path:
         backend.discuss(discuss_path)
