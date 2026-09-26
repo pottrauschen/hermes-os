@@ -100,10 +100,11 @@ import json, os
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
-names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_")))
-assert len(names) == 11, names
+names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_", "desktop_notify")))
+assert len(names) == 13, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 assert registry.get_toolset_for_tool("os_locale") == "hermes_os"
+assert registry.get_toolset_for_tool("os_report") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
@@ -360,6 +361,31 @@ if [ -f /ctx/tests/audit-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/audit-check.py not in build context, audit check skipped"
+fi
+
+# 7j. Morgenbericht: os_report und desktop_notify mit nachgebauten Kommandos
+#     (rpm-ostree, skopeo, journalctl, df, systemctl, flatpak), mit der
+#     Venv-Python wie im Gateway; dazu der Einstieg des Cron-Jobs mit Fedoras
+#     Python und die beiden ujust-Rezepte.
+if [ -x /usr/libexec/hermes-os-morgenbericht ] && /usr/libexec/hermes-os-morgenbericht --check; then
+  pass "hermes-os-morgenbericht --check (report.py and tools.py load with /usr/bin/python3)"
+else
+  fail "hermes-os-morgenbericht missing or --check failed"
+fi
+if [ -f /ctx/tests/report-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/report-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os --libexec /usr/libexec/hermes-os-morgenbericht; then
+    pass "morning report: summary, thresholds, comparison with the previous report, notification"
+  else
+    fail "morning report check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/report-check.py not in build context, report check skipped"
+fi
+if grep -qE '^\s*hermes-morgenbericht-ein\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-morgenbericht-aus\b' <<< "${JUST_OUT}"; then
+  pass "ujust lists hermes-morgenbericht-ein and -aus"
+else
+  fail "ujust does not list hermes-morgenbericht-ein/-aus"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)

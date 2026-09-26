@@ -22,6 +22,10 @@
 # Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
 #          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
 #                                    bekommt die den Befehl (Menü, Meta+H)
+#          hermes-os-tray --discuss DATEI
+#                                    Fenster öffnen, DATEI als Kontext fürs
+#                                    Gespräch (Knopf „Im Chat besprechen" am
+#                                    Morgenbericht, docs/morgenbericht.md)
 #          hermes-os-tray --check    Trockenlauf fürs Validierungs-Gate
 # Umgebung: HERMES_OS_TRAY_DIR überschreibt /usr/share/hermes-os/tray
 #           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
@@ -297,6 +301,11 @@ def main():
     if "--check" in sys.argv:
         sys.exit(check_only())
     want_show = "--show" in sys.argv
+    discuss_path = ""
+    if "--discuss" in sys.argv:
+        i = sys.argv.index("--discuss")
+        discuss_path = os.path.abspath(sys.argv[i + 1]) if i + 1 < len(sys.argv) else ""
+        want_show = True
 
     from PySide6.QtCore import (QAbstractListModel, QFileSystemWatcher, QModelIndex, QObject, QProcess,
                                 QStandardPaths, QTimer, Qt, QByteArray, QUrl, Property, Signal, Slot)
@@ -311,7 +320,10 @@ def main():
     probe = QLocalSocket()
     probe.connectToServer(socket_name)
     if probe.waitForConnected(300):
-        if want_show:
+        if discuss_path:
+            probe.write(b"discuss " + os.fsencode(discuss_path) + b"\n")
+            probe.waitForBytesWritten(300)
+        elif want_show:
             probe.write(b"show\n")
             probe.waitForBytesWritten(300)
         probe.disconnectFromServer()
@@ -473,6 +485,7 @@ def main():
             self._assistant_row = -1
             self._poll_busy = False
             self._notify_proc = None
+            self._context = ""          # Kontext aus einer Benachrichtigung für die nächste Nachricht
             queued = Qt.ConnectionType.QueuedConnection
             self._healthDone.connect(self._on_health, queued)
             self._historyDone.connect(self._on_history, queued)
@@ -896,6 +909,9 @@ def main():
                 return
             self._session_ready = True
             self._model.replace(out["rows"])
+            if self._context:
+                # Beim Start mit --discuss kommt der Verlauf erst nach dem Bericht
+                self._show_context()
 
         @Slot()
         def newConversation(self):
@@ -907,6 +923,22 @@ def main():
             self._history_loaded = True
             self._load_history()
 
+        # ---- Kontext aus einer Benachrichtigung (Morgenbericht) -------------------
+        def discuss(self, path):
+            """„Im Chat besprechen": Fenster zeigen, den Bericht als Blase von Hermes in den
+            Verlauf, und mit der nächsten Nachricht geht er als Kontext an Hermes."""
+            context = hc.read_context_file(path)
+            if not context:
+                self._model.append("info", "Der Bericht zur Benachrichtigung ist nicht mehr da.")
+            else:
+                self._context = context
+                self._show_context()
+            self.showRequested.emit()
+
+        def _show_context(self):
+            self._model.append("assistant", self._context, when=now_hhmm())
+            self._model.append("info", "Frag nach, was dich daran interessiert; der Bericht geht mit.")
+
         # ---- Senden und Ereignisse ---------------------------------------------
         @Slot(str)
         def send(self, text):
@@ -916,6 +948,8 @@ def main():
                 return
             self.clearAttachments()
             self._model.append("user", text, images=[a["url"] for a in attachments], when=now_hhmm())
+            text = hc.with_context(self._context, text)
+            self._context = ""
             self._assistant_row = -1
             self._set_busy(True)
             self._set_state("busy")
@@ -1212,8 +1246,11 @@ def main():
 
         def read():
             data = bytes(conn.readAll())
-            if b"show" in data:
-                show_window()
+            for line in data.splitlines():
+                if line.startswith(b"discuss "):
+                    backend.discuss(os.fsdecode(line[len(b"discuss "):].strip()))
+                elif line.strip() == b"show":
+                    show_window()
             conn.disconnectFromServer()
 
         conn.readyRead.connect(read)
@@ -1223,7 +1260,9 @@ def main():
         print(f"hermes-os-tray: kein lokaler Socket ({server.errorString()}), Meta+H erreicht diese Instanz nicht",
               file=sys.stderr)
 
-    if want_show:
+    if discuss_path:
+        backend.discuss(discuss_path)
+    elif want_show:
         show_window()
     return app.exec()
 
