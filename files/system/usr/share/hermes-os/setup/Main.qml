@@ -1,6 +1,7 @@
 // hermes-os -- Einrichtungsassistent, Oberfläche.
 // Vier Seiten: Willkommen, Anbieter, Schlüssel und Modell, Fertig; dazu die
-// Portal-Seite für Anbieter mit Anmeldung statt Schlüssel. Die Seiten sind
+// Portal-Seite für Anbieter mit Anmeldung statt Schlüssel und die Seite
+// „Lokales Modell" (Ollama im Image, ohne Schlüssel und ohne Cloud). Die Seiten sind
 // dauerhaft instanziiert und werden nur auf den Stapel geschoben: Eingaben
 // bleiben beim Zurückblättern erhalten, und Kirigami muss nichts erzeugen.
 // Alles, was Hermes berührt, läuft über `backend` (hermes-os-setup, Python).
@@ -25,6 +26,14 @@ Kirigami.ApplicationWindow {
     property var filteredModels: []    // models nach dem Suchfeld gefiltert
     property string keyCheck: ""       // "", "ok", "rejected", "unknown"
     property string lastError: ""
+    // Lokales Modell: Stand aus hermes-os-lokal --json status und die Schritte
+    property var localStatus: null     // gpu, unit, server, hermes, recommended
+    property string localModel: ""     // gewähltes Ollama-Tag
+    property string localStep: ""      // "", "service", "pulled", "check", "saved"
+    property string localError: ""
+    property string localProgressText: ""
+    property int localProgress: 0
+    property bool localCheckOk: false
 
     // Suche in der Modellliste: alle Wörter müssen vorkommen, Groß/Klein egal.
     function filterModels(text) {
@@ -45,7 +54,7 @@ Kirigami.ApplicationWindow {
     // die Anmeldeseite der erste Anbieter mit Anmeldung.
     function pageFor(name) {
         var pages = { "welcome": welcomePage, "provider": providerPage, "key": keyPage,
-                      "portal": portalPage, "save": savePage }
+                      "portal": portalPage, "save": savePage, "local": localPage }
         return (name in pages) ? pages[name] : null
     }
     function hasPage(name) { return pageFor(name) !== null }
@@ -54,6 +63,8 @@ Kirigami.ApplicationWindow {
     function closeModelList() { modelPopup.close() }
     function modelListOpen() { return modelPopup.opened }
     function typeModelFilter(text) { modelFilter.text = text }
+    function localNext() { localFooter.next() }          // wie ein Klick auf Eintragen
+    function localNextEnabled() { return localFooter.nextEnabled }
     function prepare(name) {
         if (name === "key" || name === "save") {
             for (var i = 0; i < backend.providers.length; i++)
@@ -61,6 +72,9 @@ Kirigami.ApplicationWindow {
         } else if (name === "portal") {
             for (var j = 0; j < backend.providers.length; j++)
                 if (backend.providers[j].auth === "oauth") { root.provider = backend.providers[j]; break }
+        } else if (name === "local") {
+            for (var k = 0; k < backend.providers.length; k++)
+                if (backend.providers[k].auth === "local") { root.provider = backend.providers[k]; break }
         }
         if (name === "save") { root.apiKey = "test"; root.model = "test/modell" }
     }
@@ -70,6 +84,7 @@ Kirigami.ApplicationWindow {
         prepare(name)
         pageStack.push(page)
         if (name === "save") savePage.start()
+        if (name === "local") localPage.start()
         return true
     }
     function showPage(name) {          // Stapel leeren, Seite allein zeigen
@@ -79,6 +94,7 @@ Kirigami.ApplicationWindow {
         pageStack.clear()
         pageStack.push(page)
         if (name === "save") savePage.start()
+        if (name === "local") localPage.start()
         return true
     }
 
@@ -191,7 +207,8 @@ Kirigami.ApplicationWindow {
                 delegate: Controls.RadioDelegate {
                     Layout.fillWidth: true
                     required property var modelData
-                    text: modelData.label + (modelData.auth === "oauth" ? "  (Anmeldung statt Schlüssel)" : "")
+                    text: modelData.label + (modelData.auth === "oauth" ? "  (Anmeldung statt Schlüssel)"
+                                             : modelData.auth === "local" ? "  (ohne Cloud, im Image)" : "")
                     checked: root.provider !== null && root.provider.slug === modelData.slug
                     onClicked: root.provider = modelData
                 }
@@ -202,6 +219,7 @@ Kirigami.ApplicationWindow {
             nextEnabled: root.provider !== null
             onNext: {
                 if (root.provider.auth === "oauth") root.pageStack.push(portalPage)
+                else if (root.provider.auth === "local") { root.pageStack.push(localPage); localPage.start() }
                 else root.pageStack.push(keyPage)
             }
         }
@@ -448,6 +466,219 @@ Kirigami.ApplicationWindow {
             onBack: root.pageStack.pop()
             nextText: "Schließen"
             onNext: root.close()
+        }
+    }
+
+
+    // ---- Seite 3c: Lokales Modell (Ollama im Image, ohne Schlüssel) ---------
+    // Vier Schritte auf einer Seite: Dienst starten, Modell wählen und laden
+    // (Fortschritt), Verbindung prüfen (antwortet das Modell mit einem
+    // Werkzeugaufruf?), eintragen. Alles läuft über /usr/libexec/hermes-os-lokal
+    // im Nutzerkontext; das Backend reicht dessen JSON-Zeilen durch.
+    Kirigami.ScrollablePage {
+        id: localPage
+        title: "Lokales Modell"
+        property bool serviceRunning: root.localStatus !== null && root.localStatus.server.running === true
+        property bool hasGpu: root.localStatus !== null && root.localStatus.gpu.vendor === "nvidia"
+        property var recommended: root.localStatus !== null ? root.localStatus.recommended : []
+        property var installed: root.localStatus !== null ? root.localStatus.server.models : []
+        function start() {
+            root.localStep = ""; root.localError = ""; root.localCheckOk = false
+            root.localProgress = 0; root.localProgressText = ""
+            backend.localStatus()
+        }
+        function isInstalled(tag) {
+            for (var i = 0; i < installed.length; i++)
+                if (installed[i].name === tag || installed[i].name === tag + ":latest") return true
+            return false
+        }
+        Connections {
+            target: backend
+            function onLocalStatusReady(status) {
+                root.localStatus = status
+                if (root.localModel === "") {
+                    var rec = status.recommended
+                    for (var i = 0; i < rec.length; i++) if (rec[i]["default"] === true) { root.localModel = rec[i].tag; break }
+                    if (status.hermes.local && status.hermes.model !== "") root.localModel = status.hermes.model
+                }
+                root.localError = ""
+            }
+            function onLocalProgress(status, percent) {
+                root.localProgressText = status
+                root.localProgress = percent
+            }
+            function onLocalStepDone(step, result) {
+                root.localStep = step
+                root.localError = ""
+                if (step === "check") root.localCheckOk = result.tools === true
+                if (step === "service" || step === "pulled" || step === "saved") backend.localStatus()
+            }
+            function onLocalFailed(step, message) {
+                root.localStep = ""
+                root.localError = message
+                if (step === "check") root.localCheckOk = false
+                if (step === "service" || step === "pulled") backend.localStatus()
+            }
+        }
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Kirigami.Heading { text: "Lokales Modell mit Ollama"; level: 2 }
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Ollama liegt im Image und läuft als dein Nutzerdienst nur auf diesem Rechner (127.0.0.1). "
+                    + "Kein Schlüssel, keine Cloud; die Modelle landen unter ~/.local/share/ollama. "
+                    + "Mit NVIDIA-Karte rechnet es auf der GPU, sonst auf der CPU, dann deutlich langsamer."
+            }
+
+            // Stand
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.localStatus !== null
+                type: localPage.hasGpu ? Kirigami.MessageType.Positive : Kirigami.MessageType.Warning
+                text: root.localStatus === null ? "" : (localPage.hasGpu
+                    ? "GPU: " + root.localStatus.gpu.name + ", " + Math.round(root.localStatus.gpu.vram_mb / 1024) + " GB Speicher, Treiber " + root.localStatus.gpu.driver
+                    : "Keine nutzbare GPU: " + root.localStatus.gpu.detail)
+            }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.localStatus !== null && root.localStatus.ollama_installed === false
+                type: Kirigami.MessageType.Error
+                text: "Ollama liegt nicht in diesem Image (/usr/bin/ollama fehlt). Das lokale Modell braucht ein Image mit Ollama."
+            }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.localError !== ""
+                type: Kirigami.MessageType.Error
+                text: root.localError
+            }
+
+            // Schritt 1: Dienst
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                RowLayout {
+                    Kirigami.FormData.label: "1. Dienst:"
+                    Controls.Label {
+                        text: root.localStatus === null ? "Stand wird gelesen…"
+                            : localPage.serviceRunning ? "läuft, Ollama " + root.localStatus.server.version
+                            : "aus"
+                    }
+                    Controls.Button {
+                        text: "Dienst starten"
+                        icon.name: "media-playback-start"
+                        visible: !localPage.serviceRunning
+                        enabled: !backend.busy && root.localStatus !== null && root.localStatus.ollama_installed !== false
+                        onClicked: backend.localStart()
+                    }
+                    Controls.BusyIndicator { running: backend.busy; visible: backend.busy }
+                }
+
+                // Schritt 2: Modell
+                ColumnLayout {
+                    Kirigami.FormData.label: "2. Modell:"
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Repeater {
+                        model: localPage.recommended
+                        delegate: Controls.RadioDelegate {
+                            Layout.fillWidth: true
+                            required property var modelData
+                            text: modelData.label + " (" + modelData.size_gb + " GB)"
+                                + (localPage.isInstalled(modelData.tag) ? "  – geladen" : "")
+                                + (modelData.fits ? "" : "  – passt nicht in den Speicher")
+                            checked: root.localModel === modelData.tag
+                            onClicked: { root.localModel = modelData.tag; root.localCheckOk = false; root.localStep = "" }
+                        }
+                    }
+                    Controls.TextField {
+                        id: localOther
+                        objectName: "localOther"
+                        Layout.fillWidth: true
+                        placeholderText: "Anderes Ollama-Modell, z. B. qwen3:30b-a3b"
+                        onTextChanged: if (text.trim() !== "") { root.localModel = text.trim(); root.localCheckOk = false; root.localStep = "" }
+                    }
+                    Controls.Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        opacity: 0.7
+                        text: {
+                            var rec = localPage.recommended
+                            for (var i = 0; i < rec.length; i++) if (rec[i].tag === root.localModel) return rec[i].note
+                            return root.localModel !== "" ? "Eigenes Modell; es muss Werkzeugaufrufe können (Ollama-Bibliothek, Filter „tools")." : ""
+                        }
+                    }
+                }
+                RowLayout {
+                    Kirigami.FormData.label: " "
+                    Controls.Button {
+                        text: localPage.isInstalled(root.localModel) ? "Modell erneut laden" : "Modell laden"
+                        icon.name: "download"
+                        enabled: localPage.serviceRunning && root.localModel !== "" && !backend.busy
+                        onClicked: { root.localProgress = 0; root.localProgressText = "beginne…"; backend.localPull(root.localModel) }
+                    }
+                    Controls.Label {
+                        visible: localPage.isInstalled(root.localModel) && root.localProgressText === ""
+                        text: "schon geladen"
+                        opacity: 0.7
+                    }
+                }
+                ColumnLayout {
+                    Kirigami.FormData.label: " "
+                    Layout.fillWidth: true
+                    visible: root.localProgressText !== ""
+                    Controls.ProgressBar {
+                        objectName: "localProgressBar"
+                        Layout.fillWidth: true
+                        from: 0; to: 100
+                        value: root.localProgress
+                    }
+                    Controls.Label { text: root.localProgressText + "  " + root.localProgress + " %"; opacity: 0.7 }
+                }
+
+                // Schritt 3: Prüfen
+                RowLayout {
+                    Kirigami.FormData.label: "3. Verbindung:"
+                    Controls.Button {
+                        text: "Verbindung prüfen"
+                        icon.name: "view-refresh"
+                        enabled: localPage.serviceRunning && root.localModel !== "" && !backend.busy
+                        onClicked: backend.localCheck(root.localModel)
+                    }
+                    Controls.Label {
+                        visible: root.localCheckOk
+                        text: "Modell antwortet mit Werkzeugaufruf"
+                    }
+                }
+            }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.localCheckOk && root.localStep !== "saved"
+                type: Kirigami.MessageType.Positive
+                text: "Hermes kann " + root.localModel + " über http://127.0.0.1:11434/v1 benutzen. Mit „Eintragen“ wird es das Modell von Hermes."
+            }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: root.localStep === "saved"
+                type: Kirigami.MessageType.Positive
+                text: "Eingetragen: Hermes nutzt jetzt " + root.localModel + " lokal. Anbieter und Modell stehen in ~/.hermes/config.yaml; "
+                    + "zurück zur Cloud geht es hier im Assistenten oder mit ujust hermes-lokal-aus."
+            }
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                text: "Im Terminal dasselbe: ujust hermes-lokal-ein, ujust hermes-lokal-modell <tag>, ujust hermes-lokal-aus."
+            }
+        }
+        footer: WizardFooter {
+            id: localFooter
+            onBack: root.pageStack.pop()
+            nextText: root.localStep === "saved" ? "Schließen" : "Eintragen"
+            nextEnabled: root.localStep === "saved" || (root.localCheckOk && !backend.busy)
+            onNext: {
+                if (root.localStep === "saved") root.close()
+                else backend.localSave(root.localModel)
+            }
         }
     }
 
