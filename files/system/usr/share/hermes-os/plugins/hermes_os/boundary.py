@@ -47,8 +47,9 @@ class _Hit(Exception):
     def __init__(self, group: str, segment: str, command: str = ""):
         super().__init__(group)
         self.group = group
-        self.segment = segment
+        self.segment = segment      # innerster Befehl, der getroffen hat
         self.command = command
+        self.outer = segment        # äußerster einfacher Befehl, für die Meldung
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +267,7 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
                 continue
             end_simple(i, two in ("|", "|&") or (c == "|" and two != "||"))
             i += 2 if two in ("&&", "||", ";;", "|&") else 1
+            seg_start = i
             continue
         if c in "<>":
             # Dateideskriptor-Präfix (2>, 1>>) gehört nicht zum Wort davor
@@ -1112,14 +1114,22 @@ def _classify_text(text: str, elevated: bool, depth: int) -> None:
         raise _Hit("nesting", text[:160], "")
     subs: List[str] = []
     simples = _lex(text, subs)
-    for sub in subs:
-        _classify_text(sub, elevated=False, depth=depth + 1)
+    try:
+        for sub in subs:
+            _classify_text(sub, elevated=False, depth=depth + 1)
+    except _Hit as hit:
+        hit.outer = text.strip()
+        raise
     for simple in simples:
-        for op, target in simple.redirects:
-            if op in (">", ">>", ">|", "&>", "&>>", "<>") and _is_system_path(target):
-                raise _Hit("system-files", simple.text[:160], simple.words[0] if simple.words else "")
-        if simple.words:
-            _analyze([w.replace("\x00", "") for w in simple.words], simple, elevated, depth)
+        try:
+            for op, target in simple.redirects:
+                if op in (">", ">>", ">|", "&>", "&>>", "<>") and _is_system_path(target):
+                    raise _Hit("system-files", simple.text[:160], _name(simple.words[0]) if simple.words else "")
+            if simple.words:
+                _analyze([w.replace("\x00", "") for w in simple.words], simple, elevated, depth)
+        except _Hit as hit:
+            hit.outer = simple.text
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -1127,7 +1137,7 @@ def _classify_text(text: str, elevated: bool, depth: int) -> None:
 # ---------------------------------------------------------------------------
 
 def classify_system_command(command: str) -> Optional[Dict[str, str]]:
-    """Gibt {'group', 'segment', 'command'} zurück, wenn der Befehl das
+    """Gibt {'group', 'segment', 'command', 'text'} zurück, wenn der Befehl das
     laufende System berührt, sonst None. Reine Lesebefehle, alles im Home und
     alles mit --user bleiben frei."""
     if not isinstance(command, str) or not command.strip():
@@ -1135,7 +1145,8 @@ def classify_system_command(command: str) -> Optional[Dict[str, str]]:
     try:
         _classify_text(command, elevated=False, depth=0)
     except _Hit as hit:
-        return {"group": hit.group, "segment": hit.segment, "command": hit.command}
+        return {"group": hit.group, "segment": hit.segment, "command": hit.command,
+                "text": " ".join(hit.outer.split())[:160]}
     return None
 
 
@@ -1151,7 +1162,7 @@ _GROUP_TEXT = {
     "boot": "ändert Bootloader oder Kernel-Argumente",
     "ssh": "erzeugt oder verteilt SSH-Schlüssel",
     "disks": "berührt Datenträger oder Partitionen",
-    "system-files": "schreibt unter /etc, /usr, /boot, /var/lib oder /ostree",
+    "system-files": "schreibt in Systempfade (/etc, /usr, /boot, /var/lib, /ostree)",
     "flatpak-system": "ändert die systemweite Flatpak-Installation",
     "system-config": "ändert systemweite Einstellungen",
     "session": "beendet Sitzungen",
@@ -1165,7 +1176,7 @@ _GROUP_TEXT = {
 def directive_for(hit: Dict[str, str]) -> Dict[str, str]:
     """Hook-Antwort für einen Treffer: block für BLOCK_GROUPS, sonst approve."""
     group = hit["group"]
-    seg = hit["segment"][:120]
+    seg = (hit.get("text") or hit["segment"])[:120]
     what = _GROUP_TEXT.get(group, "berührt das laufende System")
     if group in BLOCK_GROUPS:
         return {

@@ -215,6 +215,13 @@ def main() -> int:
     asking = sum(1 for _, g in CASES if g)
     free = len(CASES) - asking
 
+    # Die Meldung im Freigabe-Dialog zeigt den ganzen Befehl, nicht nur den Kern
+    for cmd, part in (("git status && sudo bootc upgrade", "`sudo bootc upgrade`"),
+                      ("ls | pkexec reboot", "`pkexec reboot`")):
+        msg = (b.pre_tool_call_directive("terminal", {"command": cmd}) or {}).get("message", "")
+        if part not in msg:
+            fails.append(f"{cmd!r}: Meldung {msg!r} nennt nicht {part}")
+
     # Andere Werkzeuge und leere Eingaben bleiben unberührt
     for tool, args in (("write_file", {"path": "/etc/x"}), ("terminal", {}), ("terminal", None),
                        ("terminal", {"command": ""}), ("terminal", {"command": 42})):
