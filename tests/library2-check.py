@@ -49,6 +49,7 @@ ROBOTS = "User-agent: *\nDisallow: /verboten/\nCrawl-delay: 0\n"
 
 class FakeSite(BaseHTTPRequestHandler):
     hits = []
+    down = False        # True: jede Anfrage scheitert mit 503 (Server weg)
 
     def log_message(self, *args):
         pass
@@ -65,6 +66,9 @@ class FakeSite(BaseHTTPRequestHandler):
 
     def do_GET(self):
         FakeSite.hits.append(self.path)
+        if FakeSite.down:
+            self.send_error(503)
+            return
         if self.path == "/robots.txt":
             self._send(200, ROBOTS, "text/plain")
         elif self.path in PAGES:
@@ -195,6 +199,16 @@ def main():
         check(status5["pages"] == 1 and "/" in FakeSite.hits and "/a.html" not in FakeSite.hits,
               "Tiefe 0 und refresh: nur die Startseite, frisch geholt", str(FakeSite.hits))
         lib.mirror_entry(e_url, depth=2, max_pages=50, delay=0)
+        # Server weg, refresh erzwungen: der alte Spiegel bleibt stehen
+        FakeSite.down = True
+        try:
+            status6 = lib.mirror_entry(e_url, depth=2, max_pages=50, delay=0, refresh=True)
+        finally:
+            FakeSite.down = False
+        with sqlite3.connect(str(lib.index_path())) as con:
+            kept = con.execute("SELECT COUNT(*) FROM pages WHERE entry_id = ?", (e_url["id"],)).fetchone()[0]
+        check(status6["status"] == "error" and status6["pages"] == 0 and kept == 5,
+              "Lauf ohne gelesene Seite (Server weg) löscht den alten Spiegel nicht", f"{status6['status']} {kept}")
 
         # Ordner und Datei
         sd = lib.mirror_entry(e_dir, delay=0)
