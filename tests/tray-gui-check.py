@@ -89,6 +89,8 @@ class StubBackend(QObject):
     showRequested = Signal()
     hideRequested = Signal()
     attachmentsChanged = Signal()
+    libraryChanged = Signal()
+    showLibraryRequested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -97,8 +99,63 @@ class StubBackend(QObject):
         self._approval = {}
         self._configured = False
         self._attachments = []
+        self._library = []
         self._model = StubModel()
         self.calls = []
+
+    # Bibliothek wie im echten Backend: Liste von {"id", "kind", "source", "title", "note", "added"}
+    @Property(bool, constant=True)
+    def libraryAvailable(self):
+        return True
+
+    @Property("QVariantList", notify=libraryChanged)
+    def library(self):
+        return [dict(e) for e in self._library]
+
+    @Property(int, notify=libraryChanged)
+    def libraryCount(self):
+        return len(self._library)
+
+    @Slot()
+    def libraryReload(self):
+        self.calls.append(("libreload",))
+        self.libraryChanged.emit()
+
+    @Slot(str, str, str, result=str)
+    def libraryAdd(self, source, title, note):
+        self.calls.append(("libadd", source, title, note))
+        if source == "kaputt":
+            return "Weder eine http(s)-Adresse noch eine vorhandene Datei oder ein Ordner: kaputt"
+        kind = "url" if source.startswith("http") else "file"
+        self._library.append({"id": f"e{len(self._library) + 1}", "kind": kind, "source": source,
+                              "title": title or source, "note": note, "added": ""})
+        self.libraryChanged.emit()
+        return ""
+
+    @Slot(str)
+    def libraryRemove(self, entry_id):
+        self.calls.append(("libremove", entry_id))
+        self._library = [e for e in self._library if e["id"] != entry_id]
+        self.libraryChanged.emit()
+
+    @Slot(result=str)
+    def libraryPickFile(self):
+        self.calls.append(("libfile",))
+        return ""
+
+    @Slot(result=str)
+    def libraryPickFolder(self):
+        self.calls.append(("libfolder",))
+        return ""
+
+    @Slot(str)
+    def libraryOpen(self, entry_id):
+        self.calls.append(("libopen", entry_id))
+
+    @Slot()
+    def showLibrary(self):
+        self.calls.append(("libshow",))
+        self.showLibraryRequested.emit()
 
     # Steuerung durch den Test
     def set_state(self, state, configured=None):
@@ -469,6 +526,46 @@ def main():
     settle()
     step("Neues Gespräch: Verlauf leer, Begrüßung darf ohne Warnung erscheinen",
          lv is not None and lv.property("count") == 0, f"count={lv and lv.property('count')}")
+
+    # 9. Bibliothek: Seite öffnen, Eintrag anlegen, Fehler anzeigen, entfernen, zurück
+    opened = root.openLibrary()
+    settle()
+    shot("library-empty")
+    step("Bibliothek: Seite öffnet sich und ist leer, Liste wurde neu gelesen",
+         bool(opened) and root.libraryOpen() and count("libraryRow") == 0 and ("libreload",) in backend.calls,
+         f"opened={opened} open={root.libraryOpen()} rows={count('libraryRow')}")
+    root.typeLibrary("https://docs.kde.org/", "KDE-Handbücher", "deutsch unter stable_kf6/de")
+    settle(100)
+    added = root.libraryAddCurrent()
+    settle()
+    src_field = child("librarySource")
+    shot("library")
+    step("Bibliothek: Eintrag anlegen, backend.libraryAdd bekommt die Felder, Zeile erscheint, Felder leer",
+         added and ("libadd", "https://docs.kde.org/", "KDE-Handbücher", "deutsch unter stable_kf6/de") in backend.calls
+         and count("libraryRow") == 1 and src_field is not None and src_field.property("text") == "",
+         f"added={added} calls={backend.calls[-2:]} rows={count('libraryRow')}")
+    root.typeLibrary("kaputt", "", "")
+    settle(100)
+    added2 = root.libraryAddCurrent()
+    settle(200)
+    err_label = child("libraryError")
+    step("Bibliothek: Fehler des Backends wird angezeigt, kein Eintrag dazu",
+         not added2 and err_label is not None and err_label.property("visible")
+         and "kaputt" in str(err_label.property("text")) and count("libraryRow") == 1,
+         f"added={added2} err={err_label and err_label.property('text')!r} rows={count('libraryRow')}")
+    clicked = root.clickNamed("libraryRemove")
+    settle(200)
+    step("Bibliothek: Entfernen ruft backend.libraryRemove, Zeile verschwindet",
+         clicked and ("libremove", "e1") in backend.calls and count("libraryRow") == 0,
+         f"clicked={clicked} calls={backend.calls[-1:]} rows={count('libraryRow')}")
+    backend.showLibrary()
+    settle(200)
+    still_open = root.libraryOpen()
+    root.closeLibrary()
+    settle()
+    step("Bibliothek: Signal aus dem Menü hält die Seite offen, Zurück zeigt wieder den Chat",
+         still_open and not root.libraryOpen() and inp is not None and inp.property("enabled"),
+         f"still_open={still_open} open={root.libraryOpen()}")
 
     root.close()
     print("ERGEBNIS: " + ("ok" if fail == 0 else "Fehler, siehe FEHL"))

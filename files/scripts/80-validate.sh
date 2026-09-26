@@ -99,13 +99,14 @@ if [ -f "${PLUGIN}/plugin.yaml" ] && [ -f "${PLUGIN}/__init__.py" ]; then
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
-names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch")))
-assert len(names) == 9, names
+names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_")))
+assert len(names) == 11, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 assert registry.get_toolset_for_tool("os_locale") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
+assert "hermes-os.library" in sections, list(sections)
 # Freigabe-Hook: System-Befehle landen im Dialog, freie Befehle nicht
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo bootc switch ghcr.io/x/y:latest"})
 assert d.action == "approve", d
@@ -297,6 +298,19 @@ if [ -f /usr/share/locale/de/LC_MESSAGES/kcm_keyboard.mo ] && [ -f /usr/share/lo
   pass "german Plasma translations present"
 else
   fail "german Plasma translations missing under /usr/share/locale/de"
+fi
+
+# 7g. Bibliothek: Ablage, Zuordnung und Abrufer des Plugins (library.py) gegen
+#     einen nachgebauten Webserver, mit der Venv-Python wie im Gateway.
+if [ -f /ctx/tests/library-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/library-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os; then
+    pass "library: store, matching and fetcher work against a fake site"
+  else
+    fail "library check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
