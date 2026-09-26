@@ -41,6 +41,8 @@ lint:
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
+		files/system/usr/share/hermes-os/tray/desktop.py files/system/usr/share/hermes-os/tray/screenshot.py \
+		files/system/usr/share/hermes-os/tray/voice.py files/system/usr/share/hermes-os/tray/voice_worker.py \
 		tests/*.py
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
@@ -49,6 +51,7 @@ lint:
 	python3 tests/audit-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/report-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/runner-check.py --tray-dir files/system/usr/share/hermes-os/tray
+	python3 tests/sehen-hoeren-check.py --tray-dir files/system/usr/share/hermes-os/tray
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }

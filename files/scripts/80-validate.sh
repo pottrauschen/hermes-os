@@ -415,6 +415,52 @@ else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
+# 7l. Sehen und Hören (docs/sehen-hoeren.md): Kürzel-Dateien für „Was sehe ich
+#     hier?", die Module des Leisten-Symbols, die Symbole für Zuhören und
+#     Sprechen, der Sprachhelfer in der Hermes-Venv (Importe von faster-whisper,
+#     piper und Hermes' Helfern, ohne Modelle zu laden) und der Test ohne
+#     Audio-Hardware: Zustandsautomat, Helfer gegen Attrappen, Bildweg gegen
+#     einen nachgebauten Client, Kürzel-Registrierung.
+for f in /usr/share/applications/hermes-os-sehen.desktop \
+         /usr/share/kglobalaccel/hermes-os-sehen.desktop \
+         /usr/share/hermes-os/tray/desktop.py \
+         /usr/share/hermes-os/tray/screenshot.py \
+         /usr/share/hermes-os/tray/voice.py \
+         /usr/share/hermes-os/tray/voice_worker.py \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-listening.svg \
+         /usr/share/icons/hicolor/scalable/status/hermes-os-tray-speaking.svg; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if diff -q /usr/share/applications/hermes-os-sehen.desktop /usr/share/kglobalaccel/hermes-os-sehen.desktop >/dev/null 2>&1 \
+   && grep -q '^X-KDE-Shortcuts=Meta+Shift+H$' /usr/share/kglobalaccel/hermes-os-sehen.desktop \
+   && grep -q '^Exec=/usr/libexec/hermes-os-tray --look$' /usr/share/kglobalaccel/hermes-os-sehen.desktop; then
+  pass "sehen desktop file and its kglobalaccel copy are identical, Meta+Shift+H runs hermes-os-tray --look"
+else
+  fail "sehen desktop file and kglobalaccel copy differ or lack the shortcut"
+fi
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  if desktop-file-validate /usr/share/applications/hermes-os-sehen.desktop; then
+    pass "desktop-file-validate /usr/share/applications/hermes-os-sehen.desktop"
+  else
+    fail "desktop-file-validate /usr/share/applications/hermes-os-sehen.desktop"
+  fi
+fi
+if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /usr/share/hermes-os/tray/voice_worker.py --check; then
+  pass "voice_worker --check in the Hermes venv (faster_whisper, piper, Hermes helpers)"
+else
+  fail "voice_worker --check failed in the Hermes venv"
+fi
+if [ -f /ctx/tests/sehen-hoeren-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/bin/python3 /ctx/tests/sehen-hoeren-check.py --tray-dir /usr/share/hermes-os/tray \
+       --desktop-file /usr/share/kglobalaccel/hermes-os-sehen.desktop; then
+    pass "sehen-hoeren: shortcuts, push-to-talk automaton, worker against fakes, image path against a fake client"
+  else
+    fail "sehen-hoeren check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/sehen-hoeren-check.py not in build context, sehen-hoeren check skipped"
+fi
+
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi
 

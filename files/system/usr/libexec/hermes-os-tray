@@ -23,6 +23,11 @@
 # (tray/runner.py, docs/krunner.md) und geht ins Fenster oder als
 # Benachrichtigung zurück.
 #
+# Sehen und Hören (docs/sehen-hoeren.md): Meta+Umschalt+H wählt einen
+# Bildschirmausschnitt und fragt Hermes, was darauf ist (tray/screenshot.py);
+# Meta+Leertaste halten nimmt auf, loslassen schickt den erkannten Text als
+# Frage, die Antwort wird vorgelesen (tray/voice.py, Helfer in der Hermes-Venv).
+#
 # Aufruf:  hermes-os-tray            Symbol starten, Fenster bleibt zu
 #          hermes-os-tray --show     Fenster öffnen; läuft schon eine Instanz,
 #                                    bekommt die den Befehl (Menü, Meta+H)
@@ -30,6 +35,13 @@
 #                                    Fenster öffnen, DATEI als Kontext fürs
 #                                    Gespräch (Knopf „Im Chat besprechen" am
 #                                    Morgenbericht, docs/morgenbericht.md)
+#          hermes-os-tray --look [FRAGE]
+#                                    Bildschirmausschnitt wählen und Hermes fragen
+#                                    (Meta+Umschalt+H); läuft schon eine Instanz,
+#                                    bekommt die den Befehl
+#          hermes-os-tray --talk     Aufnahme ein- oder ausschalten (Knopf oder Skript;
+#                                    das Kürzel Meta+Leertaste meldet die Instanz
+#                                    selbst bei KGlobalAccel an)
 #          hermes-os-tray --check    Trockenlauf fürs Validierungs-Gate
 # Umgebung: HERMES_OS_TRAY_DIR überschreibt /usr/share/hermes-os/tray
 #           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
@@ -295,8 +307,17 @@ def check_only():
         import runner  # noqa: F401  (KRunner-Runner samt dbus_peer)
     except Exception as e:
         problems.append(f"runner.py nicht importierbar: {e}")
+    try:
+        import desktop, screenshot, voice  # noqa: F401  (Sehen und Hören, docs/sehen-hoeren.md)
+        problems.extend(f"desktop: {p}" for p in desktop.self_test())
+    except Exception as e:
+        problems.append(f"desktop.py, screenshot.py oder voice.py nicht importierbar: {e}")
     if shutil.which("notify-send") is None:
         print("WARN  notify-send fehlt: Freigaben nur im Fenster, keine Benachrichtigung")
+    if shutil.which("spectacle") is None:
+        print("WARN  spectacle fehlt: „Was sehe ich hier?“ hat keinen Auswahlrahmen")
+    if shutil.which("pw-record") is None and shutil.which("parecord") is None:
+        print("WARN  weder pw-record noch parecord: Push-to-Talk hat kein Aufnahmeprogramm")
     for p in problems:
         print(f"FEHL  {p}")
     if problems:
@@ -314,6 +335,11 @@ def main():
         i = sys.argv.index("--discuss")
         discuss_path = os.path.abspath(sys.argv[i + 1]) if i + 1 < len(sys.argv) else ""
         want_show = True
+    want_look, look_question = "--look" in sys.argv, ""
+    if want_look:
+        i = sys.argv.index("--look")
+        look_question = " ".join(a for a in sys.argv[i + 1:] if not a.startswith("--"))
+    want_talk = "--talk" in sys.argv
 
     from PySide6.QtCore import (QAbstractListModel, QFileSystemWatcher, QModelIndex, QObject, QProcess,
                                 QStandardPaths, QTimer, Qt, QByteArray, QUrl, Property, Signal, Slot)
@@ -330,6 +356,12 @@ def main():
     if probe.waitForConnected(300):
         if discuss_path:
             probe.write(b"discuss " + os.fsencode(discuss_path) + b"\n")
+            probe.waitForBytesWritten(300)
+        elif want_look:
+            probe.write(b"look " + look_question.encode("utf-8") + b"\n")
+            probe.waitForBytesWritten(300)
+        elif want_talk:
+            probe.write(b"talk\n")
             probe.waitForBytesWritten(300)
         elif want_show:
             probe.write(b"show\n")
@@ -455,6 +487,7 @@ def main():
         showLibraryRequested = Signal()
         auditChanged = Signal()
         showAuditRequested = Signal()
+        answerFinished = Signal(str)    # Antworttext eines Runs aus dem Fenster, leer bei Abbruch (voice.py liest vor)
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
@@ -947,6 +980,18 @@ def main():
             self._model.append("assistant", self._context, when=now_hhmm())
             self._model.append("info", "Frag nach, was dich daran interessiert; der Bericht geht mit.")
 
+        def discussAnswer(self, question, answer, image_paths):
+            """Antwort aus einer Benachrichtigung („Was sehe ich hier?", tray/screenshot.py) ins
+            Fenster holen: Frage mit Bild und Antwort als Blasen, das Bild als Anhang für die
+            Nachfrage, die Antwort als Kontext der nächsten Nachricht."""
+            paths = [p for p in image_paths if os.path.isfile(p)]
+            self._model.append("user", question, images=[file_url(make_preview(p)) for p in paths], when=now_hhmm())
+            self._model.append("assistant", answer, when=now_hhmm())
+            self.attachFiles(paths)
+            self._context = f"Frage zum Bildschirmausschnitt: {question}\n\nAntwort von Hermes: {answer}"
+            self._model.append("info", "Frag nach, was dich daran interessiert; Ausschnitt und Antwort gehen mit.")
+            self.showRequested.emit()
+
         # ---- Senden und Ereignisse ---------------------------------------------
         @Slot(str)
         def send(self, text):
@@ -1038,18 +1083,22 @@ def main():
                 self._clear_approval()
             elif name in ("run.completed", "run.failed", "run.cancelled", "run.interrupted"):
                 self._finish_answer(event.get("output"))
+                final = self._model.text(self._assistant_row) if name == "run.completed" and self._assistant_row >= 0 else ""
                 if name == "run.failed":
                     reason = str(event.get("turn_exit_reason") or event.get("error") or "unbekannt")
                     self._model.append("error", f"Hermes hat abgebrochen: {reason}")
                 elif name != "run.completed":
                     self._model.append("info", "Abgebrochen.")
                 self._finish()
+                self.answerFinished.emit(final)
             elif name == "client.error":
                 self._model.append("error", str(event.get("message") or "Fehler"))
                 self._finish()
+                self.answerFinished.emit("")
             elif name == "stream.closed":
                 if self._busy:
                     self._finish()
+                    self.answerFinished.emit("")
 
         def _finish(self):
             self._clear_approval()
@@ -1180,6 +1229,16 @@ def main():
     backend = Backend()
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
+    # ---- Sehen und Hören (tray/screenshot.py, tray/voice.py, docs/sehen-hoeren.md) ----
+    # Fenster und show_window entstehen erst nach engine.load; beide Module holen sie
+    # sich über die Funktionen, wenn sie gebraucht werden.
+    import screenshot
+    import voice as voice_module
+    look = screenshot.install(backend, lambda: window, lambda: show_window(), backend._make_client,
+                              encode_image_for_upload, CACHE_DIR, hc.split_media_tags)
+    voice = voice_module.install(backend, lambda: show_window(), CACHE_DIR)
+    engine.rootContext().setContextProperty("look", look)
+    engine.rootContext().setContextProperty("voice", voice)
     engine.load(MAIN_QML)
     if not engine.rootObjects():
         print(f"hermes-os-tray: {MAIN_QML} konnte nicht geladen werden", file=sys.stderr)
@@ -1201,7 +1260,7 @@ def main():
     backend.hideRequested.connect(window.hide)
 
     def icon_for(state):
-        name = STATE_ICON.get(state, "hermes-os-tray-off")
+        name = voice.iconName or STATE_ICON.get(state, "hermes-os-tray-off")
         return QIcon.fromTheme(name, QIcon.fromTheme("dialog-messages"))
 
     tray = QSystemTrayIcon(icon_for(backend.state))
@@ -1214,6 +1273,10 @@ def main():
         menu.addAction("Bibliothek").triggered.connect(backend.showLibrary)
     if backend.auditAvailable:
         menu.addAction("Protokoll").triggered.connect(backend.showAudit)
+    if look.available:
+        menu.addAction("Was sehe ich hier?").triggered.connect(lambda: look.start())
+    if voice.available:
+        menu.addAction("Mit Hermes sprechen").triggered.connect(voice.toggle)
     if backend.dashboardAvailable:
         menu.addAction("Dashboard öffnen").triggered.connect(backend.openDashboard)
     menu.addAction("Hermes einrichten").triggered.connect(backend.openSetup)
@@ -1226,7 +1289,7 @@ def main():
 
     def refresh_tray():
         tray.setIcon(icon_for(backend.state))
-        tip = backend.stateText
+        tip = voice.stateText or backend.stateText
         if backend.hermesVersion:
             tip += "\n" + backend.hermesVersion
         tray.setToolTip(tip)
@@ -1234,6 +1297,8 @@ def main():
 
     backend.stateChanged.connect(refresh_tray)
     backend.versionChanged.connect(refresh_tray)
+    voice.stateChanged.connect(refresh_tray)
+    app.aboutToQuit.connect(voice.shutdown)
     refresh_tray()
 
     def activated(reason):
@@ -1257,6 +1322,10 @@ def main():
             for line in data.splitlines():
                 if line.startswith(b"discuss "):
                     backend.discuss(os.fsdecode(line[len(b"discuss "):].strip()))
+                elif line.startswith(b"look"):
+                    look.start(line[len(b"look"):].strip().decode("utf-8", "replace"))
+                elif line.strip() == b"talk":
+                    voice.toggle()
                 elif line.strip() == b"show":
                     show_window()
             conn.disconnectFromServer()
@@ -1277,6 +1346,10 @@ def main():
 
     if discuss_path:
         backend.discuss(discuss_path)
+    elif want_look:
+        QTimer.singleShot(300, lambda: look.start(look_question))
+    elif want_talk:
+        QTimer.singleShot(300, voice.toggle)
     elif want_show:
         show_window()
     return app.exec()
