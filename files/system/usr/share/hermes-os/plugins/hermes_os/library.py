@@ -794,12 +794,9 @@ def mirror_entry(entry: Dict[str, str], depth: int = MIRROR_DEPTH, max_pages: in
             report()
         else:
             _mirror_folder(con, entry, status, seen_sources, max_pages, report, fail, check_cancel)
-        # Ein vollständiger Lauf räumt Seiten weg, die es nicht mehr gibt
-        if seen_sources:
-            con.execute(f"DELETE FROM pages WHERE entry_id = ? AND source NOT IN ({','.join('?' * len(seen_sources))})",
-                        [entry["id"]] + seen_sources)
-        else:
-            con.execute("DELETE FROM pages WHERE entry_id = ?", (entry["id"],))
+        # Ein vollständiger Lauf räumt Seiten weg, die es nicht mehr gibt: alles,
+        # was dieser Lauf nicht neu geschrieben hat (fetched liegt vor seinem Start)
+        con.execute("DELETE FROM pages WHERE entry_id = ? AND fetched < ?", (entry["id"], status["started"]))
         status["status"] = "error" if status["pages"] == 0 and status["error_count"] else "done"
         if status["status"] == "error" and not status["errors"]:
             status["errors"].append("keine Seite gelesen")
@@ -993,8 +990,9 @@ def search_index(query: str, entry_id: str = "", limit: int = SEARCH_LIMIT,
         terms = _like_terms(query)
         if not terms:
             return [], "like"
-        sql = "SELECT entry_id, source, title, text FROM pages WHERE " + " AND ".join("norm LIKE ?" for _ in terms)
-        params = [f"%{t}%" for t in terms]
+        sql = ("SELECT entry_id, source, title, text FROM pages WHERE "
+               + " AND ".join("norm LIKE ? ESCAPE '\\'" for _ in terms))
+        params = ["%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for t in terms]
         if entry_id:
             sql += " AND entry_id = ?"
             params.append(entry_id)
