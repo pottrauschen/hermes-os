@@ -11,7 +11,7 @@ README und bleibt der Weg für Geräte.
 | Was | Wo | Eigenschaften |
 |---|---|---|
 | Bau-VM `ainux-build` | VM 110 auf `.40`, `stephan@192.168.1.36` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
-| Test-VM `hermes-test` | VM 112 auf `.40`, Adresse per DHCP | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB, virtio-Grafik, USB-Tablet |
+| Test-VM `hermes-test` | VM 112 auf `.40`, Adresse per DHCP | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB, virtio-Grafik, USB-Tablet; seit 2026-09-26 mit RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), bootet `hermes-os-nvidia` |
 | Zwischenablage für die Platte | `.40`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
 
 Die Bau-VM gehört dem Projekt ainux und wird mitbenutzt (Entscheidung
@@ -66,9 +66,48 @@ ab; der Neustart wiederholt nur den Datenträgerbau, nicht den Pull.
    First-Login-Terminal, Freigabe-Dialog, Sprache und der AT-SPI-Baum brauchen
    die grafische Sitzung: Proxmox-Konsole von VM 112, Anmeldung als `stephan`.
 
-Bei einer neuen Image-Fassung wiederholt sich der Ablauf ab Schritt 1. Die
-alte Systemplatte wird durch `qm set --scsi0` zum `unused0` und belegt weiter
-Platz auf `vmdata`; nach dem Tausch `qm set 112 --delete unused0`.
+Der Datenträgerbau ist nur für den allerersten Boot nötig. Die gebootete VM
+trägt `ghcr.io/pottrauschen/hermes-os:latest` als Ursprung, das Paket ist
+öffentlich; jede weitere Fassung kommt wie auf einem echten Gerät:
+
+```sh
+sudo bootc upgrade          # holt latest, staged das Deployment
+systemctl reboot            # aktiviert es
+```
+
+Am 2026-09-26 brauchte das für eine geänderte Schicht (450 MB) 38 Sekunden
+plus Neustart in unter einer Minute. Wer trotzdem eine neue Platte baut: die
+alte wird durch `qm set --scsi0` zum `unused0` und belegt weiter Platz auf
+`vmdata`; nach dem Tausch `qm set 112 --delete unused0`.
+
+## GPU-Passthrough: RTX 3060 an VM 112
+
+Seit 2026-09-26 hängt die RTX 3060 des Hosts (`0c:00`, GA106, 12 GB) an der
+Test-VM, damit Whisper, Sprachausgabe und lokale Modelle auf der GPU laufen
+können. Der Host war vorbereitet (`amd_iommu=on iommu=pt`, beide
+NVIDIA-Karten an `vfio-pci`, eigene IOMMU-Gruppen); die Schritte waren:
+
+1. In der laufenden VM auf die NVIDIA-Variante wechseln, nur gestaged:
+   `sudo bootc switch ghcr.io/pottrauschen/hermes-os-nvidia:latest`
+   (36 neue Schichten, 2,4 GB, rund fünf Minuten).
+2. VM herunterfahren (`sudo systemctl poweroff` in der VM; `qm shutdown`
+   kann an der Plasma-Abfrage hängen), dann auf dem Host
+   `qm set 112 -hostpci0 0000:0c:00,pcie=1` und `qm start 112`.
+   Die Audio-Funktion `0c:00.1` kommt über die Multifunktionsangabe mit.
+3. Prüfen: `nvidia-smi` meldet die Karte, `lsmod` zeigt `nvidia`,
+   `nvidia_drm`, `nvidia_modeset`, `nvidia_uvm`; Treiber 615.71.09 mit
+   Lizenz „Dual MIT/GPL", also die offenen Kernelmodule.
+   `tests/boot-check.sh 44.20260922.1.20260926` meldete keine harten Fehler.
+
+Absichtlich **ohne `x-vga` und mit `vga: virtio`**: Die Proxmox-Konsole zeigt
+weiter den Desktop, Plasma läuft auf der virtio-Grafik, die 3060 ist eine
+reine Rechenkarte. Mit `vga: none` wäre die Konsole schwarz (Homelab-Cockpit).
+
+Randbedingungen: Die 3060 steht auch in den Configs von VM 105 und 107
+(Render-VM); solange sie an 112 hängt, startet keine der beiden. Der
+Gast-RAM (8 GB) ist bei Passthrough fest gepinnt. Die Quadro P620 (`04:00`,
+Pascal) taugt nicht: `aurora-dx-nvidia-open` unterstützt erst Turing, und
+NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
 
 ## Stolperfallen
 
@@ -119,17 +158,20 @@ Platz auf `vmdata`; nach dem Tausch `qm set 112 --delete unused0`.
 | Boot bis Gast-Agent | rund 20 Sekunden, SSH unmittelbar danach |
 
 Gebootet hat `44.20260922.1.20260925` mit Kernel 7.1.10; das Prüfskript meldete
-keine harten Fehler.
+keine harten Fehler. Spätere Fassungen kamen per `bootc upgrade` (450 MB, 38 s)
+und `bootc switch` auf die NVIDIA-Variante (2,4 GB, rund fünf Minuten).
 
 ## Boot-Checkliste, Stand 2026-09-26
 
 | Punkt | Ergebnis |
 |---|---|
-| First-Login | Bestanden. Config aus Vorlage, Plugin und Skill verlinkt, Plugin enabled. Einrichtung über den Assistenten aus `~/hos` (Testfassung, im Image ab dem nächsten CI-Lauf), OpenRouter mit Schlüssel. |
+| First-Login | Bestanden. Config aus Vorlage, Plugin und Skill verlinkt, Plugin enabled. Einrichtung über den Assistenten aus `~/hos` (Testfassung, im Image ab dem nächsten CI-Lauf), OpenRouter mit Schlüssel. Nach dem Upgrade auf `44.20260922.1.20260926` legte das Skript beim Login `API_SERVER_KEY` in `.env` an und schaltete das Gateway ein. |
+| Leisten-Symbol (`docs/systemagent.md`) | Automatischer Teil bestanden: Symbol startet per Autostart, legt das Gespräch `hermes-os-tray` am API-Server an, keine QML-Fehler im Journal, `/health` antwortet, `--show` einer zweiten Instanz endet sofort (Weiterreichen). Offen, nur am Bildschirm prüfbar: Symbolfarbe, Meta+H, Antwort im Fenster, Freigabe-Kasten und Benachrichtigung. |
+| NVIDIA-Variante | Bestanden am 2026-09-26 mit der RTX 3060 per Passthrough: `hermes-os-nvidia` bootet, offene Kernelmodule 615.71.09 geladen, `nvidia-smi` zeigt 12 GB. Ob Whisper und Piper die GPU nutzen, ist noch nicht geprüft. |
 | `hermes` im Terminal, Plugin geladen | Bestanden. `hermes chat -q` mit der Frage nach Deployments lieferte Image-Referenz und Version aus `os_status`. |
 | `app_launch` | Bestanden. Aus der Sitzung gestartet (`systemd-run --user`), Konsole erschien. Per SSH ohne Sitzungsumgebung nicht testbar. |
 | Freigabe-Dialog | Offen, nur interaktiv prüfbar: `sudo bootc upgrade --check` im Chat muss fragen, `flatpak install` nicht. |
-| Gateway | Bestanden. Der Assistent ruft nach dem Speichern das First-Login-Skript, das die Unit einschaltet; `enabled`/`active`, OpenRouter-Schlüssel im Credential-Pool. Hinweis im Journal: die Unit hat `TimeoutStopSec=30s`, Hermes erwartet `drain_timeout`-passende Werte („Stale systemd unit detected"); noch nicht angeglichen. |
+| Gateway | Bestanden. Der Assistent ruft nach dem Speichern das First-Login-Skript, das die Unit einschaltet; `enabled`/`active`, OpenRouter-Schlüssel im Credential-Pool. Seit dem 26.09. mit API-Server auf `127.0.0.1:8642`, Schlüssel aus `.env` wird akzeptiert. Hinweis im Journal: die Unit hat `TimeoutStopSec=30s`, Hermes erwartet `drain_timeout`-passende Werte („Stale systemd unit detected"); noch nicht angeglichen. |
 | Sprache (`/voice on`) | Offen, braucht Mikrofon in der VM. |
 | `ujust --list` | Bestanden, acht Rezepte. |
 | AT-SPI (Phase 3) | `busctl --user tree org.a11y.atspi.Registry` liefert keinen Baum; Accessibility in den KDE-Einstellungen einschalten, sobald Phase 3 beginnt. |
