@@ -173,7 +173,8 @@ def main():
 
     # Kaputte Zeilen: abgebrochenes Schreiben, Unsinn, JSON ohne Zeitstempel
     with open(path, "ab") as f:
-        f.write(b'{"v":1,"ts":17\n\xff\xfe kaputt\n[1,2]\n{"kind":"app.launch"}\n')
+        f.write(b'{"v":1,"ts":17\n\xff\xfe kaputt\n[1,2]\n{"kind":"app.launch"}\n'
+                b'{"kind":"app.launch","ts":1e999}\n{"kind":"app.launch","ts":-5e20}\n{"kind":"app.launch","ts":true}\n')
     before = len(audit.load_rows())
     ok = audit.append({"kind": "app.launch", "call": "call-10", "command": "org.kde.dolphin", "status": "ok"})
     step("kaputte Zeilen werden übergangen, danach geht es weiter", ok and len(audit.load_rows()) == before + 1,
@@ -213,9 +214,15 @@ def main():
                                 args={"command": "echo x | sudo chpasswd password=Geheim1"},
                                 result=json.dumps({"output": "Authorization: Bearer abcdefghijklmnop\n" + "z" * 5000,
                                                    "exit_code": 0}), tool_call_id="call-11")
+    ctx.hooks["post_tool_call"](tool_name="app_launch",
+                                args={"app_id": "org.mozilla.firefox", "target": "https://alice:geheimwort@example.com/x"},
+                                result="Gestartet: org.mozilla.firefox mit https://alice:geheimwort@example.com/x.",
+                                tool_call_id="call-12")
     raw = path.read_bytes().decode("utf-8", "replace")
     row = {r["id"]: r for r in audit.load_rows()}["c:call-11"]
-    step("Geheimnisse geschwärzt", "Geheim1" not in raw and "abcdefghijklmnop" not in raw, "")
+    step("Geheimnisse geschwärzt, auch im app_launch-Ziel",
+         "Geheim1" not in raw and "abcdefghijklmnop" not in raw and "geheimwort" not in raw
+         and "alice:***@example.com" in raw, "")
     step("Ausgabe gekürzt", len(row["output"]) <= audit.MAX_OUTPUT + 3 and "…" in row["output"], str(len(row["output"])))
 
     # Rotation: ab MAX_BYTES wird die Datei zur Vorgängerdatei, eine davon bleibt
