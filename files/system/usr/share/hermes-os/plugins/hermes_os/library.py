@@ -794,12 +794,14 @@ def mirror_entry(entry: Dict[str, str], depth: int = MIRROR_DEPTH, max_pages: in
             report()
         else:
             _mirror_folder(con, entry, status, seen_sources, max_pages, report, fail, check_cancel)
-        # Ein vollständiger Lauf räumt Seiten weg, die es nicht mehr gibt: alles,
-        # was dieser Lauf nicht neu geschrieben hat (fetched liegt vor seinem Start)
-        con.execute("DELETE FROM pages WHERE entry_id = ? AND fetched < ?", (entry["id"], status["started"]))
         status["status"] = "error" if status["pages"] == 0 and status["error_count"] else "done"
         if status["status"] == "error" and not status["errors"]:
             status["errors"].append("keine Seite gelesen")
+        # Nur ein Lauf, der etwas gelesen hat, räumt Seiten weg, die es nicht mehr
+        # gibt: alles, was er nicht neu geschrieben hat (fetched vor seinem Start).
+        # Ein Lauf ohne Seite (Server weg, Netz aus) lässt den alten Spiegel stehen.
+        if status["status"] == "done":
+            con.execute("DELETE FROM pages WHERE entry_id = ? AND fetched < ?", (entry["id"], status["started"]))
     except MirrorCancelled:
         status["status"] = "cancelled"
     except (sqlite3.Error, OSError) as exc:
