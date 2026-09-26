@@ -415,6 +415,100 @@ else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
+# 7l. Lokales Modell: Ollama aus dem Release-Tarball (30-ollama.sh), die
+#     User-Unit, der Helfer, die Rezepte und der Test gegen Attrappen und
+#     einen nachgebauten Ollama-Server. Zum Schluss schreibt der Helfer die
+#     config.yaml eines eigenen HERMES_HOME und Hermes selbst muss den
+#     Anbieter, die Adresse und die Kontextlänge daraus lesen (das ist der
+#     Vertrag: unser Schreiber, Hermes' Leser).
+if [ -x /usr/bin/ollama ] && OLLAMA_VER="$(/usr/bin/ollama --version 2>/dev/null | tail -1)"; then
+  pass "ollama binary: ${OLLAMA_VER}"
+else
+  fail "/usr/bin/ollama missing or not runnable"
+fi
+if [ -d /usr/lib/ollama ] && [ -n "$(find /usr/lib/ollama -name 'libggml-cuda*' -print -quit 2>/dev/null)" ]; then
+  pass "ollama CUDA runtime libraries under /usr/lib/ollama"
+else
+  fail "ollama CUDA runtime libraries missing under /usr/lib/ollama (GPU would silently fall back to CPU)"
+fi
+if grep -q '^version=' /usr/lib/ollama/.hermes-os-release 2>/dev/null; then
+  pass "ollama release stamp: $(tr '\n' ' ' < /usr/lib/ollama/.hermes-os-release)"
+else
+  fail "/usr/lib/ollama/.hermes-os-release missing"
+fi
+for f in /usr/lib/systemd/user/ollama.service /usr/libexec/hermes-os-lokal /usr/share/hermes-os/local/local_model.py; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if grep -q '^Environment=OLLAMA_CONTEXT_LENGTH=65536' /usr/lib/systemd/user/ollama.service \
+   && grep -q '^Environment=OLLAMA_HOST=127.0.0.1:11434' /usr/lib/systemd/user/ollama.service; then
+  pass "ollama.service serves 64k context on 127.0.0.1 only"
+else
+  fail "ollama.service lacks OLLAMA_CONTEXT_LENGTH=65536 or OLLAMA_HOST=127.0.0.1:11434"
+fi
+if command -v systemd-analyze >/dev/null 2>&1; then
+  if systemd-analyze --user verify /usr/lib/systemd/user/ollama.service 2>&1 | grep -v 'Failed to connect' | grep -qiE 'error|unknown|invalid'; then
+    fail "systemd-analyze verify ollama.service"
+  else
+    pass "systemd-analyze verify ollama.service"
+  fi
+fi
+if /usr/libexec/hermes-os-lokal --check; then
+  pass "hermes-os-lokal --check (module, PyYAML)"
+else
+  fail "hermes-os-lokal --check failed"
+fi
+if grep -qE '^\s*hermes-lokal-ein\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-lokal-aus\b' <<< "${JUST_OUT}" \
+   && grep -qE '^\s*hermes-lokal-modell\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-lokal-status\b' <<< "${JUST_OUT}"; then
+  pass "ujust lists hermes-lokal-ein, -aus, -modell, -status"
+else
+  fail "ujust does not list the hermes-lokal recipes"
+fi
+if [ -f /ctx/tests/lokales-modell-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/lokales-modell-check.py --local-dir /usr/share/hermes-os/local \
+       --helper /usr/libexec/hermes-os-lokal --template /usr/share/hermes-os/config.yaml.default; then
+    pass "local model: GPU detection, config writer, fake Ollama endpoint, helper"
+  else
+    fail "local model check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/lokales-modell-check.py not in build context, local model check skipped"
+fi
+LOCAL_HOME=/tmp/hermes-validate-local
+rm -rf "${LOCAL_HOME}"; mkdir -p "${LOCAL_HOME}"
+cp /usr/share/hermes-os/config.yaml.default "${LOCAL_HOME}/config.yaml"
+# eintragen ruft danach das First-Login-Skript: das muss den lokalen Anbieter
+# in config.yaml als Einrichtung erkennen und den API-Schlüssel des Gateways
+# in .env anlegen, obwohl es keinen Anbieter-Schlüssel gibt.
+if HERMES_HOME="${LOCAL_HOME}" HOME="${HOME:-/root}" OLLAMA_HOST=127.0.0.1:11434 /usr/libexec/hermes-os-lokal eintragen qwen3.5:9b >/dev/null \
+   && [ "$(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get model.provider 2>/dev/null | tail -1)" = "custom" ] \
+   && [ "$(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get model.base_url 2>/dev/null | tail -1)" = "http://127.0.0.1:11434/v1" ] \
+   && [ "$(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get model.default 2>/dev/null | tail -1)" = "qwen3.5:9b" ] \
+   && [ "$(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get model.context_length 2>/dev/null | tail -1)" = "65536" ] \
+   && [ "$(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get agent.reasoning_effort 2>/dev/null | tail -1)" = "none" ]; then
+  pass "hermes reads provider custom, base_url, model, context_length 65536 and reasoning_effort none written by hermes-os-lokal"
+else
+  fail "hermes does not read back what hermes-os-lokal wrote (config get follows)"
+  for k in model.provider model.base_url model.default model.context_length agent.reasoning_effort; do
+    echo "  $k = $(HERMES_HOME="${LOCAL_HOME}" /usr/bin/hermes config get "$k" 2>&1 | tail -1)"
+  done
+fi
+if HERMES_HOME="${LOCAL_HOME}" /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+# Der Vertrag mit Hermes' Kontextprüfung: 65536 liegt über der Untergrenze,
+# und die lokale Adresse zählt als lokaler Endpunkt.
+from agent.model_metadata import MINIMUM_CONTEXT_LENGTH, is_local_endpoint
+assert 65536 >= MINIMUM_CONTEXT_LENGTH, MINIMUM_CONTEXT_LENGTH
+assert is_local_endpoint("http://127.0.0.1:11434/v1")
+print("MINIMUM_CONTEXT_LENGTH", MINIMUM_CONTEXT_LENGTH)
+PY
+then pass "65536 context satisfies Hermes' MINIMUM_CONTEXT_LENGTH, 127.0.0.1:11434 is a local endpoint"; else fail "Hermes context floor or local endpoint check failed"; fi
+if grep -qE '^API_SERVER_KEY=[0-9a-f]{48}$' "${LOCAL_HOME}/.env" 2>/dev/null; then
+  pass "first-login treats a local model in config.yaml as a configured provider (API_SERVER_KEY in .env)"
+else
+  fail "first-login did not add API_SERVER_KEY for a local-only configuration (log follows)"
+  sed 's/^/  /' "${LOCAL_HOME}/hermes-os-first-login.log" 2>/dev/null | tail -10
+fi
+rm -rf "${LOCAL_HOME}"
+
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
 if [ -d /usr/lib/hermes-agent/.git ]; then fail ".git left in image"; else pass "no .git in image"; fi
 
