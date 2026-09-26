@@ -32,3 +32,11 @@ if [ "${WEB_REF}" != "${HERMES_REF}" ]; then
   exit 1
 fi
 echo "web_dist: $(find "${WEB_DST}" -type f | wc -l) Dateien, $(du -sm "${WEB_DST}" | cut -f1) MB"
+
+# ---- Fenster: PySide6 mit QtWebEngine ---------------------------------------
+# Das Fenster /usr/libexec/hermes-os-dashboard zeigt das Dashboard mit
+# QWebEngineView. python3-pyside6 und qt6-qtwebengine liegen im Aurora-Image
+# (als Layer der Kinoite-Basis, nicht von Aurora selbst gewählt; Stand
+# 44.20260921.0). Der Aufruf ist dann ein No-op und hält die Pakete, falls
+# die Basis sie einmal fallen lässt; 80-validate.sh prüft den Import.
+dnf install -y python3-pyside6 qt6-qtwebengine

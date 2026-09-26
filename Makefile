@@ -41,6 +41,7 @@ lint:
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
+		files/system/usr/share/hermes-os/dashboard/dashboard_server.py files/system/usr/libexec/hermes-os-dashboard \
 		tests/*.py
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
@@ -49,9 +50,21 @@ lint:
 	python3 tests/audit-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/report-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/runner-check.py --tray-dir files/system/usr/share/hermes-os/tray
+	python3 tests/dashboard-check.py --dashboard-dir files/system/usr/share/hermes-os/dashboard \
+		--launcher files/system/usr/libexec/hermes-os-dashboard \
+		--desktop-file files/system/usr/share/applications/hermes-os-dashboard.desktop
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }
+	@# Die CI liest die Aurora-Zeile mit `grep '^FROM ghcr.io/ublue-os/' | tail -1`;
+	@# die Node-Stufe des Dashboards steht davor, die letzte FROM-Zeile muss
+	@# die Aurora-Basis bleiben, und es darf nur eine geben.
+	@for f in Dockerfile Dockerfile.nvidia; do \
+		grep -E '^FROM ' "$$f" | tail -1 | grep -qE '^FROM ghcr.io/ublue-os/' \
+			|| { echo "$$f: last FROM line is not the Aurora base"; exit 1; }; \
+		[ "$$(grep -cE '^FROM ghcr.io/ublue-os/' "$$f")" = "1" ] \
+			|| { echo "$$f: expected exactly one Aurora FROM line"; exit 1; }; \
+	done; echo "Aurora base is the final stage in both Dockerfiles"
 	@echo "lint ok"
 
 image:

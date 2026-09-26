@@ -7,12 +7,12 @@ anschließt, ohne ein Terminal zu brauchen, und was dafür im Image liegt.
 
 1. **Assistent für den ersten Login.** Ein Kirigami-Fenster, das der
    First-Login öffnet: Anbieter wählen, Schlüssel eintragen und prüfen, Modell
-   wählen, fertig. Gebaut, im Image ab dem nächsten CI-Lauf.
+   wählen, fertig. Gebaut, im Image.
 2. **Dashboard für alles danach.** Hermes bringt mit `hermes dashboard` eine
-   Web-Oberfläche für Konfiguration, Schlüssel, Provider-Login, Sessions, Chat
-   und Cron mit. Der Backend-Teil liegt schon in der Venv; das Frontend muss in
-   CI mit Node 26 gebaut und nach `hermes_cli/web_dist` gelegt werden. Noch
-   nicht gebaut, Plan unten.
+   Web-Oberfläche für Modelle, Schlüssel, Provider-Login, Sessions, Cron,
+   Plugins und Skills mit. Frontend in der Node-Stufe des Dockerfiles gebaut,
+   Fenster mit QtWebEngine, erreichbar aus Menü, Leisten-Symbol, Assistent
+   und `ujust hermes-dashboard`. Eigene Doku: [dashboard.md](dashboard.md).
 
 ## Teil 1: der Assistent
 
@@ -26,8 +26,10 @@ anschließt, ohne ein Terminal zu brauchen, und was dafür im Image liegt.
 | Menüeintrag „Hermes einrichten" | `files/system/usr/share/applications/hermes-os-setup.desktop` |
 | Render-Test ohne Display | `tests/setup-gui-check.py` |
 
-PySide6, Kirigami und QtWebEngine sind Teil von Aurora DX; das Image braucht
-kein zusätzliches Paket. Der Assistent läuft mit Fedoras Python, nicht mit der
+PySide6, Kirigami und QtWebEngine liegen im Aurora-DX-Image (als Pakete der
+Kinoite-Basis, nicht von Aurora selbst gewählt; `15-dashboard.sh` sichert
+sie mit einem dnf-Aufruf, der im Normalfall ein No-op ist). Der Assistent
+läuft mit Fedoras Python, nicht mit der
 Hermes-Venv, und ruft für alles Hermes-Spezifische die Brücke als Unterprozess
 in der Venv auf. Die Brücke spricht JSON und bekommt den Schlüssel nur über
 die Umgebungsvariable `HERMES_OS_SETUP_KEY`, nie als Argument.
@@ -62,7 +64,9 @@ Pin auf `HERMES_REF` schützt; bei einem Hermes-Bump gehört
    Modellwahl mit Vorgabe aus Hermes' Katalog. Speichern nur mit geprüftem
    oder zumindest nicht abgelehntem Schlüssel.
 4. **Fertig**: schreibt über die Brücke, ruft danach das First-Login-Skript
-   erneut auf, das das Gateway einschaltet, und bietet den Chat im Terminal an.
+   erneut auf, das das Gateway einschaltet, und bietet „Dashboard öffnen"
+   (sobald `/usr/libexec/hermes-os-dashboard` ausführbar ist) und den Chat im
+   Terminal an.
 
 ### Abo statt Schlüssel
 
@@ -155,23 +159,13 @@ Test in die echte Konfiguration.
 - Der Assistent braucht eine grafische Sitzung. Per SSH gestartet fehlt
   `WAYLAND_DISPLAY`; `systemd-run --user` nimmt die Umgebung der Sitzung.
 
-## Teil 2: Dashboard, Plan
+## Teil 2: Dashboard
 
-- **Bau in CI**: zweite Dockerfile-Stufe aus dem offiziellen Node-26-Image,
-  klont Hermes am selben `HERMES_REF`, `npm ci --workspace web`,
-  `npm run build -w web`. Ergebnis nach `/usr/lib/hermes-agent/hermes_cli/web_dist`
-  über ein neues Skript `15-hermes-dashboard.sh`. Der CI-Grep auf die
-  Aurora-FROM-Zeile nimmt `tail -1`, `make lint` blendet nur die Aurora-Zeile
-  aus; eine identische Node-Zeile in beiden Dockerfiles stört beides nicht.
-- **Start am Desktop**: ein Startskript `/usr/libexec/hermes-os-dashboard`,
-  das `hermes dashboard --status` prüft, sonst `hermes dashboard --skip-build
-  --no-open` startet, auf Port 9119 wartet und ein QtWebEngine-Fenster auf
-  `127.0.0.1:9119` öffnet. Auf localhost braucht das Dashboard keine Anmeldung.
-  Der Menüeintrag „Hermes" gehört schon dem Leisten-Symbol; das Dashboard
-  bekommt „Hermes-Dashboard".
-- **Gate**: `web_dist/index.html` vorhanden, `hermes dashboard --status` läuft.
-- **Zusammenspiel**: Der Assistent bekommt auf der Fertig-Seite den Knopf
-  „Dashboard öffnen"; das Leisten-Symbol zeigt den Menüpunkt „Dashboard
-  öffnen", sobald `/usr/libexec/hermes-os-dashboard` ausführbar ist
-  (`hermes-os-tray` prüft den Pfad beim Start). Ab dem zweiten Login startet
-  das First-Login-Skript nur das Gateway.
+Gebaut, Beschreibung in [dashboard.md](dashboard.md): Node-Stufe `webbuild`
+im Dockerfile und `15-dashboard.sh` für das Frontend, Fenster
+`/usr/libexec/hermes-os-dashboard` mit `dashboard/dashboard_server.py` für
+Start und Stopp des Servers, Menüeintrag „Hermes-Dashboard", Menüpunkt
+„Dashboard öffnen" im Leisten-Symbol, Knopf auf der Fertig-Seite des
+Assistenten, `ujust hermes-dashboard`. Ab dem zweiten Login startet das
+First-Login-Skript weiterhin nur das Gateway; das Dashboard läuft erst, wenn
+jemand das Fenster öffnet, und endet mit ihm.

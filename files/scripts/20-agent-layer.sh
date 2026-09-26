@@ -11,9 +11,10 @@ SHARE=/usr/share/hermes-os
 
 # ---- Rechte ------------------------------------------------------------------
 chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup /usr/libexec/hermes-os-tray \
-  /usr/libexec/hermes-os-morgenbericht
-chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* \
+  /usr/libexec/hermes-os-morgenbericht /usr/libexec/hermes-os-dashboard
+chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* "${SHARE}/dashboard/"* \
   /usr/share/applications/hermes-os-setup.desktop /usr/share/applications/hermes-os-tray.desktop \
+  /usr/share/applications/hermes-os-dashboard.desktop \
   /usr/share/kglobalaccel/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-tray.desktop \
   /usr/share/krunner/dbusplugins/hermes-os.desktop \
   /usr/share/icons/hicolor/scalable/apps/hermes-os.svg /usr/share/icons/hicolor/scalable/status/hermes-os-tray-*.svg

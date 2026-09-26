@@ -110,6 +110,11 @@ uv pip install --python "${HERMES_ROOT}/.venv/bin/python" "piper-tts==${PIPER_PI
 # Für systemd-User-Units setzt /usr/lib/environment.d/60-hermes-os.conf
 # dieselbe Variable, auch für die Unit, die `hermes setup` selbst anlegt.
 #
+# HERMES_WEB_DIST: das gebaute Dashboard-Frontend (15-dashboard.sh). Mit der
+# Variablen baut `hermes dashboard` nie selbst (npm gibt es im Image nicht)
+# und liefert bei fehlendem Frontend eine klare Meldung statt eines
+# npm-Versuchs auf dem read-only /usr. Dasselbe in environment.d für Units.
+#
 # `hermes update` wird abgefangen: Hermes würde mit dem Termux-Hinweis
 # `pkg upgrade hermes-agent` verweigern (Stempel apt, siehe unten). Hier gilt
 # stattdessen `ujust update`.
@@ -119,6 +124,8 @@ cat > /usr/bin/hermes <<'EOF'
 export PYTHONDONTWRITEBYTECODE=1
 : "${HERMES_LAZY_INSTALL_TARGET:=${HERMES_HOME:-${HOME}/.hermes}/lazy-packages}"
 export HERMES_LAZY_INSTALL_TARGET
+: "${HERMES_WEB_DIST:=/usr/lib/hermes-agent/hermes_cli/web_dist}"
+export HERMES_WEB_DIST
 for arg in "$@"; do
   case "$arg" in
     -*) continue ;;

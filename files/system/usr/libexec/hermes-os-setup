@@ -22,6 +22,7 @@ import sys
 VENV_PY = "/usr/lib/hermes-agent/.venv/bin/python"
 HERMES = "/usr/bin/hermes"
 FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
+DASHBOARD = "/usr/libexec/hermes-os-dashboard"      # Fenster mit Hermes' Web-Dashboard (docs/dashboard.md)
 SETUP_DIR = os.environ.get("HERMES_OS_SETUP_DIR", "/usr/share/hermes-os/setup")
 BRIDGE = os.path.join(SETUP_DIR, "hermes_bridge.py")
 MAIN_QML = os.path.join(SETUP_DIR, "Main.qml")
@@ -120,6 +121,10 @@ def main():
         @Property(str, constant=True)
         def configuredProvider(self):
             return self._configured_provider
+
+        @Property(bool, constant=True)
+        def dashboardAvailable(self):
+            return os.access(DASHBOARD, os.X_OK)
 
         @Property(str, constant=True)
         def hermesVersion(self):
@@ -220,6 +225,11 @@ def main():
         @Slot()
         def openChat(self):
             self._konsole(HERMES)
+
+        @Slot()
+        def openDashboard(self):
+            if self.dashboardAvailable:
+                QProcess.startDetached(DASHBOARD, [])
 
     QQuickStyle.setStyle("org.kde.desktop")
     QGuiApplication.setApplicationName("hermes-os-setup")

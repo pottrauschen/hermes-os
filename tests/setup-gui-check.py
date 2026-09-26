@@ -71,6 +71,11 @@ class StubBackend(QObject):
     def hermesVersion(self):
         return "Hermes Agent (Stub)"
 
+    @Property(bool, constant=True)
+    def dashboardAvailable(self):
+        return True     # Knopf auf der Fertig-Seite mitrendern
+
+
     @Property(bool, notify=busyChanged)
     def busy(self):
         return self._busy
@@ -104,6 +109,10 @@ class StubBackend(QObject):
     @Slot()
     def openChat(self):
         self.calls.append(("chat",))
+
+    @Slot()
+    def openDashboard(self):
+        self.calls.append(("dashboard",))
 
 
 def main():
