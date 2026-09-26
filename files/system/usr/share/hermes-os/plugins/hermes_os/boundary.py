@@ -31,11 +31,20 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 BLOCK_GROUPS = frozenset({"power"})
 
 # Schreibziele, die das laufende System berühren
-SYSTEM_PREFIXES = ("/etc", "/usr", "/boot", "/var/lib", "/ostree", "/sysroot")
+SYSTEM_PREFIXES = ("/etc", "/usr", "/boot", "/var", "/ostree", "/sysroot", "/root", "/opt", "/srv",
+                   "/proc", "/sys", "/dev", "/run", "/lib", "/lib64", "/bin", "/sbin")
+# Ausnahmen darunter: Home (/var/home), Temp, Laufzeitordner des Nutzers,
+# Wechseldatenträger und die harmlosen Geräte
+USER_WRITABLE = ("/var/home", "/var/tmp", "/run/user", "/run/media", "/dev/null", "/dev/zero",
+                 "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty", "/dev/fd", "/dev/pts",
+                 "/dev/shm", "/dev/tcp", "/dev/udp", "/proc/self/fd")
+# Umleitungen, die als Root auch außerhalb der Systempfade frei bleiben
+_HARMLESS_SINKS = ("/dev/null", "/dev/stdout", "/dev/stderr", "/dev/fd", "/proc/self/fd", "/dev/tty")
+_WRITE_OPS = frozenset({">", ">>", ">|", "&>", "&>>", "<>", ">&", ">>&"})
 
 _MAX_DEPTH = 8
 _SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "tcsh", "csh"})
-_ELEVATORS = frozenset({"sudo", "doas", "pkexec", "run0", "su", "sudoedit"})
+_ELEVATORS = frozenset({"sudo", "doas", "pkexec", "run0", "su", "sudoedit", "runuser"})
 _KEYWORDS = frozenset({"if", "then", "else", "elif", "fi", "do", "done", "while", "until",
                        "{", "}", "!", "esac"})
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=")
@@ -59,13 +68,14 @@ class _Hit(Exception):
 class _Simple:
     """Ein einfacher Befehl: Wörter, Umleitungen, Heredoc-Texte, Vorgänger."""
 
-    __slots__ = ("words", "redirects", "heredocs", "herestrings", "piped_from", "text")
+    __slots__ = ("words", "redirects", "heredocs", "herestrings", "procsubs", "piped_from", "text")
 
     def __init__(self) -> None:
         self.words: List[str] = []
         self.redirects: List[Tuple[str, str]] = []
         self.heredocs: List[str] = []
         self.herestrings: List[str] = []
+        self.procsubs: List[str] = []
         self.piped_from: Optional["_Simple"] = None
         self.text = ""
 
@@ -100,6 +110,51 @@ def _find_closing(s: str, i: int, open_ch: str, close_ch: str) -> int:
                 return i
         i += 1
     return -1
+
+
+_ANSI_SIMPLE = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b",
+                "f": "\f", "v": "\v", "'": "'", '"': '"', "\\": "\\", "?": "?"}
+
+
+def _ansi_c(s: str, i: int) -> Tuple[str, int]:
+    """$'...' ab i (hinter $'): aufgelöster Text und Index des schließenden '.
+    Wie Bash: \\xHH, \\NNN (oktal), \\uHHHH, \\UHHHHHHHH, \\cX und die Kürzel."""
+    n = len(s)
+    buf: List[str] = []
+    while i < n and s[i] != "'":
+        if s[i] != "\\" or i + 1 >= n:
+            buf.append(s[i])
+            i += 1
+            continue
+        e = s[i + 1]
+        i += 2
+        if e in _ANSI_SIMPLE:
+            buf.append(_ANSI_SIMPLE[e])
+        elif e in "xuU":
+            width = {"x": 2, "u": 4, "U": 8}[e]
+            k = i
+            while k < n and k - i < width and s[k] in "0123456789abcdefABCDEF":
+                k += 1
+            if k > i:
+                try:
+                    buf.append(chr(int(s[i:k], 16)))
+                except (ValueError, OverflowError):
+                    pass
+                i = k
+            else:
+                buf.append("\\" + e)
+        elif e in "01234567":
+            k = i
+            while k < n and k - i < 2 and s[k] in "01234567":
+                k += 1
+            buf.append(chr(int(e + s[i:k], 8) & 0xFF))
+            i = k
+        elif e == "c" and i < n:
+            buf.append(chr(ord(s[i]) & 0x1F))
+            i += 1
+        else:
+            buf.append("\\" + e)
+    return "".join(buf), i
 
 
 def _backtick(s: str, i: int) -> Tuple[str, int]:
@@ -158,7 +213,7 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
         nonlocal cur, seg_start, pipe_next
         end_word()
         cur.text = s[seg_start:end].strip()
-        if cur.words or cur.redirects or cur.heredocs or cur.herestrings:
+        if cur.words or cur.redirects or cur.heredocs or cur.herestrings or cur.procsubs:
             if pipe_next and out:
                 cur.piped_from = out[-1]
             out.append(cur)
@@ -209,18 +264,8 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
             i = j + 1
             continue
         if c == "$" and s.startswith("$'", i):
-            # ANSI-C-Quoting: Escapes grob auflösen
-            j = i + 2
-            buf: List[str] = []
-            while j < n and s[j] != "'":
-                if s[j] == "\\" and j + 1 < n:
-                    esc = s[j + 1]
-                    buf.append({"n": "\n", "t": "\t", "'": "'", "\\": "\\"}.get(esc, esc))
-                    j += 2
-                    continue
-                buf.append(s[j])
-                j += 1
-            word.append("".join(buf))
+            text, j = _ansi_c(s, i + 2)
+            word.append(text)
             in_word = True
             i = j + 1
             continue
@@ -271,6 +316,7 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
             k = _find_closing(s, i + 2, "(", ")")
             k = n if k < 0 else k
             subs.append(s[i + 2:k])
+            cur.procsubs.append(s[i + 2:k])
             word.append("\x00")
             in_word = True
             i = k + 1
@@ -307,11 +353,18 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
                 op = c
             i += len(op)
             if op in (">", ">>", "<") and s.startswith("&", i):
-                # 2>&1, >&-: Duplikat, kein Dateiziel
+                # 2>&1, >&-: Duplikat. >&datei (auch mit Leerzeichen) ist
+                # dagegen eine Umleitung von stdout und stderr in eine Datei.
+                k = i + 1
+                while k < n and s[k].isdigit():
+                    k += 1
+                if k < n and s[k] == "-":
+                    k += 1
+                if k > i + 1 and (k >= n or s[k] in " \t\r\n;&|()<>"):
+                    i = k
+                    continue
                 i += 1
-                while i < n and (s[i].isdigit() or s[i] == "-"):
-                    i += 1
-                continue
+                op = op + "&"
             pending_redirect = op
             continue
         word.append(c)
@@ -339,7 +392,13 @@ def _is_system_path(p: str) -> bool:
         return False
     if p == "/":
         return True
-    return any(p == pre or p.startswith(pre + "/") for pre in SYSTEM_PREFIXES)
+    if _under(p, USER_WRITABLE):
+        return False
+    return _under(p, SYSTEM_PREFIXES)
+
+
+def _under(p: str, prefixes: Iterable[str]) -> bool:
+    return any(p == pre or p.startswith(pre + "/") for pre in prefixes)
 
 
 def _name(word: str) -> str:
@@ -463,11 +522,18 @@ _FILE_ANY_OPERAND = frozenset({"tee", "rm", "rmdir", "unlink", "chmod", "chown",
 _FILE_DEST = frozenset({"cp", "install", "ln", "rsync", "scp"})
 
 _DBUS_TOOLS = frozenset({"busctl", "dbus-send", "gdbus", "qdbus", "qdbus6", "qdbus-qt6", "qdbus-qt5"})
-_DBUS_POWER_RE = re.compile(
-    r"(login1.*\b(PowerOff|Reboot|Halt|KExec|SoftReboot)\w*\b)"
-    r"|(org\.kde\.(Shutdown|LogoutPrompt)\b.*\b(logoutAndReboot|logoutAndShutdown|promptReboot|promptShutDown)\b)"
-    r"|(ksmserver\b.*\blogout\b\s*(\S+\s+)?[12]\b)", re.I)
-_DBUS_SLEEP_RE = re.compile(r"login1.*\b(Suspend|Hibernate|HybridSleep|SuspendThenHibernate)\b", re.I)
+# D-Bus-Methoden, zerlegt an Punkten, Schrägstrichen und Leerzeichen geprüft
+# (keine Regex mit .*: lineare Laufzeit auch bei langen Eingaben)
+_DBUS_POWER_METHODS = ("poweroff", "reboot", "halt", "kexec", "softreboot", "scheduleshutdown")
+_DBUS_SLEEP_METHODS = ("suspend", "hibernate", "hybridsleep", "suspendthenhibernate", "sleep")
+_DBUS_KDE_POWER = frozenset({"logoutandreboot", "logoutandshutdown", "promptreboot", "promptshutdown",
+                             "reboot", "shutdown", "halt"})
+_DBUS_UNIT_START = frozenset({"startunit", "startunitreplace", "restartunit", "reloadorrestartunit",
+                              "tryrestartunit", "startunitwithflags", "enqueueunitjob"})
+_POWER_UNITS = frozenset({"reboot", "poweroff", "halt", "kexec", "soft-reboot", "rescue", "emergency",
+                          "shutdown", "ctrl-alt-del", "final", "runlevel0", "runlevel1", "runlevel6",
+                          "systemd-reboot", "systemd-poweroff", "systemd-halt", "systemd-kexec",
+                          "systemd-soft-reboot"})
 
 # Allowlist: reine Lesebefehle, die auch mit sudo/pkexec/doas/run0 frei bleiben
 _READONLY_CMDS = frozenset({
@@ -560,6 +626,9 @@ def _firewall_readonly(name: str, args: List[str]) -> bool:
 
 
 def _power_or_sleep(name: str, args: List[str]) -> Optional[str]:
+    if name in ("reboot", "poweroff", "halt", "kexec", "shutdown") and args and all(
+            a in ("--help", "-h", "--version") for a in args):
+        return None
     if name in ("reboot", "poweroff", "halt", "kexec"):
         return "power"
     if name == "shutdown":
@@ -573,6 +642,9 @@ def _power_or_sleep(name: str, args: List[str]) -> Optional[str]:
             return "power"
         if verb in _SLEEP_VERBS:
             return "sleep"
+        if verb in _SYSTEMCTL_MUTATING and verb not in ("stop", "disable", "mask", "kill") \
+                and any(_power_unit(a) for a in _operands(args)[1:]):
+            return "power"
     if name == "loginctl":
         ops = _operands(args)
         verb = ops[0] if ops else ""
@@ -583,11 +655,36 @@ def _power_or_sleep(name: str, args: List[str]) -> Optional[str]:
     if name in ("systemd-hibernate", "pm-suspend", "pm-hibernate", "rtcwake"):
         return "sleep"
     if name in _DBUS_TOOLS:
-        joined = " ".join(args)
-        if _DBUS_POWER_RE.search(joined):
+        return _dbus_power(args)
+    return None
+
+
+def _power_unit(unit: str) -> bool:
+    base = unit.rsplit("/", 1)[-1]
+    for suffix in (".target", ".service"):
+        if base.endswith(suffix):
+            base = base[:-len(suffix)]
+    return base in _POWER_UNITS
+
+
+def _dbus_power(args: List[str]) -> Optional[str]:
+    parts: List[str] = []
+    for a in args[:200]:
+        parts.extend(p for p in re.split(r"[./\s:=,]+", a[:400].lower()) if p)
+    names = set(parts)
+    if "login1" in names or "systemd1" in names:
+        if any(p.startswith(_DBUS_POWER_METHODS) for p in parts):
             return "power"
-        if _DBUS_SLEEP_RE.search(joined):
+        if "systemd1" in names and names & _DBUS_UNIT_START and any(_power_unit(a) for a in args):
+            return "power"
+        if "login1" in names and any(p.startswith(_DBUS_SLEEP_METHODS) for p in parts):
             return "sleep"
+    if names & {"shutdown", "logoutprompt"} and "kde" in names and names & _DBUS_KDE_POWER:
+        return "power"
+    if "ksmserver" in names and "logout" in parts:
+        k = parts.index("logout")
+        if parts[k + 2:k + 3] in (["1"], ["2"]):
+            return "power"
     return None
 
 
@@ -674,6 +771,8 @@ def _readonly(name: str, args: List[str]) -> bool:
     if name == "systemctl":
         verb, _user = _systemctl_verb(args)
         return verb in _SYSTEMCTL_READONLY or verb.startswith("list-") or verb == ""
+    if name in ("bootc", "rpm-ostree") and any(a in ("--check", "--preview") for a in args):
+        return True
     if name == "bootc":
         ops = _operands(args)
         return bool(ops) and ops[0] == "status"
@@ -720,7 +819,8 @@ def _readonly(name: str, args: List[str]) -> bool:
         return not _operands(args)
     if name == "fwupdmgr":
         ops = _operands(args)
-        return not ops or ops[0].startswith("get-")
+        return not ops or ops[0].startswith("get-") or ops[0] in ("security", "search", "hwids",
+                                                                   "esp-list", "refresh", "inhibit")
     if name == "sort":
         return not _file_targets(name, args)
     if name in ("date",):
@@ -737,7 +837,9 @@ def _leaf(argv: List[str], elevated: bool) -> None:
     if grp:
         raise _hit(grp, argv)
 
-    if name == "bootc":
+    if name in ("bootc", "rpm-ostree") and any(a in ("--check", "--preview") for a in args):
+        pass    # nur nachsehen, ob ein Update da ist
+    elif name == "bootc":
         ops = _operands(args)
         if ops and ops[0] in _BOOTC_MUTATING:
             raise _hit("boot" if ops[0] == "kargs" else "image", argv)
@@ -859,6 +961,28 @@ def _leaf(argv: List[str], elevated: bool) -> None:
     elif name in ("distrobox", "distrobox-create", "distrobox-enter", "distrobox-rm"):
         if _has_flag(args, "r", ("--root",)):
             raise _hit("sudo", argv)
+    elif name == "fwupdmgr":
+        # polkit erlaubt Firmware-Updates in aktiven Sitzungen oft ohne Passwort
+        if not _readonly(name, args):
+            raise _hit("firmware", argv)
+    elif name == "pkcon":
+        ops = _operands(args)
+        if ops and ops[0] in ("install", "install-local", "remove", "update", "upgrade-system",
+                              "repair", "offline-trigger", "offline-update", "offline-upgrade",
+                              "install-sig", "repo-enable", "repo-disable", "repo-set-data",
+                              "repo-remove"):
+            raise _hit("image", argv)
+    elif name == "just":
+        # just mit Auroras Justfile ist ujust unter anderem Namen
+        if any("/usr/share/ublue-os" in a for a in args):
+            _leaf(["ujust"] + _skip_options(args, {"-f", "--justfile", "-d", "--working-directory"}), elevated)
+    elif name in ("setcap", "update-crypto-policies"):
+        if not (_has_flag(args, "v", ("--show", "--check", "--is-applied", "--help"))
+                or name == "update-crypto-policies" and not args):
+            raise _hit("security", argv)
+    elif name == "kill":
+        if args and args[-1] == "-1":
+            raise _hit("session", argv)      # Signal an alle eigenen Prozesse
 
     for p in _file_targets(name, args):
         if _is_system_path(p):
@@ -889,7 +1013,21 @@ def _shell_script(args: List[str]) -> Tuple[Optional[str], bool]:
             return None, i + 1 < len(args)
         if a.startswith("-") and not a.startswith("--") and len(a) > 1:
             if "c" in a[1:]:
-                return (args[i + 1] if i + 1 < len(args) else ""), False
+                # Das erste Nicht-Options-Wort nach -c ist der Skripttext
+                k = i + 1
+                while k < len(args):
+                    b = args[k]
+                    if b == "--":
+                        k += 1
+                        break
+                    if b in ("-o", "+o", "-O", "+O"):
+                        k += 2
+                        continue
+                    if len(b) > 1 and b[0] in "-+" and not b.startswith("--"):
+                        k += 1
+                        continue
+                    break
+                return (args[k] if k < len(args) else ""), False
             if a[1:] in ("o", "O") and i + 1 < len(args):
                 i += 2
                 continue
@@ -905,12 +1043,41 @@ def _shell_script(args: List[str]) -> Tuple[Optional[str], bool]:
     return None, False
 
 
+def _echoed_text(text: str, depth: int) -> None:
+    """Prüft, was ``echo``/``printf`` in ``text`` ausgeben würden, als Skript."""
+    subs: List[str] = []
+    for sm in _lex(text, subs):
+        if sm.words and _name(sm.words[0]) in ("echo", "printf"):
+            _classify_text(" ".join(_operands(sm.words[1:])).replace("\\n", "\n"),
+                           elevated=False, depth=depth)
+
+
+def _stdin_script(simple: Optional[_Simple], depth: int) -> None:
+    """Text, der über stdin in eine Shell fließt: Heredoc, Here-String, echo | sh."""
+    if simple is None:
+        return
+    for body in simple.heredocs + simple.herestrings:
+        _classify_text(body, elevated=False, depth=depth)
+    src = simple.piped_from
+    if src is not None and src.words and _name(src.words[0]) in ("echo", "printf"):
+        _classify_text(" ".join(_operands(src.words[1:])).replace("\\n", "\n"),
+                       elevated=False, depth=depth)
+
+
 def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: int) -> None:
     if depth > _MAX_DEPTH:
         raise _hit("nesting", argv)
     # Zuweisungen und Schlüsselwörter vorne entfernen
-    while argv and (_ASSIGN_RE.match(argv[0]) or argv[0] in _KEYWORDS):
-        argv = argv[1:]
+    while argv:
+        if _ASSIGN_RE.match(argv[0]) or argv[0] in _KEYWORDS:
+            argv = argv[1:]
+        elif argv[0] == "function":
+            argv = argv[2:]                  # function NAME { …
+        elif argv[0] == "coproc":
+            # coproc NAME { …; } oder coproc befehl
+            argv = argv[2:] if len(argv) > 2 and argv[2] in ("{", "(") else argv[1:]
+        else:
+            break
     if not argv:
         return
     name = _name(argv[0])
@@ -948,7 +1115,12 @@ def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: 
             rest = _skip_options(args, _RUN0_VALUE_OPTS)
             if not rest:
                 raise _hit("root-shell", argv)
-        else:   # su
+        elif name == "runuser" and "-u" in args or name == "runuser" and "--user" in args:
+            rest = _skip_options(args, {"-u", "--user", "-g", "--group", "-G", "--supp-group",
+                                        "-s", "--shell", "-w", "--whitelist-environment"})
+            if not rest:
+                raise _hit("root-shell", argv)
+        else:   # su, runuser -l
             cmd = None
             i = 0
             while i < len(args):
@@ -977,14 +1149,12 @@ def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: 
             raise _hit("root-shell", argv)
         if elevated:
             raise _hit("sudo", argv)
-        # Text, der in eine Shell fließt: Heredoc, Here-String, echo | sh
-        if simple is not None and not reads_file:
-            for body in simple.heredocs + simple.herestrings:
-                _classify_text(body, elevated=False, depth=nxt)
-            src = simple.piped_from
-            if src is not None and src.words and _name(src.words[0]) in ("echo", "printf"):
-                _classify_text(" ".join(_operands(src.words[1:])).replace("\\n", "\n"),
-                               elevated=False, depth=nxt)
+        if simple is not None:
+            # bash <(echo reboot): Skript aus einer Prozess-Substitution
+            for ps in simple.procsubs:
+                _echoed_text(ps, nxt)
+            if not reads_file:
+                _stdin_script(simple, nxt)
         return
     if name == "eval":
         _classify_text(" ".join(args), elevated=elevated, depth=nxt)
@@ -1004,6 +1174,9 @@ def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: 
                 break
             if a.startswith("--split-string="):
                 rest = a.split("=", 1)[1].split() + args[i + 1:]
+                break
+            if a.startswith("-S") and len(a) > 2:
+                rest = a[2:].split() + args[i + 1:]
                 break
             if a.startswith("-") and a != "-" or _ASSIGN_RE.match(a):
                 i += 1
@@ -1028,11 +1201,14 @@ def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: 
             r = _skip_options(args, ())
             rest = r[1:] if r else r
         elif name == "flock":
-            r = _skip_options(args, {"-w", "--timeout", "-E", "--conflict-exit-code"})
-            if r and r[1:2] in (["-c"], ["--command"]):
-                _classify_text(r[2] if len(r) > 2 else "", elevated=elevated, depth=nxt)
-                return
-            rest = r[1:] if r else r
+            fo = {"-w", "--timeout", "-E", "--conflict-exit-code"}
+            r = _skip_options(args, fo)
+            r = _skip_options(r[1:], fo) if r else r
+            for k, a in enumerate(args):
+                if a in ("-c", "--command"):
+                    _classify_text(args[k + 1] if k + 1 < len(args) else "", elevated=elevated, depth=nxt)
+                    return
+            rest = r
         elif name == "systemd-inhibit":
             rest = _skip_options(args, {"--what", "--who", "--why", "--mode"})
         elif name == "setpriv":
@@ -1045,6 +1221,52 @@ def _analyze(argv: List[str], simple: Optional[_Simple], elevated: bool, depth: 
             rest = _skip_options(args, ())
     elif name == "busybox":
         rest = args
+    elif name == "script":
+        for k, a in enumerate(args):
+            if (a == "--command" or a.startswith("-") and not a.startswith("--") and a.endswith("c")) \
+                    and k + 1 < len(args):
+                _classify_text(args[k + 1], elevated=elevated, depth=nxt)
+            elif a.startswith("--command="):
+                _classify_text(a.split("=", 1)[1], elevated=elevated, depth=nxt)
+        return
+    elif name == "strace":
+        rest = _skip_options(args, {"-e", "-o", "-p", "-s", "-u", "-E", "-a", "-b", "-I", "-O", "-P",
+                                    "-S", "-X", "-U"})
+    elif name == "ltrace":
+        rest = _skip_options(args, {"-e", "-o", "-p", "-s", "-u", "-a", "-n", "-l"})
+    elif name == "gdb":
+        rest = args[args.index("--args") + 1:] if "--args" in args else None
+    elif name == "unshare":
+        rest = _skip_options(args, {"-S", "--setuid", "-G", "--setgid", "-R", "--root", "-w", "--wd",
+                                    "--map-user", "--map-group", "--propagation"})
+        if not rest:
+            if elevated:
+                raise _hit("root-shell", argv)
+            return
+    elif name == "setarch" or name in ("linux32", "linux64", "i386", "x86_64"):
+        r = args[1:] if name == "setarch" and args else args
+        rest = _skip_options(r, ())
+    elif name == "prlimit":
+        rest = _skip_options(args, {"-p", "--pid", "-o", "--output"})
+    elif name in ("konsole", "xterm", "kitty", "alacritty", "foot", "gnome-terminal", "ptyxis"):
+        for k, a in enumerate(args):
+            if a in ("-e", "--", "-x") and k + 1 < len(args):
+                rest = args[k + 1:]
+                if len(rest) == 1 and " " in rest[0]:
+                    _classify_text(rest[0], elevated=elevated, depth=nxt)
+                    return
+                break
+        if rest is None:
+            return
+    elif name in ("at", "batch"):
+        # liest Befehle von stdin wie eine Shell
+        _stdin_script(simple, nxt)
+        return
+    elif name in ("source", "."):
+        if simple is not None:
+            for ps in simple.procsubs:
+                _echoed_text(ps, nxt)
+        return
     elif name == "command":
         if _has_flag(args, "vV", ()):
             return
@@ -1141,8 +1363,14 @@ def _classify_text(text: str, elevated: bool, depth: int) -> None:
     for simple in simples:
         try:
             for op, target in simple.redirects:
-                if op in (">", ">>", ">|", "&>", "&>>", "<>") and _is_system_path(target):
-                    raise _Hit("system-files", simple.text[:160], _name(simple.words[0]) if simple.words else "")
+                if op not in _WRITE_OPS:
+                    continue
+                cmd = _name(simple.words[0]) if simple.words else ""
+                if _is_system_path(target):
+                    raise _Hit("system-files", simple.text[:160], cmd)
+                # In einer Root-Shell schreibt die Umleitung selbst als Root
+                if elevated and not _under(_norm_path(target), _HARMLESS_SINKS):
+                    raise _Hit("sudo", simple.text[:160], cmd)
             if simple.words:
                 _analyze([w.replace("\x00", "") for w in simple.words], simple, elevated, depth)
         except _Hit as hit:
@@ -1188,6 +1416,7 @@ _GROUP_TEXT = {
     "security": "ändert SELinux",
     "ujust": "startet ein ujust-Rezept mit möglicher Systemwirkung",
     "nesting": "ist zu tief verschachtelt, um ihn zu prüfen",
+    "firmware": "spielt Firmware ein",
 }
 
 
@@ -1213,10 +1442,18 @@ def directive_for(hit: Dict[str, str]) -> Dict[str, str]:
 
 
 def pre_tool_call_directive(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
-    """Antwort des Hooks für einen Werkzeugaufruf, None = frei."""
-    if tool_name != "terminal" or not isinstance(args, dict):
+    """Antwort des Hooks für einen Werkzeugaufruf, None = frei. Geprüft werden
+    terminal (command) und process_manage write/submit (data: Text, der in
+    einen laufenden Prozess, meist eine Hintergrund-Shell, getippt wird)."""
+    if not isinstance(args, dict):
         return None
-    hit = classify_system_command(str(args.get("command") or ""))
+    if tool_name == "terminal":
+        text = args.get("command")
+    elif tool_name == "process_manage" and args.get("action") in ("write", "submit"):
+        text = args.get("data")
+    else:
+        return None
+    hit = classify_system_command(str(text or ""))
     return directive_for(hit) if hit else None
 
 
