@@ -56,7 +56,7 @@ ab; der Neustart wiederholt nur den Datenträgerbau, nicht den Pull.
    qm guest cmd 112 network-get-interfaces
    ```
 
-5. **Prüfen.** Die SSH-Teile der Boot-Checkliste aus `docs/HANDOFF.md`
+5. **Prüfen.** Die SSH-Teile der Boot-Checkliste (Abschnitt unten)
    erledigt `tests/boot-check.sh`:
 
    ```sh
