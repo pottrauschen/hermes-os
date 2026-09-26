@@ -30,12 +30,18 @@ HISTORY = [
     {"id": 2, "role": "tool", "content": "os_status: ...", "timestamp": 2.0},
     {"id": 3, "role": "assistant", "content": "Hi! Was kann ich tun?", "timestamp": 3.0},
     {"id": 4, "role": "assistant", "content": [{"type": "text", "text": "kein String"}], "timestamp": 4.0},
+    {"id": 5, "role": "user", "timestamp": 5.0,
+     "content": [{"type": "text", "text": "Schau mal"},
+                 {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]},
+    {"id": 6, "role": "assistant", "content": "", "timestamp": 6.0},
 ]
+IMAGE_URL = "data:image/png;base64,iVBORw0KGgo="
 
 
 class FakeGateway(BaseHTTPRequestHandler):
     sessions = set()
     calls = []
+    runs = []              # Rümpfe aller POST /v1/runs, in Reihenfolge
     approval_done = threading.Event()
     approval = {}
     lock = threading.Lock()
@@ -139,7 +145,9 @@ class FakeGateway(BaseHTTPRequestHandler):
             if not body.get("input") or body.get("session_id") not in self.sessions:
                 self._send(400, {"error": {"message": "Missing 'input' field", "code": "invalid_request"}})
                 return
-            self._send(202, {"run_id": "run_1", "status": "started", "replayed": False})
+            with self.lock:
+                self.runs.append(body)
+            self._send(202, {"run_id": f"run_{len(self.runs)}", "status": "started", "replayed": False})
             return
         if parts[:2] == ["v1", "runs"] and len(parts) == 4 and parts[3] == "approval":
             self.approval.update({"choice": body.get("choice"), "request_id": body.get("request_id")})
@@ -214,11 +222,18 @@ def main():
         check(client.ensure_session("hermes-os-tray") is False, "POST /api/sessions: vorhanden (409) ist kein Fehler")
 
         rows = client.history("hermes-os-tray")
-        check([r["role"] for r in rows] == ["user", "assistant"] and rows[1]["content"].startswith("Hi!"),
-              "Verlauf: nur Nutzer und Assistent mit Text, chronologisch", str(rows))
+        check([r["role"] for r in rows] == ["user", "assistant", "assistant", "user"]
+              and rows[1]["content"].startswith("Hi!") and rows[1]["images"] == []
+              and rows[2]["content"] == "kein String",
+              "Verlauf: nur Nutzer und Assistent mit Inhalt, chronologisch, Teil-Listen als Text", str(rows))
+        check(rows[3]["content"] == "Schau mal" and rows[3]["images"] == ["data:image/png;base64,AAAA"]
+              and rows[3]["timestamp"] == 5.0,
+              "Verlauf: Nachricht mit Bild liefert Text und Bild-URL getrennt", str(rows[3]))
 
         run_id = client.start_run("hermes-os-tray", "Gibt es ein Update?")
         check(run_id == "run_1", "POST /v1/runs liefert run_id", run_id)
+        check(FakeGateway.runs[-1].get("input") == "Gibt es ein Update?",
+              "POST /v1/runs ohne Bild: input bleibt ein String", str(FakeGateway.runs[-1]))
 
         names, deltas, approval, final = [], [], None, None
         for event in client.events(run_id):
@@ -246,6 +261,21 @@ def main():
         check(r.get("status") == "stopping", "POST /v1/runs/{id}/stop", str(r))
         auth_free = [c for c in FakeGateway.calls if c[1].startswith("/health")]
         check(len(auth_free) >= 1, "Health-Aufruf gesehen")
+
+        # Bilder: input als Nachrichtenliste mit text- und image_url-Teilen
+        run_id = client.start_run("hermes-os-tray", "Was ist das?", images=[IMAGE_URL])
+        body = FakeGateway.runs[-1]
+        wanted = [{"role": "user", "content": [{"type": "text", "text": "Was ist das?"},
+                                               {"type": "image_url", "image_url": {"url": IMAGE_URL}}]}]
+        check(run_id == "run_2" and body.get("input") == wanted and body.get("session_id") == "hermes-os-tray",
+              "POST /v1/runs mit Bild: input als Nachrichtenliste mit text- und image_url-Teil", str(body)[:300])
+        client.start_run("hermes-os-tray", "   ", images=[IMAGE_URL, IMAGE_URL])
+        body = FakeGateway.runs[-1]
+        check(body.get("input") == [{"role": "user", "content": [hc.image_part(IMAGE_URL), hc.image_part(IMAGE_URL)]}],
+              "POST /v1/runs nur mit Bildern: kein leerer Text-Teil", str(body)[:300])
+        cleaned, paths = hc.split_media_tags("Fertig, der Screenshot: MEDIA:/tmp/hermes/shot.png\n\nSonst nichts.")
+        check(paths == ["/tmp/hermes/shot.png"] and cleaned == "Fertig, der Screenshot:\n\nSonst nichts.",
+              "split_media_tags löst den Tag aus der Antwort und behält den Text", f"{cleaned!r} {paths}")
     finally:
         server.shutdown()
         server.server_close()

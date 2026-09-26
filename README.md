@@ -21,7 +21,7 @@ Universal-Blue-Muster.
 | Schreibgeschützte Basis, Updates mit Rollback | Aurora, fertig |
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
-| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H, Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, noch nicht in der VM gebootet, siehe [docs/systemagent.md](docs/systemagent.md) |
+| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
@@ -127,8 +127,9 @@ einrichten" im Menü oder `ujust hermes-setup`; der volle Terminal-Wizard bleibt
 
 Ab dem Login sitzt Hermes als Symbol in der Systemleiste: grau, solange das Gateway
 aus ist, blau wenn bereit, orange während er arbeitet, gelb wenn er eine Freigabe
-braucht. Klick oder Meta+H öffnet das Chat-Fenster, eine Freigabe kommt zusätzlich als
-Benachrichtigung mit Knöpfen. Details in [docs/systemagent.md](docs/systemagent.md). Danach:
+braucht. Klick oder Meta+H öffnet das Chat-Fenster, in das man auch Bilder legen kann
+(Dateidialog, Strg+V, Ablegen); eine Freigabe kommt zusätzlich als Benachrichtigung mit
+Knöpfen. Details in [docs/systemagent.md](docs/systemagent.md). Danach:
 
 ```sh
 hermes                        # chatten; Sprache: /voice on (Push-to-Talk)
