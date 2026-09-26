@@ -56,6 +56,14 @@ Fenster-Verlauf sauber bleibt. Die Antwort kommt als `notify-send`, gekürzt auf
 lehnt der Nachschlag sie ab und sagt das in der Benachrichtigung: ohne Fenster
 erteilt niemand bewusst eine Freigabe. Nach 180 Sekunden wird der Run gestoppt.
 
+**Wer den Runner auslösen kann:** jeder Prozess des Nutzers auf dem
+Sitzungsbus. `Run` stellt Hermes eine Frage, ohne dass der Aufrufer den
+API-Schlüssel kennt. Das öffnet nichts Neues: derselbe Nutzer kann
+`~/.hermes/.env` ohnehin lesen, Freigaben laufen weiter über Fenster und
+Benachrichtigung, und beim Nachschlagen werden sie abgelehnt. Wird das
+Projekt umbenannt, muss der Dienstname `io.github.pottrauschen.hermesos.tray`
+in `runner.py` und in der Desktop-Datei mit.
+
 ## Testen
 
 ```sh
