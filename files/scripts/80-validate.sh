@@ -478,6 +478,9 @@ else
   echo "  WARN: /ctx/tests/dashboard-check.py not in build context, dashboard logic check skipped"
 fi
 # Echtes Dashboard aus der Venv: Port 9119 wie im Betrieb, HERMES_HOME des Gates.
+# Der Marker deckt danach auf, ob der Server etwas unter /usr/lib/hermes-agent
+# geschrieben hat (im Build noch beschreibbar, im Image dann Ballast).
+touch "${HERMES_HOME}/dashboard-marker"
 if HOME="${HERMES_HOME}" /usr/bin/python3 - <<'PY'
 import sys, urllib.request
 sys.path.insert(0, "/usr/share/hermes-os/dashboard")
@@ -509,6 +512,13 @@ then
   pass "real hermes dashboard starts from the venv, serves the built frontend, stops"
 else
   fail "real hermes dashboard check failed (see above)"
+fi
+STRAY="$(find /usr/lib/hermes-agent -newer "${HERMES_HOME}/dashboard-marker" -print 2>/dev/null | head -20)"
+if [ -z "${STRAY}" ]; then
+  pass "dashboard run left nothing under /usr/lib/hermes-agent"
+else
+  fail "dashboard run wrote into /usr/lib/hermes-agent:"
+  echo "${STRAY}" | sed 's/^/    /'
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
