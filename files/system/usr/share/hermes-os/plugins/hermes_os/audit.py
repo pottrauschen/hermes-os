@@ -64,6 +64,7 @@ GROUP_LABEL = {
     "sudo": "Mit Root-Rechten",
     "session": "Sitzungen",
     "kernel": "Kernel-Module",
+    "firmware": "Firmware",
     "security": "SELinux",
     "ujust": "ujust-Rezept",
     "nesting": "Zu tief verschachtelt",
