@@ -45,6 +45,7 @@ lint:
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
 	python3 tests/library-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
+	python3 tests/library2-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os --config-template files/system/usr/share/hermes-os/config.yaml.default
 	python3 tests/boundary-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/audit-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/report-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
