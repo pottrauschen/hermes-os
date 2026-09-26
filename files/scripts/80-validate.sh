@@ -95,14 +95,16 @@ if [ -f "${PLUGIN}/plugin.yaml" ] && [ -f "${PLUGIN}/__init__.py" ]; then
   ln -sfn "${PLUGIN}" "${HERMES_HOME}/plugins/hermes_os"
   cp /usr/share/hermes-os/config.yaml.default "${HERMES_HOME}/config.yaml"
   if /usr/bin/hermes plugins enable hermes-os >/dev/null 2>&1 \
-     && (cd /usr/lib/hermes-agent && /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+     && (cd /usr/lib/hermes-agent && XDG_STATE_HOME="${HERMES_HOME}/state" /usr/lib/hermes-agent/.venv/bin/python - <<'PY'
+import json, os
 import hermes_cli.plugins as hp
 from tools.registry import registry
 hp.discover_plugins(force=True)
-names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_")))
-assert len(names) == 11, names
+names = sorted(n for n in registry.get_all_tool_names() if n.startswith(("os_", "app_launch", "library_", "desktop_notify")))
+assert len(names) == 13, names
 assert registry.get_toolset_for_tool("os_status") == "hermes_os"
 assert registry.get_toolset_for_tool("os_locale") == "hermes_os"
+assert registry.get_toolset_for_tool("os_report") == "hermes_os"
 pm = hp._ensure_plugins_discovered()
 sections = getattr(pm, "_system_prompt_sections", None) or getattr(pm, "system_prompt_sections", {})
 assert "hermes-os.system" in sections, list(sections)
@@ -116,7 +118,28 @@ d = hp._get_pre_tool_call_directive_details("terminal", {"command": "sudo locale
 assert d.action == "approve", d
 d = hp._get_pre_tool_call_directive_details("terminal", {"command": "kwriteconfig6 --notify --file kxkbrc --group Layout --key LayoutList de"})
 assert d.action is None, d
-print("tools:", ", ".join(names), "| approval hook active")
+# Die ganze Angriffsbatterie durch den echten Dispatch (block und approve)
+import importlib.util, os
+if os.path.exists("/ctx/tests/boundary-check.py"):
+    spec = importlib.util.spec_from_file_location("boundary_check", "/ctx/tests/boundary-check.py")
+    bc = importlib.util.module_from_spec(spec); spec.loader.exec_module(bc)
+    for cmd, group in bc.CASES:
+        d = hp._get_pre_tool_call_directive_details("terminal", {"command": cmd})
+        assert d.action == bc.expected_action(group), (cmd, d)
+    print("boundary cases through the release dispatch:", len(bc.CASES))
+# Protokoll (audit.py): Hooks hängen, ein erkannter Befehl landet mit Ergebnis in der Datei
+for h in ("pre_approval_request", "post_approval_response", "post_tool_call"):
+    assert hp.has_hook(h), h
+from hermes_cli.lifecycle import invoke_hook
+invoke_hook("post_tool_call", tool_name="terminal", args={"command": "sudo systemctl restart sshd"},
+            result=json.dumps({"output": "", "exit_code": 0, "error": None}), task_id="", session_id="",
+            tool_call_id="gate-1", turn_id="", api_request_id="", duration_ms=1, status="ok",
+            error_type=None, error_message=None, middleware_trace=[])
+path = os.path.join(os.environ["XDG_STATE_HOME"], "hermes-os", "audit.jsonl")
+last = json.loads(open(path, encoding="utf-8").read().splitlines()[-1])
+assert last["kind"] == "command.result" and last["group"] == "services" and last["exit_code"] == 0, last
+assert oct(os.stat(path).st_mode & 0o777) == "0o600", oct(os.stat(path).st_mode)
+print("tools:", ", ".join(names), "| approval hook active | audit log written")
 PY
   ); then pass "plugin hermes_os loads through the release plugin loader"; else fail "plugin hermes_os failed to load"; fi
 else
@@ -311,6 +334,85 @@ if [ -f /ctx/tests/library-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/library-check.py not in build context, library check skipped"
+fi
+
+# 7h. Grenze: Angriffsbatterie gegen den Klassifikator des Plugins (boundary.py),
+#     mit der Venv-Python wie im Gateway; prüft auch fail-closed.
+if [ -f /ctx/tests/boundary-check.py ]; then
+  if /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/boundary-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os; then
+    pass "boundary: attack battery (ask, block, free, fail-closed)"
+  else
+    fail "boundary check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/boundary-check.py not in build context, boundary check skipped"
+fi
+
+# 7i. Protokoll: Ablage, Zusammenführen, Rotation, Filter und Export des Plugins
+#     (audit.py), mit der Venv-Python wie im Gateway. Das Leisten-Symbol liest
+#     dieselbe Datei; seine Seite prüft tray-gui-check.py in 7d.
+if [ -f /ctx/tests/audit-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/audit-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os; then
+    pass "audit: write, read, rotation, filters and export work"
+  else
+    fail "audit check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/audit-check.py not in build context, audit check skipped"
+fi
+
+# 7j. Morgenbericht: os_report und desktop_notify mit nachgebauten Kommandos
+#     (rpm-ostree, skopeo, journalctl, df, systemctl, flatpak), mit der
+#     Venv-Python wie im Gateway; dazu der Einstieg des Cron-Jobs mit Fedoras
+#     Python und die beiden ujust-Rezepte.
+if [ -x /usr/libexec/hermes-os-morgenbericht ] && /usr/libexec/hermes-os-morgenbericht --check; then
+  pass "hermes-os-morgenbericht --check (report.py and tools.py load with /usr/bin/python3)"
+else
+  fail "hermes-os-morgenbericht missing or --check failed"
+fi
+if [ -f /ctx/tests/report-check.py ]; then
+  if HOME="${HERMES_HOME}" /usr/lib/hermes-agent/.venv/bin/python /ctx/tests/report-check.py \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os --libexec /usr/libexec/hermes-os-morgenbericht; then
+    pass "morning report: summary, thresholds, comparison with the previous report, notification"
+  else
+    fail "morning report check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/report-check.py not in build context, report check skipped"
+fi
+if grep -qE '^\s*hermes-morgenbericht-ein\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-morgenbericht-aus\b' <<< "${JUST_OUT}"; then
+  pass "ujust lists hermes-morgenbericht-ein and -aus"
+else
+  fail "ujust does not list hermes-morgenbericht-ein/-aus"
+fi
+
+# 7k. KRunner-Runner „Hermes fragen“: Registrierung für KRunner, Runner-Logik
+#     und D-Bus-Draht des Leisten-Symbols. Der Test prüft Präfix, Treffer, Run,
+#     das Drahtformat und die Desktop-Datei; gibt es dbus-daemon und dbus-send,
+#     spielt er Match und Run über einen privaten Bus durch.
+for f in /usr/share/krunner/dbusplugins/hermes-os.desktop \
+         /usr/share/hermes-os/tray/runner.py \
+         /usr/share/hermes-os/tray/dbus_peer.py; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  if desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop; then
+    pass "desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop"
+  else
+    fail "desktop-file-validate /usr/share/krunner/dbusplugins/hermes-os.desktop"
+  fi
+fi
+if [ -f /ctx/tests/runner-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/runner-check.py --tray-dir /usr/share/hermes-os/tray \
+       --desktop-file /usr/share/krunner/dbusplugins/hermes-os.desktop; then
+    pass "krunner runner: prefix, matches, run, wire format and desktop file"
+  else
+    fail "krunner runner check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)

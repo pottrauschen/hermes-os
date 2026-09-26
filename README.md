@@ -22,15 +22,17 @@ Universal-Blue-Muster.
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
 | Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
+| Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Chat-Fenster mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
 | Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
 | Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
 | Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert | Bibliothek, Stufe eins, Seite im Chat-Fenster, siehe [docs/bibliothek.md](docs/bibliothek.md) |
+| Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, Test in der VM offen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
-| Portal-Vermittler und unabhängiges Audit-Log | Phase 4, noch nicht gebaut |
+| Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Chat-Fenster, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
 
 ## Aufbau
 
@@ -65,10 +67,17 @@ nie in der read-only Venv. Die Variable setzen der Launcher und
 
 ## Die Grenze
 
-Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle.
-Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`, Firewall,
-Nutzer, Root-Shells, Partitionen, systemweite Sprache und Tastatur (`localectl set-*`).
-Neustart und Herunterfahren führt der Agent nie aus.
+Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle,
+auch mit sudo. Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`,
+Firewall, Nutzer, sudo mit allem außer reinen Lesebefehlen, Root-Shells, Partitionen,
+systemweite Sprache und Tastatur (`localectl set-*`). Neustart und Herunterfahren
+verweigert der Hook; der Agent bittet den Nutzer darum.
+
+Das ist eine Systemgrenze, keine Datengrenze: Alles im Home ist frei, auch User-Units,
+Autostart, `~/.ssh` und Netzwerkzugriffe. Die eigentliche Barriere gegen Systemänderungen
+ist, dass der Nutzer ohne Passwort kein Root hat; der Hook sorgt dafür, dass der Agent
+fragt, bevor er es versucht. Er erkennt Befehle, keine Wirkungen: Was ein Skript oder
+`python3 -c` im Inneren tut, sieht er nicht.
 
 Drei Stellen setzen das durch:
 
@@ -77,10 +86,14 @@ Drei Stellen setzen das durch:
 - **`approvals.smart_policy`** in `config.yaml.default` für den Guardian. Der sieht nur
   Befehle, die Hermes' eigener Detektor als gefährlich erkennt (rm -r, Schreiben nach
   /etc, systemctl stop/mask).
-- **`pre_tool_call`-Hook** im Plugin für alles, was der Detektor nicht kennt: bootc,
-  rpm-ostree, `ujust update`, systemctl ohne `--user`, Nutzer- und Partitionsverwaltung,
-  Root-Shells, Schreiben nach /etc, /usr, /boot. Der Hook schickt den Aufruf in Hermes'
-  Freigabe-Dialog (CLI-Prompt, Gateway `/approve`; ohne Menschen fail-closed).
+- **`pre_tool_call`-Hook** in `plugins/hermes_os/boundary.py` für alles, was der Detektor
+  nicht kennt. Er zerlegt den Befehl wie eine Shell, entschachtelt `sh -c`, `xargs`,
+  `find -exec`, `flatpak-spawn --host` und andere Hüllen und schickt Treffer in Hermes'
+  Freigabe-Dialog (CLI-Prompt, Gateway `/approve`; ohne Menschen verweigert). Scheitert
+  die Prüfung selbst, fragt er ebenfalls.
+
+Vertrag, Abdeckung, Allowlist und Restlücken in [docs/grenze.md](docs/grenze.md), die
+Angriffsbatterie in `tests/boundary-check.py`.
 
 ## Bauen
 
