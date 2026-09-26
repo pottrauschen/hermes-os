@@ -212,10 +212,12 @@ def lookup_session_id(day: Optional[str] = None) -> str:
 
 
 def lookup_answer(client, question: str, session_id: Optional[str] = None,
-                  timeout: float = LOOKUP_TIMEOUT, split_media: Optional[Callable] = None) -> Tuple[bool, str]:
+                  timeout: float = LOOKUP_TIMEOUT, split_media: Optional[Callable] = None,
+                  images: Optional[List[str]] = None) -> Tuple[bool, str]:
     """Frage in einem eigenen Gespräch stellen und die Antwort als Text holen.
     Braucht Hermes eine Freigabe, lehnt der Nachschlag ab: ohne Fenster gibt es
-    niemanden, der sie bewusst erteilt. Liefert (ok, Text oder Fehler).
+    niemanden, der sie bewusst erteilt. Liefert (ok, Text oder Fehler). `images`
+    sind data-URLs, die mitgehen („Was sehe ich hier?", tray/screenshot.py).
 
     Der Strom wird in einem eigenen Thread gelesen, damit die Frist auch greift,
     wenn der Server nur `: keepalive` schickt (parse_sse liefert die nicht aus).
@@ -223,7 +225,7 @@ def lookup_answer(client, question: str, session_id: Optional[str] = None,
     session_id = session_id or lookup_session_id()
     try:
         client.ensure_session(session_id)
-        run_id = client.start_run(session_id, question)
+        run_id = client.start_run(session_id, question, images) if images else client.start_run(session_id, question)
     except Exception as exc:
         return False, f"Hermes nicht erreichbar: {exc}"
     state: Dict[str, Any] = {"text": "", "denied": False, "error": None, "done": False}
