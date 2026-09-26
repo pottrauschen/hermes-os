@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+# =============================================================================
+# hermes-os -- Morgenbericht: Einstieg für den täglichen Cron-Job
+# =============================================================================
+# Der Job im Gateway (`ujust hermes-morgenbericht-ein`) ist ein Skript-Job ohne
+# Modell (`hermes cron create ... --script ... --no-agent`): Hermes ruft
+# ~/.hermes/scripts/hermes-os-morgenbericht.sh, das nur hierher springt. Die
+# Logik liegt im Plugin (plugins/hermes_os/report.py), dieselbe, die der Agent
+# als os_report und desktop_notify benutzt; ein Image-Update ändert sie mit.
+#
+# Aufruf:  hermes-os-morgenbericht            Bericht bauen, als Vergleichspunkt
+#                                             speichern, Benachrichtigung zeigen,
+#                                             Kurzfassung auf stdout (landet in
+#                                             ~/.hermes/cron/output)
+#          hermes-os-morgenbericht --probe    nur anzeigen: nichts speichern,
+#                                             keine Benachrichtigung
+#          hermes-os-morgenbericht --check    Trockenlauf fürs Validierungs-Gate
+# Umgebung: HERMES_OS_PLUGIN_DIR überschreibt /usr/share/hermes-os/plugins/hermes_os
+# =============================================================================
+import importlib.util
+import os
+import sys
+import types
+
+PLUGIN_DIR = os.environ.get("HERMES_OS_PLUGIN_DIR", "/usr/share/hermes-os/plugins/hermes_os")
+
+
+def load_report():
+    """report.py samt tools.py laden, ohne __init__.py auszuführen: das Paket
+    registriert sich dort bei Hermes, das hier läuft mit Fedoras Python."""
+    pkg = types.ModuleType("hermes_os")
+    pkg.__path__ = [PLUGIN_DIR]
+    sys.modules["hermes_os"] = pkg
+    for name in ("tools", "report"):
+        spec = importlib.util.spec_from_file_location(f"hermes_os.{name}", os.path.join(PLUGIN_DIR, f"{name}.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[f"hermes_os.{name}"] = module
+        spec.loader.exec_module(module)
+        setattr(pkg, name, module)
+    return pkg.report
+
+
+def main():
+    try:
+        report = load_report()
+    except Exception as exc:
+        print(f"hermes-os-morgenbericht: Plugin unter {PLUGIN_DIR} nicht ladbar: {exc}", file=sys.stderr)
+        return 1
+    if "--check" in sys.argv:
+        missing = [name for name in ("build_report", "handle_desktop_notify") if not hasattr(report, name)]
+        if missing:
+            print(f"FEHL  report.py ohne {', '.join(missing)}")
+            return 1
+        print("OK    hermes-os-morgenbericht: report.py und tools.py ladbar")
+        return 0
+    if "--probe" in sys.argv:
+        print(report.build_report(record=False)["text"])
+        return 0
+    result = report.build_report(record=True)
+    note = report.handle_desktop_notify({"report": True})
+    # Nicht leer lassen: leere Ausgabe hieße für Hermes „still", und dann fehlt der Eintrag im Verlauf.
+    print(result["summary"])
+    print(f"({note})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

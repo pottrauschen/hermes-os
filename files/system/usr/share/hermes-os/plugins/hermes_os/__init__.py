@@ -22,7 +22,7 @@ import re
 import shlex
 from typing import Any, Dict, Optional
 
-from . import library, tools
+from . import library, report, tools
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,11 @@ _TOOLS = (
 _LIBRARY_TOOLS = (
     ("library_list",  library.LIBRARY_LIST_SCHEMA,  library.handle_library_list,  "📚"),
     ("library_fetch", library.LIBRARY_FETCH_SCHEMA, library.handle_library_fetch, "📖"),
+)
+# Morgenbericht (report.py): Zusammenfassung und Desktop-Benachrichtigung
+_REPORT_TOOLS = (
+    ("os_report",      report.OS_REPORT_SCHEMA,      report.handle_os_report,      "🌅"),
+    ("desktop_notify", report.DESKTOP_NOTIFY_SCHEMA, report.handle_desktop_notify, "🔔"),
 )
 
 # Wird einmal pro neuer Session in den System-Prompt eingefroren.
@@ -212,7 +217,7 @@ def _pre_tool_call(tool_name: str = "", args: Optional[Dict[str, Any]] = None, *
 
 def register(ctx) -> None:
     """Vom Plugin-Loader einmal aufgerufen."""
-    for name, schema, handler, emoji in _TOOLS:
+    for name, schema, handler, emoji in _TOOLS + _REPORT_TOOLS:
         ctx.register_tool(
             name=name, toolset=TOOLSET, schema=schema, handler=handler,
             check_fn=tools.check_requirements, emoji=emoji,
@@ -227,4 +232,4 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("hermes-os.library", library.prompt_section)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     logger.info("hermes-os plugin: %d tools, prompt sections and approval hook registered",
-                len(_TOOLS) + len(_LIBRARY_TOOLS))
+                len(_TOOLS) + len(_LIBRARY_TOOLS) + len(_REPORT_TOOLS))
