@@ -702,7 +702,13 @@ def main():
                     stored = {}
                 for entry_id, status in stored.items():
                     if entry_id not in self._mirror_jobs:     # laufende Spiegel melden sich selbst
-                        self._mirrors[entry_id] = self._mirror_row(status)
+                        row = self._mirror_row(status)
+                        if row["running"]:
+                            # Läuft im Gateway (library_mirror) oder blieb nach einem Abbruch des
+                            # Symbols stehen: hier gibt es nichts abzubrechen, Spiegeln bleibt möglich
+                            row["running"] = False
+                            row["text"] += " (nicht aus diesem Fenster gestartet)"
+                        self._mirrors[entry_id] = row
                 for entry_id in list(self._mirrors):
                     if entry_id not in stored and entry_id not in self._mirror_jobs:
                         del self._mirrors[entry_id]
@@ -791,10 +797,11 @@ def main():
                 return
             self._searching = True
             self.librarySearchChanged.emit()
+            has_mirror = bool(self._mirrors)     # im GUI-Thread lesen, nicht im Arbeitsthread
 
             def work():
                 try:
-                    if not self._mirrors:
+                    if not has_mirror:
                         self._searchDone.emit(query, [], "Noch kein Spiegel: erst einen Eintrag spiegeln, dann suchen.")
                         return
                     hits, mode = lib.search_index(query, "", lib.SEARCH_LIMIT_MAX)
