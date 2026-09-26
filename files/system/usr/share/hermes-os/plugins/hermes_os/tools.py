@@ -345,34 +345,66 @@ OS_UPDATES_SCHEMA = _schema(
 )
 
 
-def _image_update_check() -> str:
+def image_update_state() -> Dict[str, Any]:
+    """Update-Stand des System-Images als Daten, für os_updates und os_report.
+
+    state: "current" (Registry = gebootet), "available" (Registry weicht ab),
+    "staged" (neues Image liegt bereit, aktiv nach Reboot), "unknown" (Registry
+    oder rpm-ostree nicht lesbar), "no-image" (kein Container-Image als Ursprung).
+    version/new_version: org.opencontainers.image.version bzw. rpm-ostree-Version,
+    lines: die Textzeilen, die os_updates zeigt."""
+    result: Dict[str, Any] = {"state": "unknown", "version": "", "new_version": "", "ref": "", "lines": []}
     info, raw = _deployments()
     if info is None:
-        return raw
-    booted = info["booted"]
+        result["lines"] = [raw]
+        return result
+    booted, staged = info["booted"], info["staged"]
     ref, booted_digest = _image_ref(booted)
-    lines = [_describe_dep("gebootet", booted)]
-    if info["staged"]:
-        lines.append(_describe_dep("gestaged (aktiv nach Reboot)", info["staged"]))
+    result["ref"] = ref
+    result["version"] = str((booted or {}).get("version") or "")
+    lines = result["lines"]
+    lines.append(_describe_dep("gebootet", booted))
+    if staged:
+        lines.append(_describe_dep("gestaged (aktiv nach Reboot)", staged))
+        result["state"] = "staged"
+        result["new_version"] = str(staged.get("version") or "")
     if not ref:
         lines.append("Kein Container-Image als Ursprung erkannt, Registry-Vergleich übersprungen.")
-        return "\n".join(lines)
-    rc, out, err = _run_raw(["skopeo", "inspect", "--no-tags", "--format", "{{.Digest}}", f"docker://{ref}"], timeout=90)
+        if not staged:
+            result["state"] = "no-image"
+        return result
+    rc, out, err = _run_raw(["skopeo", "inspect", "--no-tags", f"docker://{ref}"], timeout=90)
+    try:
+        meta = json.loads(out) if rc == 0 else {}
+    except ValueError:
+        rc, err = 1, "Antwort von skopeo ist kein JSON"
+        meta = {}
     if rc != 0:
         lines.append(f"Registry nicht abfragbar (skopeo exit {rc}): {err.strip()[:300]}")
-        return "\n".join(lines)
-    remote = out.strip()
-    lines.append(f"registry: {ref}  digest={remote[:19] + '…' if remote else '?'}")
+        return result
+    remote = str(meta.get("Digest") or "")
+    remote_version = str((meta.get("Labels") or {}).get("org.opencontainers.image.version") or "")
+    lines.append(f"registry: {ref}  digest={remote[:19] + '…' if remote else '?'}"
+                 + (f"  version={remote_version}" if remote_version else ""))
     if remote and booted_digest:
         if remote == booted_digest:
             lines.append("Update verfügbar: nein (Registry-Digest = gebooteter Digest)")
+            if not staged:
+                result["state"] = "current"
         else:
-            staged_digest = _image_ref(info["staged"])[1]
+            staged_digest = _image_ref(staged)[1]
             if staged_digest == remote:
                 lines.append("Update verfügbar: bereits gestaged, aktiv nach Reboot")
+                result["state"] = "staged"
             else:
                 lines.append("Update verfügbar: ja (Registry-Digest weicht ab). Einspielen: ujust update, dann Reboot.")
-    return "\n".join(lines)
+                result["state"] = "available"
+                result["new_version"] = remote_version
+    return result
+
+
+def _image_update_check() -> str:
+    return "\n".join(image_update_state()["lines"])
 
 
 def _timer_state() -> str:
@@ -382,10 +414,14 @@ def _timer_state() -> str:
     return listed + "\n" + enabled
 
 
+# Auch von os_report benutzt (report.py), dort nur gezählt.
+FLATPAK_UPDATES_ARGV = ["flatpak", "remote-ls", "--updates", "--columns=application,version,branch"]
+
+
 def handle_os_updates(args: Dict[str, Any], **_kw) -> str:
     parts = [
         _section("system image", _image_update_check()),
-        _section("flatpak updates", _run(["flatpak", "remote-ls", "--updates", "--columns=application,version,branch"], timeout=90)),
+        _section("flatpak updates", _run(FLATPAK_UPDATES_ARGV, timeout=90)),
         _section("auto-update timers", _timer_state()),
     ]
     return _clip("\n".join(parts))
