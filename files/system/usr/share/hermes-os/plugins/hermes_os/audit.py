@@ -74,8 +74,8 @@ DECISION_LABEL = {
     "smart_approve": "Vom Guardian erlaubt",
     "smart_deny": "Vom Guardian abgelehnt",
     "smart_escalate": "Guardian fragt nach",
-    "cron": "Verweigert (Cron)",
-    "nohuman": "Verweigert (niemand erreichbar)",
+    "cron": "Verweigert",
+    "nohuman": "Verweigert",
     "blocked": "Blockiert",
     "preapproved": "Ohne Rückfrage",
     "": "",
@@ -304,8 +304,10 @@ def _finish_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_rows(events: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Ereignisse zu Zeilen, neueste zuerst. Gleiche Aufruf-Kennung heißt
-    gleiche Zeile; ein Klick im Leisten-Symbol hängt sich an die jüngste
-    offene Anfrage mit demselben angezeigten Befehl."""
+    gleiche Zeile, auch wenn Plugin und Hermes' eigener Detektor nacheinander
+    fragen (systemctl restart); die letzte Entscheidung zählt. Ein Klick im
+    Leisten-Symbol hängt sich an die jüngste Anfrage mit demselben angezeigten
+    Befehl."""
     rows: "collections.OrderedDict[str, Dict[str, Any]]" = collections.OrderedDict()
     loose = 0
     for ev in events:
@@ -317,7 +319,7 @@ def build_rows(events: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             for row in reversed(rows.values()):
                 if ev["ts"] - row["ts"] > TRAY_MATCH_SECONDS:
                     break
-                if row["requested"] and not row["via"] and row["ts"] <= ev["ts"] \
+                if row["requested"] and row["ts"] <= ev["ts"] \
                         and (row["raw_command"] == str(ev.get("command") or "") or row["command"] == str(ev.get("command") or "")):
                     target = row
                     break

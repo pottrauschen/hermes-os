@@ -96,6 +96,28 @@ def main():
     step("Ergebnis mit Exit-Code", r.get("status") == "ok" and r.get("exitCode") == 0
          and r.get("resultText") == "Ausgeführt, Exit 0" and r.get("changed") is True, r.get("resultText"))
 
+    # 1b. Plugin und Hermes' Detektor fragen nacheinander für denselben Aufruf
+    #     (so in Hermes 0.21.5 bei systemctl restart), zwei Klicks im Symbol
+    audit.record_flagged({"group": "services"}, {"command": "sudo systemctl restart cups"}, tool_call_id="call-1b")
+    plug = dict(base, tool_call_id="call-1b")
+    ctx.hooks["pre_approval_request"](**plug)
+    audit.record_tray_decision(PLUGIN_RULE, "once", "req-2")
+    ctx.hooks["post_approval_response"](**plug, choice="once")
+    own = dict(command="sudo systemctl restart cups", description="stop/restart system service",
+               pattern_key="stop/restart system service", pattern_keys=["stop/restart system service"],
+               session_key="s1", surface="gateway", tool_call_id="call-1b")
+    ctx.hooks["pre_approval_request"](**own)
+    audit.record_tray_decision("sudo systemctl restart cups", "deny", "req-3")
+    ctx.hooks["post_approval_response"](**own, choice="deny")
+    ctx.hooks["post_tool_call"](tool_name="terminal", args={"command": "sudo systemctl restart cups"},
+                                result=json.dumps({"error": "BLOCKED: User denied"}), tool_call_id="call-1b",
+                                status="blocked", error_message="BLOCKED: User denied")
+    rows = audit.load_rows()
+    two = [r for r in rows if r["command"] == "sudo systemctl restart cups"]
+    step("zwei Anfragen, zwei Klicks, eine Zeile, letzte Entscheidung zählt",
+         len(rows) == 2 and len(two) == 1 and two[0]["decision"] == "deny" and two[0]["status"] == "denied"
+         and two[0]["decider"] == "Nutzer im Leisten-Symbol", str([(r["command"], r["decision"]) for r in rows]))
+
     # 2. Ablehnung, 3. Guardian, 4. Zeitüberschreitung (Hermes' eigener Detektor, ohne Plugin-Treffer)
     for call, choice, extra in (("call-2", "deny", {}), ("call-3", "smart_deny", {"decided_by": "aux_llm"}),
                                 ("call-4", "timeout", {})):
