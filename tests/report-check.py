@@ -191,6 +191,19 @@ def main():
     state = json.loads((Path(tmp) / "hermes-os" / "morgenbericht.json").read_text(encoding="utf-8"))
     check(state["baseline"]["time"] == day2, "record=false lässt den Vergleichspunkt stehen")
 
+    # ---- 3b. Journal nicht lesbar: Vergleichspunkt bleibt; Probe schreibt nichts
+    state_file = Path(tmp) / "hermes-os" / "morgenbericht.json"
+    fake.missing = {"journalctl"}
+    report.build_report(record=True)
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    check(state["baseline"]["time"] == day2 and "bluetooth.service" in state["baseline"]["sources"],
+          "record=true bei unlesbarem Journal verschiebt den Vergleichspunkt nicht", str(state["baseline"]))
+    fake.missing = set()
+    before = state_file.read_text(encoding="utf-8")
+    probe = report.build_report(record=True, save=False)
+    check(state_file.read_text(encoding="utf-8") == before and probe["summary"],
+          "save=false (--probe) schreibt keinen Zustand")
+
     # ---- 4. Schwellen und Dienste
     fake.journal = []
     for pct, want in ((84, "Plattenplatz ok (höchstens 84 %)."), (85, "/home bei 85 %."), (95, "/home fast voll (95 %).")):
