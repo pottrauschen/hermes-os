@@ -102,6 +102,26 @@ def _find_closing(s: str, i: int, open_ch: str, close_ch: str) -> int:
     return -1
 
 
+def _backtick(s: str, i: int) -> Tuple[str, int]:
+    """Inhalt einer Backtick-Substitution ab i (hinter dem öffnenden `) und
+    Index des schließenden. Escapes zählen wie in Bash: \\` ist ein
+    verschachtelter Backtick, der im Inneren wieder als ` gilt."""
+    n = len(s)
+    buf: List[str] = []
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            buf.append(nxt if nxt in "`$\\" else c + nxt)
+            i += 2
+            continue
+        if c == "`":
+            return "".join(buf), i
+        buf.append(c)
+        i += 1
+    return "".join(buf), n
+
+
 def _lex(command: str, subs: List[str]) -> List[_Simple]:
     """Zerlegt ``command`` in einfache Befehle. Innere Befehle aus ``$(...)``,
     Backticks und Prozess-Substitution landen in ``subs``."""
@@ -221,9 +241,8 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
                     j = k + 1
                     continue
                 if s[j] == "`":
-                    k = s.find("`", j + 1)
-                    k = n if k < 0 else k
-                    subs.append(s[j + 1:k])
+                    inner, k = _backtick(s, j + 1)
+                    subs.append(inner)
                     buf.append("\x00")
                     j = k + 1
                     continue
@@ -242,9 +261,8 @@ def _lex(command: str, subs: List[str]) -> List[_Simple]:
             i = k + 1
             continue
         if c == "`":
-            k = s.find("`", i + 1)
-            k = n if k < 0 else k
-            subs.append(s[i + 1:k])
+            inner, k = _backtick(s, i + 1)
+            subs.append(inner)
             word.append("\x00")
             in_word = True
             i = k + 1
