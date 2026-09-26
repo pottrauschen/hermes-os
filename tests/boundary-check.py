@@ -16,6 +16,7 @@ import argparse
 import importlib.util
 import logging
 import sys
+import time
 from pathlib import Path
 
 # (Befehl, erwartete Gruppe oder None). Gruppe "power" wird verweigert
@@ -112,6 +113,56 @@ CASES = [
     ("ssh-keygen -t ed25519", "ssh"),
     ("sudo dd if=disk.img of=/dev/sda bs=4M", "disks"),
     ("loginctl terminate-session 2", "session"),
+    # --- aus dem Review zu 58c2350 -------------------------------------------------
+    # Schreiben als Root: jede Umleitung in einer Root-Shell fragt
+    ("sudo sh -c 'echo b > /proc/sysrq-trigger'", "system-files"),
+    ("sudo sh -c 'cat k >> /root/.ssh/authorized_keys'", "system-files"),
+    ("sudo sh -c 'cat img > /dev/sda'", "system-files"),
+    ("su -c 'echo x > /srv/x'", "system-files"),
+    ("pkexec sh -c 'printf x > ~/x'", "sudo"),
+    # >& mit Dateiziel
+    ("echo x >&/etc/x", "system-files"),
+    ("echo x >& /etc/x", "system-files"),
+    # -- und Optionen hinter -c
+    ("bash -c -- reboot", "power"),
+    ("bash -c -x 'sudo bootc upgrade'", "image"),
+    # ANSI-C-Escapes
+    ("$'\\x72eboot'", "power"),
+    ("$'\\162eboot'", "power"),
+    ("$'\\u0072eboot'", "power"),
+    # Schlüsselwörter
+    ("function f { reboot; }; f", "power"),
+    ("coproc reboot", "power"),
+    # Power über systemd-Targets und D-Bus an systemd1
+    ("systemctl start reboot.target", "power"),
+    ("systemctl isolate poweroff.target", "power"),
+    ("systemctl set-default kexec.target", "power"),
+    ("busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager Reboot", "power"),
+    ("gdbus call --system --dest org.freedesktop.systemd1 --object-path /org/freedesktop/systemd1 --method org.freedesktop.systemd1.Manager.PowerOff", "power"),
+    ("busctl call org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager StartUnit ss reboot.target replace", "power"),
+    # weitere Hüllen und Quellen für Shell-Text
+    ("script -qc 'sudo reboot' /dev/null", "power"),
+    ("flock /tmp/l -n -c 'sudo bootc upgrade'", "image"),
+    ("env -S'sudo reboot'", "power"),
+    ("strace -f -o /tmp/t sudo reboot", "power"),
+    ("gdb --args sudo reboot", "power"),
+    ("unshare -r reboot", "power"),
+    ("runuser -u root -- bootc upgrade", "image"),
+    ("setarch x86_64 sudo reboot", "power"),
+    ("prlimit --nofile=1024 sudo reboot", "power"),
+    ("konsole -e sudo reboot", "power"),
+    ("echo reboot | at now", "power"),
+    ("bash <(echo reboot)", "power"),
+    ("source <(echo 'sudo bootc upgrade')", "image"),
+    # ungelistete Befehle
+    ("fwupdmgr update", "firmware"),
+    ("pkcon install htop", "image"),
+    ("just -f /usr/share/ublue-os/justfile update", "image"),
+    ("setcap cap_net_raw+ep ~/bin/x", "security"),
+    ("update-crypto-policies --set LEGACY", "security"),
+    ("kill -9 -1", "session"),
+    ("echo x > /var/log/x", "system-files"),
+    ("echo x > /opt/x", "system-files"),
 
     # === frei ====================================================================
     ("systemctl --user restart hermes-gateway", None),
@@ -179,6 +230,22 @@ CASES = [
     ("sudo find /var/log -name '*.log'", None),
     ("sudo head -n 20 /var/log/dnf.log", None),
     ("ssh nas uptime", None),
+    ("bootc upgrade --check", None),
+    ("sudo bootc upgrade --check", None),
+    ("rpm-ostree upgrade --check", None),
+    ("rpm-ostree upgrade --preview", None),
+    ("reboot --help", None),
+    ("systemctl status reboot.target", None),
+    ("sudo sh -c 'journalctl -b > /dev/null 2>&1'", None),
+    ("echo x >&2", None),
+    ("echo x > /run/user/1000/probe", None),
+    ("echo x > /var/tmp/probe", None),
+    ("fwupdmgr get-devices", None),
+    ("pkcon search htop", None),
+    ("just build", None),
+    ("kill 1234", None),
+    ("qdbus org.kde.ksmserver /KSMServer logout 0 0 0", None),
+    ("echo $'Gr\\xc3\\xbc\\xc3\\x9fe' > ~/gruss.txt", None),
 ]
 
 
@@ -224,6 +291,25 @@ def main() -> int:
         msg = (b.pre_tool_call_directive("terminal", {"command": cmd}) or {}).get("message", "")
         if part not in msg:
             fails.append(f"{cmd!r}: Meldung {msg!r} nennt nicht {part}")
+
+    # process_manage: Text, der in einen laufenden Prozess getippt wird
+    for data, want in (("sudo reboot\n", "block"), ("sudo bootc upgrade\n", "approve"), ("ls -la\n", None)):
+        for action in ("write", "submit"):
+            d = b.pre_tool_call_directive("process_manage", {"action": action, "session_id": "x", "data": data})
+            if (d or {}).get("action") != want:
+                fails.append(f"process_manage {action} {data!r}: {d!r}, erwartet {want!r}")
+    if b.pre_tool_call_directive("process_manage", {"action": "log", "data": "sudo reboot"}) is not None:
+        fails.append("process_manage log: sollte frei sein")
+
+    # Lineare Laufzeit: lange, bösartige Eingaben dürfen den Hook nicht aufhalten
+    # (Hermes blockt nach 30 s, lässt den Worker aber weiterlaufen)
+    for probe in ("busctl " + "login1 " * 20000, "echo " + "$(" * 20000, "echo " + "`" * 20000,
+                  "cat " + "<<EOF\n" * 20000, "a" * 200000, "x=$'" + "\\x41" * 50000 + "'"):
+        t0 = time.monotonic()
+        b.classify_system_command(probe)
+        dt = time.monotonic() - t0
+        if dt > 2.0:
+            fails.append(f"Laufzeit {dt:.1f} s für {probe[:30]!r}…")
 
     # Andere Werkzeuge und leere Eingaben bleiben unberührt
     for tool, args in (("write_file", {"path": "/etc/x"}), ("terminal", {}), ("terminal", None),
