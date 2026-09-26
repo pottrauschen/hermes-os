@@ -120,7 +120,8 @@ def main():
 
     class MessageModel(QAbstractListModel):
         """Verlauf für die QML-Liste: role (user, assistant, tool, info, error), text, meta."""
-        RoleRole, TextRole, MetaRole = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3
+        _USER = int(Qt.ItemDataRole.UserRole)
+        RoleRole, TextRole, MetaRole = _USER + 1, _USER + 2, _USER + 3
 
         def __init__(self):
             super().__init__()
@@ -129,12 +130,12 @@ def main():
         def rowCount(self, parent=QModelIndex()):
             return 0 if parent.isValid() else len(self._rows)
 
-        def data(self, index, role=Qt.DisplayRole):
+        def data(self, index, role=int(Qt.ItemDataRole.DisplayRole)):
             if not index.isValid() or index.row() >= len(self._rows):
                 return None
             row = self._rows[index.row()]
             return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"],
-                    Qt.DisplayRole: row["text"]}.get(role)
+                    int(Qt.ItemDataRole.DisplayRole): row["text"]}.get(int(role))
 
         def roleNames(self):
             return {self.RoleRole: QByteArray(b"role"), self.TextRole: QByteArray(b"text"),
@@ -194,9 +195,10 @@ def main():
             self._assistant_row = -1
             self._poll_busy = False
             self._notify_proc = None
-            self._healthDone.connect(self._on_health, Qt.QueuedConnection)
-            self._historyDone.connect(self._on_history, Qt.QueuedConnection)
-            self._runEvent.connect(self._on_run_event, Qt.QueuedConnection)
+            queued = Qt.ConnectionType.QueuedConnection
+            self._healthDone.connect(self._on_health, queued)
+            self._historyDone.connect(self._on_history, queued)
+            self._runEvent.connect(self._on_run_event, queued)
             self._timer = QTimer(self)
             self._timer.setInterval(HEALTH_INTERVAL_MS)
             self._timer.timeout.connect(self.poll)
@@ -615,7 +617,8 @@ def main():
     refresh_tray()
 
     def activated(reason):
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick, QSystemTrayIcon.MiddleClick):
+        r = QSystemTrayIcon.ActivationReason
+        if reason in (r.Trigger, r.DoubleClick, r.MiddleClick):
             toggle_window()
 
     tray.activated.connect(activated)

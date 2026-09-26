@@ -34,7 +34,8 @@ IGNORE = ("MESA-EGL", "egl: failed", "Could not register app ID", "QXcbConnectio
 
 class StubModel(QAbstractListModel):
     """Dieselben Rollen wie MessageModel in hermes-os-tray."""
-    RoleRole, TextRole, MetaRole = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3
+    _USER = int(Qt.ItemDataRole.UserRole)
+    RoleRole, TextRole, MetaRole = _USER + 1, _USER + 2, _USER + 3
 
     def __init__(self):
         super().__init__()
@@ -43,11 +44,11 @@ class StubModel(QAbstractListModel):
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self._rows)
 
-    def data(self, index, role=Qt.DisplayRole):
+    def data(self, index, role=int(Qt.ItemDataRole.DisplayRole)):
         if not index.isValid():
             return None
         row = self._rows[index.row()]
-        return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"]}.get(role)
+        return {self.RoleRole: row["role"], self.TextRole: row["text"], self.MetaRole: row["meta"]}.get(int(role))
 
     def roleNames(self):
         return {self.RoleRole: QByteArray(b"role"), self.TextRole: QByteArray(b"text"),
