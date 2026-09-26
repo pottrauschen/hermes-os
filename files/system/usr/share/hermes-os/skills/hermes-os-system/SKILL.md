@@ -100,6 +100,29 @@ Der Job ist ein Skript ohne Modell im Gateway (`hermes cron list` zeigt ihn als
 ohne `record` aufrufen. Kommt er über den Knopf mit dem Bericht als Kontext und will
 etwa das Update einspielen, gilt die normale Grenze: `ujust update` fragt.
 
+**Lokales Modell statt Cloud** (frei, aber nur auf Wunsch des Nutzers): Ollama liegt im
+Image und läuft als Nutzerdienst (`ollama.service`, `systemctl --user`) nur auf
+127.0.0.1:11434; die Modelle liegen unter `~/.local/share/ollama`. Auf der
+NVIDIA-Variante rechnet es auf der GPU, sonst auf der CPU (langsam). Erst den Stand
+lesen, dann schalten:
+```
+ujust hermes-lokal-status              # GPU, Dienst, geladene Modelle, was Hermes nutzt
+ujust hermes-lokal-ein                 # Dienst an, Vorgabe-Modell laden, prüfen, Hermes umstellen
+ujust hermes-lokal-ein qwen3.5:4b      # mit eigenem Modell (Ollama-Tag, muss Werkzeuge können)
+ujust hermes-lokal-modell gemma4:12b   # anderes Modell laden, prüfen, eintragen
+ujust hermes-lokal-aus                 # Dienst aus, Hermes zurück auf den vorherigen Anbieter
+```
+Das Umschalten ändert dein eigenes Modell und damit deine Antworten ab dem nächsten
+Gespräch; das Gateway startet dabei neu. Deshalb: nur ausführen, wenn der Nutzer es
+ausdrücklich will, vorher sagen, welches Modell kommt und dass die Antworten langsamer
+und einfacher werden können, danach `ujust hermes-lokal-status` zeigen. Der Download
+eines Modells (3 bis 8 GB) braucht Netz und Zeit. Kein `sudo`, keine Systemdienste:
+alles läuft im Nutzerkontext. Schlägt die Prüfung „Werkzeugaufruf" fehl, ein anderes
+Modell aus dem Vorschlag nehmen, nicht ohne Werkzeuge weiterarbeiten. Der Dienst
+bedient 64k Kontext (Untergrenze von Hermes); `config.yaml` bekommt dazu
+`model.context_length`, `model.ollama_num_ctx` und `agent.reasoning_effort: none`,
+nicht von Hand ändern.
+
 **Hermes selbst**: Konfiguration in `~/.hermes/config.yaml`. Checkpoints sind an:
 vor write_file/patch und vor erkennbar destruktiven Shell-Befehlen (rm, mv, cp,
 sed -i, `>`, git reset) wird der betroffene Projektordner gesichert, `/rollback` im

@@ -13,7 +13,7 @@ check_fail() { echo "  FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 
 echo "=== Commands the hermes_os plugin and launcher call (hard) ==="
 for cmd in bootc rpm-ostree skopeo systemctl systemd-run journalctl flatpak nmcli lsblk lscpu lspci \
-           free df uname gio notify-send uv; do
+           free df uname gio notify-send uv ollama; do
   if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else check_fail "$cmd not found"; fi
 done
 
