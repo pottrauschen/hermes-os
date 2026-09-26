@@ -15,6 +15,7 @@ chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup /usr/
 chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* \
   /usr/share/applications/hermes-os-setup.desktop /usr/share/applications/hermes-os-tray.desktop \
   /usr/share/kglobalaccel/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-tray.desktop \
+  /usr/share/applications/hermes-os-sehen.desktop /usr/share/kglobalaccel/hermes-os-sehen.desktop \
   /usr/share/krunner/dbusplugins/hermes-os.desktop \
   /usr/share/icons/hicolor/scalable/apps/hermes-os.svg /usr/share/icons/hicolor/scalable/status/hermes-os-tray-*.svg
 find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
@@ -58,6 +59,11 @@ chmod 0644 "${JUST_DIR}/60-custom.just"
 # ffmpeg-free: Audio-Konvertierung für STT/TTS (Aurora bringt meist ffmpeg
 #              mit; das Paket ist dann ein No-op).
 dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
+# pipewire-utils (pw-record, pw-play) und pulseaudio-utils (parecord, paplay,
+# pactl): Aufnahme und Vorlesen für Push-to-Talk und die Mikrofon-Prüfung
+# (docs/sehen-hoeren.md). Aurora bringt die Quellpakete mit; ob die
+# Unterpakete im Image sind, ist nicht zugesagt, deshalb ausdrücklich.
+dnf install -y pipewire-utils pulseaudio-utils
 
 # ---- systemd: User-Unit ist vorhanden, aber standardmäßig aus ---------------
 # Das Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen) startet
