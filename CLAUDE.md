@@ -12,7 +12,8 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `README.md` | Was das System kann, Aufbau, die Grenze, Bauen, erster Login, Status |
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, Stolperfallen, Messwerte, Boot-Checkliste |
-| `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage, Plan für das Dashboard |
+| `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage |
+| `docs/dashboard.md` | Dashboard: Node-Stufe und `15-dashboard.sh`, Fenster `hermes-os-dashboard` mit `dashboard_server.py`, Start und Stopp des Servers, Gate, Tests, Grenzen, Stolperfallen |
 | `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/morgenbericht.md` | Morgenbericht: täglicher Cron-Job ohne Modell, `os_report` und `desktop_notify`, Knopf „Im Chat besprechen", ujust-Rezepte, Stolperfallen |
 | `docs/bibliothek.md` | Bibliothek: Wissensquellen im Chat-Fenster, Ablage, Werkzeuge `library_list`, `library_fetch`, `library_search`, `library_mirror`, Spiegel und Index mit FTS5, Doku-Server-Schalter (MCP), Grenzen, Stolperfallen |
@@ -33,13 +34,16 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
   FROM-Zeile identisch, `make lint` prüft das.
 - **Hermes ist gepinnt** (`HERMES_REF` im Dockerfile, Linie 0.21.x). Vor einem
   Bump `tests/venv-smoke.sh`, `hermes-os-setup --check`,
-  `tests/setup-gui-check.py` und `tests/tray-client-check.py` laufen lassen;
+  `tests/setup-gui-check.py`, `tests/tray-client-check.py` und
+  `tests/dashboard-check.py` laufen lassen, dazu das Frontend lokal bauen
+  (`docs/dashboard.md`);
   die Brücke des Assistenten nutzt interne Hermes-Helfer ohne
   Stabilitätszusage, das Leisten-Symbol die Runs-API des Gateways.
 - **Assistent und Leisten-Symbol ohne neues Image testen:**
   `tests/setup-gui-check.py` und `tests/tray-gui-check.py` rendern offscreen,
-  jede QML-Warnung ist ein Fehler; `tests/tray-client-check.py` läuft überall
-  mit Python. In der VM eine Testfassung aus dem Home starten
+  jede QML-Warnung ist ein Fehler; `tests/dashboard-gui-check.py` fährt das
+  Dashboard-Fenster offscreen gegen den echten Server; `tests/tray-client-check.py`
+  und `tests/dashboard-check.py` laufen überall mit Python. In der VM eine Testfassung aus dem Home starten
   (`systemd-run --user … -p ExitType=cgroup`), `HERMES_HOME` auf ein
   Wegwerfverzeichnis; `/tmp` ist nach jedem Neustart leer.
 - **Windows-Arbeitsplatz:** Arbeitsbaum CRLF, Index LF. Vor dem Übertragen in

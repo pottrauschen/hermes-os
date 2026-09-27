@@ -1,0 +1,289 @@
+#!/usr/bin/python3
+# =============================================================================
+# hermes-os -- Fenster für Hermes' Web-Dashboard
+# =============================================================================
+# `hermes dashboard` ist Hermes' eigene Web-Oberfläche: Modelle und Schlüssel,
+# Sessions, Cron, Plugins, Skills, Umgebung. Der Server dazu läuft in der
+# Venv, das Frontend liegt gebaut unter /usr/lib/hermes-agent/hermes_cli/web_dist
+# (Node-Stufe im Dockerfile, 15-dashboard.sh). Dieses Programm zeigt es als
+# Fenster mit QtWebEngine (PySide6 aus dem Basis-Image), damit es im Menü,
+# im Leisten-Symbol und im Assistenten wie eine App erreichbar ist; im Image
+# liegt kein Browser.
+#
+# Ablauf: läuft schon ein Dashboard auf 127.0.0.1:9119, wird es angezeigt.
+# Sonst startet das Fenster den Server in einem eigenen User-Scope
+# (dashboard/dashboard_server.py) und wartet auf /api/health. Beim Schließen
+# beendet es den Server wieder, aber nur, wenn es ihn selbst gestartet hat;
+# ein im Terminal gestartetes Dashboard bleibt. Kommt der Server nicht hoch
+# oder bricht die Seite weg, erscheint eine Fehlerseite mit Ursache, Stand
+# des Gateways und einem Knopf zum erneuten Versuch.
+#
+# Aufruf:  hermes-os-dashboard            Fenster
+#          hermes-os-dashboard --check    Trockenlauf fürs Validierungs-Gate
+#                                         (PySide6-WebEngine, Modul, web_dist)
+#          hermes-os-dashboard --status   Antwortet ein Dashboard? Exit 0/1
+# Umgebung: HERMES_OS_DASHBOARD_DIR überschreibt /usr/share/hermes-os/dashboard
+#           HERMES_OS_DASHBOARD_PORT überschreibt den Port 9119
+#           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
+# =============================================================================
+import html
+import os
+import signal
+import sys
+import threading
+
+DASHBOARD_DIR = os.environ.get("HERMES_OS_DASHBOARD_DIR", "/usr/share/hermes-os/dashboard")
+WEB_DIST_INDEX = os.environ.get("HERMES_WEB_DIST", "/usr/lib/hermes-agent/hermes_cli/web_dist") + "/index.html"
+HERMES = "/usr/bin/hermes"
+START_TIMEOUT = 40.0      # Sekunden bis /api/health antworten muss (kalter Start der Venv)
+
+sys.path.insert(0, DASHBOARD_DIR)
+try:
+    import dashboard_server as ds
+except Exception as exc:  # --check meldet es lesbar
+    ds = None
+    _SERVER_IMPORT_ERROR = str(exc)
+
+
+def port_from_env():
+    try:
+        return int(os.environ.get("HERMES_OS_DASHBOARD_PORT") or (ds.DEFAULT_PORT if ds else 9119))
+    except ValueError:
+        return ds.DEFAULT_PORT if ds else 9119
+
+
+def check_only():
+    """Trockenlauf ohne Fenster: WebEngine-Bindings, Server-Modul, Frontend, Hermes."""
+    problems = []
+    try:
+        import PySide6.QtWebEngineCore  # noqa: F401
+        import PySide6.QtWebEngineWidgets  # noqa: F401
+        import PySide6.QtWidgets  # noqa: F401
+    except Exception as e:
+        problems.append(f"PySide6 mit QtWebEngine fehlt: {e}")
+    if ds is None:
+        problems.append(f"dashboard_server.py: {_SERVER_IMPORT_ERROR}")
+    if not os.path.isfile(WEB_DIST_INDEX):
+        problems.append(f"{WEB_DIST_INDEX} fehlt (Frontend nicht gebaut?)")
+    if not os.access(HERMES, os.X_OK):
+        problems.append(f"{HERMES} fehlt")
+    for p in problems:
+        print(f"FEHL  {p}")
+    if problems:
+        return 1
+    print("OK    hermes-os-dashboard: PySide6-WebEngine, Server-Modul, web_dist und hermes vorhanden")
+    return 0
+
+
+def status_only():
+    port = port_from_env()
+    h = ds.health(port)
+    if h:
+        print(f"Dashboard antwortet auf {ds.base_url(port)} (Hermes {h.get('version', '?')})")
+        return 0
+    print(f"Kein Dashboard auf {ds.base_url(port)}")
+    return 1
+
+
+# ---- Seiten, die das Fenster selbst zeigt ------------------------------------
+PAGE_CSS = """
+  body { font-family: sans-serif; margin: 0; display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; background: #1b1e20; color: #e6e6e6; }
+  .card { max-width: 40em; padding: 2em; }
+  h1 { font-size: 1.4em; margin: 0 0 .6em 0; }
+  p { line-height: 1.5; }
+  pre { background: #101214; padding: .8em; font-size: .85em; border-radius: 4px;
+        white-space: pre-wrap; word-break: break-all; }
+  a.button { display: inline-block; margin-top: 1em; padding: .5em 1.1em; background: #3daee9; color: #101214;
+             border-radius: 4px; text-decoration: none; font-weight: 600; }
+  .muted { opacity: .7; }
+"""
+
+
+def page(title, body):
+    return f"<!doctype html><html lang='de'><head><meta charset='utf-8'><title>{html.escape(title)}</title>" \
+           f"<style>{PAGE_CSS}</style></head><body><div class='card'>{body}</div></body></html>"
+
+
+def waiting_page():
+    return page("Hermes-Dashboard", "<h1>Dashboard startet…</h1>"
+                "<p class='muted'>Der Dashboard-Server wird aus der Hermes-Installation gestartet. "
+                "Beim ersten Mal kann das einige Sekunden dauern.</p>")
+
+
+def error_page(message, log, gateway):
+    if gateway is True:
+        gw = "Das Gateway (hermes-gateway.service) läuft."
+    elif gateway is False:
+        gw = ("Das Gateway (hermes-gateway.service) ist aus. Das Dashboard startet auch ohne, zeigt es dann "
+              "aber als aus, und Cron-Jobs laufen nicht. Einschalten: Leisten-Symbol, „Gateway starten“, "
+              "oder <code>ujust hermes-gateway-enable</code>.")
+    else:
+        gw = "Ob das Gateway läuft, ließ sich nicht feststellen (systemctl --user antwortet nicht)."
+    excerpt = "\n".join(log[-12:]).strip()
+    pre = f"<pre>{html.escape(excerpt)}</pre>" if excerpt else ""
+    return page("Hermes-Dashboard: Fehler",
+                f"<h1>Das Dashboard ist nicht erreichbar</h1><p>{html.escape(message)}</p>{pre}<p>{gw}</p>"
+                "<p class='muted'>Im Terminal: <code>hermes dashboard</code> zeigt die Ursache; "
+                "<code>ujust hermes-doctor</code> prüft die Installation.</p>"
+                "<a class='button' href='hermes-os://retry'>Erneut versuchen</a>")
+
+
+class Window:
+    """Fenster, Ansicht und Server zusammengebaut; main() zeigt es, der
+    Render-Test (tests/dashboard-gui-check.py) treibt es offscreen."""
+
+    def __init__(self, app, server, start_timeout=START_TIMEOUT):
+        from PySide6.QtCore import QObject, QUrl, Qt, Signal
+        from PySide6.QtGui import QAction, QIcon, QKeySequence
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWidgets import QMainWindow, QToolBar
+
+        class Bridge(QObject):
+            """Ergebnis des Server-Starts aus dem Hintergrund-Thread in den GUI-Thread."""
+            ready = Signal(object)
+            retryRequested = Signal()
+
+        class Page(QWebEnginePage):
+            """Fängt die Links der eigenen Fehlerseite (hermes-os://…) ab."""
+
+            def __init__(self, profile, bridge, parent=None):
+                super().__init__(profile, parent)
+                self._bridge = bridge
+
+            def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+                if url.scheme() == "hermes-os":
+                    if url.host() == "retry":
+                        self._bridge.retryRequested.emit()
+                    return False
+                return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+        self.app = app
+        self.server = server
+        self.start_timeout = start_timeout
+        self.url = ""
+        self.starting = False
+        self.QUrl = QUrl
+        self.bridge = Bridge()
+        # Benanntes Profil: Cookies und localStorage (Theme, Spaltenbreiten) bleiben
+        # unter ~/.local/share/hermes-os-dashboard; ein Profil ohne Namen wäre flüchtig.
+        self.profile = QWebEngineProfile("hermes-os-dashboard", app)
+        self.profile.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, False)
+        self.page = Page(self.profile, self.bridge)
+        self.view = QWebEngineView()
+        self.view.setPage(self.page)
+
+        self.window = QMainWindow()
+        self.window.setWindowTitle("Hermes-Dashboard")
+        self.window.setCentralWidget(self.view)
+        self.window.resize(1200, 820)
+
+        bar = QToolBar("Navigation")
+        bar.setMovable(False)
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.act_back = QAction(QIcon.fromTheme("go-previous"), "Zurück", self.window)
+        self.act_back.setShortcut(QKeySequence.StandardKey.Back)
+        self.act_back.triggered.connect(self.view.back)
+        self.act_reload = QAction(QIcon.fromTheme("view-refresh"), "Neu laden", self.window)
+        self.act_reload.setShortcut(QKeySequence.StandardKey.Refresh)
+        self.act_reload.triggered.connect(self.reload_or_retry)
+        bar.addAction(self.act_back)
+        bar.addAction(self.act_reload)
+        self.window.addToolBar(bar)
+
+        self.bridge.ready.connect(self.on_ready)
+        self.bridge.retryRequested.connect(self.retry)
+        self.view.loadFinished.connect(self.on_load_finished)
+        self.view.titleChanged.connect(
+            lambda t: self.window.setWindowTitle(t if t and "Hermes" in t else "Hermes-Dashboard"))
+        app.aboutToQuit.connect(self.shutdown)
+
+    # ---- Ablauf ---------------------------------------------------------------
+    def show_error(self, message, log=()):
+        self.view.setHtml(error_page(message, list(log), ds.gateway_active()), self.QUrl("hermes-os://error"))
+
+    def start_server(self):
+        if self.starting:
+            return
+        self.starting = True
+        self.view.setHtml(waiting_page(), self.QUrl("hermes-os://waiting"))
+
+        def work():
+            self.bridge.ready.emit(self.server.ensure(self.start_timeout))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_ready(self, result):
+        self.starting = False
+        if result.ok:
+            self.url = result.url
+            self.view.load(self.QUrl(result.url))
+        else:
+            self.show_error(result.message, result.log)
+
+    def retry(self):
+        if self.url and ds.is_up(self.server.port):
+            self.view.load(self.QUrl(self.url))
+        else:
+            self.start_server()
+
+    def reload_or_retry(self):
+        if self.view.url().scheme() == "hermes-os":
+            self.retry()
+        else:
+            self.view.reload()
+
+    def on_load_finished(self, ok):
+        if ok or self.view.url().scheme() == "hermes-os":
+            return
+        # Seite weggebrochen: Server tot? Dann Fehlerseite statt leerem Fenster.
+        if self.server.alive() or ds.is_up(self.server.port):
+            self.show_error("Die Seite konnte nicht geladen werden.", self.server.log)
+        else:
+            self.show_error("Der Dashboard-Server antwortet nicht mehr.", self.server.log)
+
+    def shutdown(self):
+        self.server.stop()
+        # Page vor dem Profil freigeben, sonst warnt Qt beim Beenden.
+        self.view.setPage(None)
+        self.page.deleteLater()
+
+
+def main():
+    if "--check" in sys.argv:
+        sys.exit(check_only())
+    if ds is None:
+        print(f"hermes-os-dashboard: {_SERVER_IMPORT_ERROR}", file=sys.stderr)
+        sys.exit(1)
+    if "--status" in sys.argv:
+        sys.exit(status_only())
+
+    # QtWebEngine muss vor der QApplication importiert sein (teilt den OpenGL-Kontext).
+    import PySide6.QtWebEngineWidgets  # noqa: F401
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.setApplicationName("hermes-os-dashboard")
+    QApplication.setDesktopFileName("hermes-os-dashboard")
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon.fromTheme("hermes-os", QIcon.fromTheme("preferences-system")))
+    app.setQuitOnLastWindowClosed(True)
+
+    win = Window(app, ds.Server(port=port_from_env()))
+
+    # SIGTERM/SIGINT (Abmelden, kill) sollen den Server mitnehmen: Python-Handler
+    # laufen nur, wenn der Interpreter regelmäßig dran ist, daher der Timer.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: app.quit())
+    tick = QTimer()
+    tick.timeout.connect(lambda: None)
+    tick.start(500)
+
+    win.window.show()
+    QTimer.singleShot(0, win.start_server)
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
