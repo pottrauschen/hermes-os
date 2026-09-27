@@ -457,7 +457,13 @@ Kirigami.ApplicationWindow {
                     Flickable {
                         id: inputFlick
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 7)
+                        // Mindestens eine Zeile: contentHeight setzt die TextArea erst mit dem
+                        // ersten Text; bis dahin meldete sie -1, und das Feld hatte nach jedem
+                        // Start des Symbols die Höhe 0 (VM 112: „ich kann nicht mehr tippen“)
+                        Layout.preferredHeight: Math.min(Math.max(contentHeight, inputField.implicitHeight, oneLine.height
+                                                                  + inputField.topPadding + inputField.bottomPadding),
+                                                         Kirigami.Units.gridUnit * 7)
+                        FontMetrics { id: oneLine; font: inputField.font }
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         Controls.ScrollBar.vertical: Controls.ScrollBar {

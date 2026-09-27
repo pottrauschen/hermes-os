@@ -746,11 +746,14 @@ def main():
     settle()
     inp, send_btn, attach_btn = child("inputField"), child("sendButton"), child("attachButton")
     shot("ready-empty")
-    step("Bereit: Hinweis verschwindet, Textfeld und Anhängen aktiv, Senden ohne Text aus",
+    # Das leere Feld muss gleich nach dem Start eine Zeile hoch sein (VM 112: Höhe 0 bis zum ersten Text)
+    inp_h = float(inp.property("height") or 0) if inp is not None else 0.0
+    step("Bereit: Hinweis verschwindet, Textfeld sichtbar und aktiv, Anhängen aktiv, Senden ohne Text aus",
          off_box is not None and not off_box.property("visible") and inp is not None and inp.property("enabled")
+         and inp_h >= 12
          and attach_btn is not None and attach_btn.property("enabled")
          and send_btn is not None and not send_btn.property("enabled"),
-         f"offBox={off_box and off_box.property('visible')} input={inp and inp.property('enabled')} "
+         f"offBox={off_box and off_box.property('visible')} input={inp and inp.property('enabled')} h={inp_h:.0f} "
          f"attach={attach_btn and attach_btn.property('enabled')} send={send_btn and send_btn.property('enabled')}")
 
     # 3. Nachricht senden: Textfeld leert sich, backend.send bekommt den Text
