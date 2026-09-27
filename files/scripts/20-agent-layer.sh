@@ -65,6 +65,12 @@ dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
 # (docs/sehen-hoeren.md). Aurora bringt die Quellpakete mit; ob die
 # Unterpakete im Image sind, ist nicht zugesagt, deshalb ausdrücklich.
 dnf install -y pipewire-utils pulseaudio-utils
+# zstd: tar --zstd entpackt das Ollama-Archiv, wenn jemand das lokale Modell
+# einschaltet (Ollama liegt nicht im Image, local_model.py lädt es ins Home;
+# Aurora hat libzstd, aber nicht immer das Werkzeug). PyYAML für den Helfer
+# hermes-os-lokal und das First-Login-Skript (Fedoras Python); meist schon
+# da, dann ein No-op.
+dnf install -y zstd python3-pyyaml
 
 # ---- systemd: User-Unit ist vorhanden, aber standardmäßig aus ---------------
 # Das Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen) startet
@@ -73,7 +79,8 @@ dnf install -y pipewire-utils pulseaudio-utils
 # User-Manager preset-all ausführt. Das First-Login-Skript schaltet die Unit
 # ein, sobald ein Provider konfiguriert ist.
 chmod 0644 /usr/lib/systemd/user/hermes-gateway.service /usr/lib/environment.d/60-hermes-os.conf
-# Dasselbe für ollama.service (lokales Modell, 30-ollama.sh legt das Binary ab).
+# Dasselbe für ollama.service (lokales Modell; das Programm lädt erst
+# `ujust hermes-lokal-ein` ins Home).
 chmod 0644 /usr/lib/systemd/user/ollama.service
 
 # ---- Sicherheitsnetz: Hermes darf sich nicht selbst aktualisieren -----------

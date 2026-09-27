@@ -23,12 +23,14 @@ VENV_PY = "/usr/lib/hermes-agent/.venv/bin/python"
 HERMES = "/usr/bin/hermes"
 FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
 DASHBOARD = "/usr/libexec/hermes-os-dashboard"      # Fenster mit Hermes' Web-Dashboard (docs/dashboard.md)
-# Lokales Modell (Ollama im Image): eigener Helfer im Nutzerkontext, kein
-# Hermes-Import nötig; die Karte im Assistenten ruft ihn mit --json.
+# Lokales Modell (optional, Ollama wird ins Home nachgeladen): eigener Helfer
+# im Nutzerkontext, kein Hermes-Import nötig; die Karte im Assistenten ruft
+# ihn mit --json.
 LOCAL_HELPER = os.environ.get("HERMES_OS_LOCAL_HELPER", "/usr/libexec/hermes-os-lokal")
 LOCAL_ROW = {"slug": "local", "label": "Lokales Modell (Ollama)", "auth": "local", "env": "",
              "signup": "", "login": [],
-             "hint": "Kein Schlüssel, keine Cloud: Ollama läuft als dein Nutzerdienst auf diesem Rechner."}
+             "hint": "Kein Schlüssel, keine Cloud: Ollama wird auf Wunsch nachgeladen und läuft als dein "
+                     "Nutzerdienst auf diesem Rechner."}
 SETUP_DIR = os.environ.get("HERMES_OS_SETUP_DIR", "/usr/share/hermes-os/setup")
 BRIDGE = os.path.join(SETUP_DIR, "hermes_bridge.py")
 MAIN_QML = os.path.join(SETUP_DIR, "Main.qml")
@@ -91,7 +93,7 @@ def main():
         # Lokales Modell: Stand, Fortschritt beim Laden, fertige Schritte, Fehler
         localStatusReady = Signal("QVariantMap")
         localProgress = Signal(str, int)                  # Status, Prozent
-        localStepDone = Signal(str, "QVariantMap")        # service, pulled, check, saved
+        localStepDone = Signal(str, "QVariantMap")        # installed, service, pulled, check, saved
         localFailed = Signal(str, str)                    # Schritt, Meldung
 
         def __init__(self):
@@ -278,6 +280,15 @@ def main():
                 else:
                     self.localFailed.emit("status", r.get("error", "Stand nicht lesbar"))
             self._run_local("status", ["status"], done)
+
+        @Slot()
+        def localInstall(self):
+            def done(r):
+                if r.get("ok"):
+                    self.localStepDone.emit("installed", r)
+                else:
+                    self.localFailed.emit("installed", r.get("error", "Ollama nicht installiert"))
+            self._run_local("installed", ["installieren"], done)
 
         @Slot()
         def localStart(self):

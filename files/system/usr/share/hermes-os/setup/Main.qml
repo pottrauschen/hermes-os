@@ -1,7 +1,7 @@
 // hermes-os -- Einrichtungsassistent, Oberfläche.
 // Vier Seiten: Willkommen, Anbieter, Schlüssel und Modell, Fertig; dazu die
 // Portal-Seite für Anbieter mit Anmeldung statt Schlüssel und die Seite
-// „Lokales Modell" (Ollama im Image, ohne Schlüssel und ohne Cloud). Die Seiten sind
+// „Lokales Modell" (optional: Ollama wird nachgeladen, ohne Schlüssel und ohne Cloud). Die Seiten sind
 // dauerhaft instanziiert und werden nur auf den Stapel geschoben: Eingaben
 // bleiben beim Zurückblättern erhalten, und Kirigami muss nichts erzeugen.
 // Alles, was Hermes berührt, läuft über `backend` (hermes-os-setup, Python).
@@ -27,9 +27,9 @@ Kirigami.ApplicationWindow {
     property string keyCheck: ""       // "", "ok", "rejected", "unknown"
     property string lastError: ""
     // Lokales Modell: Stand aus hermes-os-lokal --json status und die Schritte
-    property var localStatus: null     // gpu, unit, server, hermes, recommended
+    property var localStatus: null     // gpu, ollama, unit, server, hermes, recommended
     property string localModel: ""     // gewähltes Ollama-Tag
-    property string localStep: ""      // "", "service", "pulled", "check", "saved"
+    property string localStep: ""      // "", "installed", "service", "pulled", "check", "saved"
     property string localError: ""
     property string localProgressText: ""
     property int localProgress: 0
@@ -208,7 +208,7 @@ Kirigami.ApplicationWindow {
                     Layout.fillWidth: true
                     required property var modelData
                     text: modelData.label + (modelData.auth === "oauth" ? "  (Anmeldung statt Schlüssel)"
-                                             : modelData.auth === "local" ? "  (ohne Cloud, im Image)" : "")
+                                             : modelData.auth === "local" ? "  (optional, ohne Cloud, wird nachgeladen)" : "")
                     checked: root.provider !== null && root.provider.slug === modelData.slug
                     onClicked: root.provider = modelData
                 }
@@ -470,11 +470,12 @@ Kirigami.ApplicationWindow {
     }
 
 
-    // ---- Seite 3c: Lokales Modell (Ollama im Image, ohne Schlüssel) ---------
-    // Vier Schritte auf einer Seite: Dienst starten, Modell wählen und laden
-    // (Fortschritt), Verbindung prüfen (antwortet das Modell mit einem
-    // Werkzeugaufruf?), eintragen. Alles läuft über /usr/libexec/hermes-os-lokal
-    // im Nutzerkontext; das Backend reicht dessen JSON-Zeilen durch.
+    // ---- Seite 3c: Lokales Modell (optional, Ollama wird nachgeladen) -------
+    // Fünf Schritte auf einer Seite: Ollama ins Home laden (nur beim ersten
+    // Mal), Dienst starten, Modell wählen und laden (Fortschritt), Verbindung
+    // prüfen (antwortet das Modell mit einem Werkzeugaufruf?), eintragen.
+    // Alles läuft über /usr/libexec/hermes-os-lokal im Nutzerkontext; das
+    // Backend reicht dessen JSON-Zeilen durch.
     Kirigami.ScrollablePage {
         id: localPage
         title: "Lokales Modell"
@@ -482,6 +483,13 @@ Kirigami.ApplicationWindow {
         property bool hasGpu: root.localStatus !== null && root.localStatus.gpu.vendor === "nvidia"
         property var recommended: root.localStatus !== null ? root.localStatus.recommended : []
         property var installed: root.localStatus !== null ? root.localStatus.server.models : []
+        property var ollama: root.localStatus !== null && root.localStatus.ollama ? root.localStatus.ollama : null
+        property bool ollamaReady: root.localStatus !== null && root.localStatus.ollama_installed === true
+        property bool ollamaFits: ollama !== null && ollama.free_mb >= ollama.need_mb
+        property int modelsFreeMb: root.localStatus !== null && root.localStatus.models_free_mb !== undefined
+                                   ? root.localStatus.models_free_mb : -1
+        function gb(mb) { return (mb / 1024).toFixed(1).replace(".", ",") }
+        function modelFits(sizeGb) { return modelsFreeMb < 0 || sizeGb * 1000 + 1024 <= modelsFreeMb }
         function start() {
             root.localStep = ""; root.localError = ""; root.localCheckOk = false
             root.localProgress = 0; root.localProgressText = ""
@@ -510,14 +518,18 @@ Kirigami.ApplicationWindow {
             function onLocalStepDone(step, result) {
                 root.localStep = step
                 root.localError = ""
+                if (step === "installed") root.localProgressText = ""
                 if (step === "check") root.localCheckOk = result.tools === true
-                if (step === "service" || step === "pulled" || step === "saved") backend.localStatus()
+                if (step === "installed" || step === "service" || step === "pulled" || step === "saved") backend.localStatus()
             }
             function onLocalFailed(step, message) {
                 root.localStep = ""
                 root.localError = message
+                // Kein stehengebliebener Balken: der Fehler steht oben auf der Seite.
+                root.localProgressText = ""
+                root.localProgress = 0
                 if (step === "check") root.localCheckOk = false
-                if (step === "service" || step === "pulled") backend.localStatus()
+                if (step === "installed" || step === "service" || step === "pulled") backend.localStatus()
             }
         }
         ColumnLayout {
@@ -526,9 +538,11 @@ Kirigami.ApplicationWindow {
             Controls.Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Ollama liegt im Image und läuft als dein Nutzerdienst nur auf diesem Rechner (127.0.0.1). "
+                text: "Optional: Ollama gehört nicht zum System, der Assistent lädt es auf Wunsch in dein Home "
+                    + "und startet es als deinen Nutzerdienst nur auf diesem Rechner (127.0.0.1). "
                     + "Kein Schlüssel, keine Cloud; die Modelle landen unter ~/.local/share/ollama. "
-                    + "Mit NVIDIA-Karte rechnet es auf der GPU, sonst auf der CPU, dann deutlich langsamer."
+                    + "Mit NVIDIA-Karte rechnet es auf der GPU, sonst auf der CPU, dann deutlich langsamer. "
+                    + "Kleine lokale Modelle kommen an Cloud-Modelle nicht heran."
             }
 
             // Stand
@@ -542,9 +556,14 @@ Kirigami.ApplicationWindow {
             }
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
-                visible: root.localStatus !== null && root.localStatus.ollama_installed === false
-                type: Kirigami.MessageType.Error
-                text: "Ollama liegt nicht in diesem Image (/usr/bin/ollama fehlt). Das lokale Modell braucht ein Image mit Ollama."
+                visible: root.localStatus !== null && !localPage.ollamaReady && localPage.ollama !== null
+                type: localPage.ollamaFits ? Kirigami.MessageType.Information : Kirigami.MessageType.Warning
+                text: localPage.ollama === null ? "" : (localPage.ollamaFits
+                    ? "„Ollama laden“ holt Version " + localPage.ollama.pin + " von den Ollama-Releases auf GitHub "
+                      + "(rund " + localPage.gb(localPage.ollama.size_mb) + " GB, mit Prüfsumme) nach " + localPage.ollama.path
+                      + "; frei sind " + localPage.gb(localPage.ollama.free_mb) + " GB."
+                    : "Zu wenig Platz für Ollama: frei sind " + localPage.gb(localPage.ollama.free_mb)
+                      + " GB, gebraucht werden rund " + localPage.gb(localPage.ollama.need_mb) + " GB.")
             }
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
@@ -553,9 +572,28 @@ Kirigami.ApplicationWindow {
                 text: root.localError
             }
 
-            // Schritt 1: Dienst
+            // Schritt 0: Ollama selbst (nicht im Image)
             Kirigami.FormLayout {
                 Layout.fillWidth: true
+                RowLayout {
+                    Kirigami.FormData.label: "Ollama:"
+                    Controls.Label {
+                        text: root.localStatus === null ? "Stand wird gelesen…"
+                            : localPage.ollamaReady ? (localPage.ollama !== null && localPage.ollama.version !== ""
+                                                       ? "Version " + localPage.ollama.version + " in deinem Home" : "in deinem Home")
+                            : "nicht installiert"
+                    }
+                    Controls.Button {
+                        objectName: "localInstallButton"
+                        text: "Ollama laden"
+                        icon.name: "download"
+                        visible: root.localStatus !== null && !localPage.ollamaReady
+                        enabled: !backend.busy && localPage.ollamaFits
+                        onClicked: { root.localProgress = 0; root.localProgressText = "beginne…"; backend.localInstall() }
+                    }
+                }
+
+                // Schritt 1: Dienst
                 RowLayout {
                     Kirigami.FormData.label: "1. Dienst:"
                     Controls.Label {
@@ -586,6 +624,8 @@ Kirigami.ApplicationWindow {
                             text: modelData.label + " (" + modelData.size_gb + " GB)"
                                 + (localPage.isInstalled(modelData.tag) ? "  – geladen" : "")
                                 + (modelData.fits ? "" : "  – passt nicht in den Speicher")
+                                + (localPage.isInstalled(modelData.tag) || localPage.modelFits(modelData.size_gb)
+                                   ? "" : "  – zu wenig Platz auf der Platte")
                             checked: root.localModel === modelData.tag
                             onClicked: { root.localModel = modelData.tag; root.localCheckOk = false; root.localStep = "" }
                         }
@@ -667,7 +707,8 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 opacity: 0.7
-                text: "Im Terminal dasselbe: ujust hermes-lokal-ein, ujust hermes-lokal-modell <tag>, ujust hermes-lokal-aus."
+                text: "Im Terminal dasselbe: ujust hermes-lokal-ein, ujust hermes-lokal-modell <tag>, ujust hermes-lokal-aus; "
+                    + "ujust hermes-lokal-entfernen löscht Ollama und die Modelle wieder."
             }
         }
         footer: WizardFooter {

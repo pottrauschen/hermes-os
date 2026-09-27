@@ -35,7 +35,11 @@ LOCAL_STATUS = {
             "detail": "NVIDIA GeForce RTX 3060, 12288 MB, Treiber 615.71.09"},
     "unit": {"active": "inactive", "enabled": "disabled", "available": True},
     "server": {"running": False, "version": "", "models": [], "error": "nicht erreichbar"},
-    "ollama_installed": True,
+    # Ollama liegt nicht im Image; zu Beginn ist es nicht geladen
+    "ollama_installed": False,
+    "ollama": {"installed": False, "version": "", "path": "/home/test/.local/share/hermes-os/ollama",
+               "pin": "0.34.4", "need_mb": 3224, "size_mb": 900, "free_mb": 20480},
+    "models_free_mb": 20480,
     "recommended": [
         {"tag": "qwen3.5:9b", "label": "Qwen3.5 9B (Vorgabe für 12 GB)", "size_gb": 6.6, "vram_mb": 9500,
          "fits": True, "default": True, "note": "Werkzeugaufrufe verlässlich."},
@@ -118,6 +122,14 @@ class StubBackend(QObject):
     def localStatus(self):
         self.calls.append(("localStatus",))
         QTimer.singleShot(0, lambda: self.localStatusReady.emit(self.local_status))
+
+    @Slot()
+    def localInstall(self):
+        self.calls.append(("localInstall",))
+        self.local_status["ollama_installed"] = True
+        self.local_status["ollama"] = dict(self.local_status["ollama"], installed=True, version="0.34.4")
+        QTimer.singleShot(0, lambda: self.localProgress.emit("lade Ollama 0.34.4", 55))
+        QTimer.singleShot(0, lambda: self.localStepDone.emit("installed", {"ok": True, "version": "0.34.4"}))
 
     @Slot()
     def localStart(self):
@@ -304,14 +316,20 @@ def main():
     else:
         print("OK    Zurück und wieder Weiter: Seite überlebt das Poppen")
 
-    # Lokales Modell: Stand kommt an, Vorgabe gewählt, Dienst, Laden mit
-    # Fortschritt, Prüfung, Eintragen über den Fußzeilen-Knopf; Seite ohne GPU
-    # rendert mit Warnung statt GPU-Zeile.
+    # Lokales Modell: Stand kommt an, Vorgabe gewählt, Ollama nachladen (nicht
+    # im Image), Dienst, Laden mit Fortschritt, Prüfung, Eintragen über den
+    # Fußzeilen-Knopf; Seite ohne GPU rendert mit Warnung statt GPU-Zeile.
     before = len(warnings)
     root.showPage("local")
     settle()
     chosen = root.property("localModel")
     ok_default = chosen == "qwen3.5:9b" and not bool(root.localNextEnabled())
+    inst_btn = root.findChild(QObject, "localInstallButton")
+    install_offered = inst_btn is not None and bool(inst_btn.property("visible")) and bool(inst_btn.property("enabled"))
+    backend.localInstall()
+    settle()
+    install_ok = install_offered and root.property("localStep") == "installed" \
+        and not bool(inst_btn.property("visible")) and root.property("localProgressText") == ""
     backend.localStart()
     settle()
     running_ok = root.property("localStep") == "service"
@@ -329,8 +347,8 @@ def main():
     backend.localFailed.emit("check", "Das Modell hat geantwortet, aber kein Werkzeug aufgerufen")
     settle()
     fail_ok = root.property("localCheckOk") is False and "Werkzeug" in root.property("localError")
-    print("      Lokal: Vorgabe=%r Dienst=%s Laden=%s Prüfung=%s Eintragen=%s Fehler=%s" % (
-        chosen, running_ok, pull_ok, check_ok, saved_ok, fail_ok))
+    print("      Lokal: Vorgabe=%r Nachladen=%s Dienst=%s Laden=%s Prüfung=%s Eintragen=%s Fehler=%s" % (
+        chosen, install_ok, running_ok, pull_ok, check_ok, saved_ok, fail_ok))
     if args.out:
         root.grabWindow().save(os.path.join(args.out, "setup-local-done.png"))
     backend.local_status["gpu"] = {"vendor": "none", "name": "", "vram_mb": 0, "driver": "",
@@ -346,14 +364,15 @@ def main():
     cpu_ok = root.property("localModel") == "qwen3.5:4b" and root.property("localStep") == ""
     if args.out:
         root.grabWindow().save(os.path.join(args.out, "setup-local-cpu.png"))
-    if not (ok_default and running_ok and pull_ok and check_ok and saved_ok and fail_ok and cpu_ok) or warnings[before:]:
+    if not (ok_default and install_ok and running_ok and pull_ok and check_ok and saved_ok and fail_ok and cpu_ok) \
+            or warnings[before:]:
         fail = 1
-        print(f"FEHL  Lokales Modell: Vorgabe={ok_default} Dienst={running_ok} Laden={pull_ok} Prüfung={check_ok} "
-              f"Eintragen={saved_ok} Fehler={fail_ok} CPU-Vorgabe={cpu_ok}")
+        print(f"FEHL  Lokales Modell: Vorgabe={ok_default} Nachladen={install_ok} Dienst={running_ok} Laden={pull_ok} "
+              f"Prüfung={check_ok} Eintragen={saved_ok} Fehler={fail_ok} CPU-Vorgabe={cpu_ok}")
         for w in warnings[before:]:
             print(f"      {w}")
     else:
-        print("OK    Lokales Modell: Stand, Dienst, Laden mit Fortschritt, Prüfung, Eintragen, Fehler, CPU-Vorgabe")
+        print("OK    Lokales Modell: Stand, Nachladen, Dienst, Laden mit Fortschritt, Prüfung, Eintragen, Fehler, CPU-Vorgabe")
 
     # Fertig-Seite: der Stub muss das Speichern gesehen haben
     if ("save", "openrouter", "test/modell") not in backend.calls:

@@ -7,7 +7,14 @@ tests/lokales-modell-check.py läuft. Ollama läuft als Nutzerdienst
 (ollama.service, systemctl --user) und hört nur auf 127.0.0.1:11434; Hermes
 spricht den OpenAI-kompatiblen Endpunkt darunter (/v1) an.
 
+Ollama liegt nicht im Image. Wer das lokale Modell will, lädt das Programm
+mit install_ollama in sein Home (~/.local/share/hermes-os/ollama), in der
+hier gepinnten Version und nur mit passender Prüfsumme.
+
 Aufbau:
+- install_ollama:   Release-Archiv laden, SHA256 prüfen, ohne cuda_v12 entpacken
+- remove_ollama:    Programm (und auf Wunsch die Modelle) wieder löschen
+- space_check:      reicht der freie Platz für Programm oder Modell?
 - detect_gpu:       nvidia-smi fragen (Laufzeit, nicht Bauzeit), AMD über /dev/kfd
                     erkennen; ohne beides läuft Ollama auf der CPU
 - server_status:    /api/version und /api/tags des Dienstes
@@ -19,6 +26,7 @@ Aufbau:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -27,7 +35,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 OLLAMA_HOST = "127.0.0.1:11434"
 
@@ -45,7 +53,32 @@ def _base_url_from_env() -> str:
 BASE_URL = _base_url_from_env()
 HERMES_BASE_URL = BASE_URL + "/v1"          # OpenAI-kompatibler Endpunkt von Ollama
 UNIT = "ollama.service"                     # Nutzerdienst aus /usr/lib/systemd/user
-OLLAMA_BIN = "/usr/bin/ollama"
+
+# Ollama wird nachgeladen, nicht mitgeliefert. Gepinnt wie früher im Build:
+# Version, Archiv und SHA256 aus der sha256sum.txt des Releases. Ein Bump ist
+# eine Änderung dieser drei Zeilen; vorher in Test-VM 112 `ujust
+# hermes-lokal-ein` und `ollama ps` (100 % GPU) prüfen.
+OLLAMA_PIN = "0.34.4"
+OLLAMA_ASSET = "ollama-linux-amd64.tar.zst"
+OLLAMA_SHA256 = "c238986e61d40c0cc5f4a9b9e40b9eea104350b77efa34741fc134e105cb9533"
+OLLAMA_URL = f"https://github.com/ollama/ollama/releases/download/v{OLLAMA_PIN}/{OLLAMA_ASSET}"
+# Zielordner; ollama.service startet %h/.local/share/hermes-os/ollama/bin/ollama.
+# HERMES_OS_OLLAMA_DIR nur für Tests.
+OLLAMA_DIR = os.environ.get("HERMES_OS_OLLAMA_DIR") or os.path.join(
+    os.path.expanduser("~"), ".local", "share", "hermes-os", "ollama")
+OLLAMA_BIN = os.path.join(OLLAMA_DIR, "bin", "ollama")
+OLLAMA_STAMP = os.path.join(OLLAMA_DIR, ".hermes-os-release")
+# Wo ollama.service die Modelle ablegt (OLLAMA_MODELS=%h/.local/share/ollama/models)
+MODELS_DIR = os.environ.get("HERMES_OS_OLLAMA_MODELS_DIR") or os.path.join(
+    os.path.expanduser("~"), ".local", "share", "ollama")
+# Platzbedarf: das Archiv (rund 1,3 GB) liegt beim Entpacken neben dem Ergebnis
+# (rund 0,9 GB ohne cuda_v12); dazu Luft, damit das Home nicht vollläuft.
+INSTALL_ARCHIVE_MB = 1300
+INSTALL_SIZE_MB = 900
+INSTALL_NEED_MB = INSTALL_ARCHIVE_MB + INSTALL_SIZE_MB + 1024
+MODEL_MARGIN_MB = 1024                      # Luft über der Modellgröße
+UNKNOWN_MODEL_MIN_MB = 2048                 # eigenes Modell, Größe unbekannt: wenigstens das
+
 HERMES_PROVIDER = "custom"                  # Hermes-Anbieter für OpenAI-kompatible Server (Ollama hat keinen eigenen Slug)
 HERMES_API_MODE = "chat_completions"
 PROBE_KEY = "no-key-required"               # Ollama prüft keinen Schlüssel; Hermes schickt genau das als Bearer
@@ -112,6 +145,201 @@ def _error_text(exc: BaseException) -> str:
     if isinstance(exc, urllib.error.URLError):
         return f"nicht erreichbar: {exc.reason}"
     return f"{type(exc).__name__}: {exc}"
+
+
+# ---- Platz ------------------------------------------------------------------
+
+def free_mb(path: str) -> int:
+    """Freier Platz in MB auf dem Dateisystem von path, oder vom nächsten
+    vorhandenen Elternordner, solange path noch nicht existiert."""
+    p = os.path.abspath(path)
+    while not os.path.exists(p):
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    try:
+        return int(shutil.disk_usage(p).free // (1024 * 1024))
+    except OSError:
+        return 0
+
+
+def space_check(need_mb: int, path: str) -> Dict[str, Any]:
+    """Reicht der Platz unter path? {ok, free_mb, need_mb, error}."""
+    free = free_mb(path)
+    ok = free >= need_mb
+    return {"ok": ok, "free_mb": free, "need_mb": int(need_mb),
+            "error": "" if ok else (f"Zu wenig Platz: {free / 1024:.1f} GB frei, gebraucht werden rund "
+                                    f"{need_mb / 1024:.1f} GB (unter {path})")}
+
+
+def model_need_mb(tag: str) -> Tuple[int, bool]:
+    """Platzbedarf eines Modells in MB und ob die Größe bekannt ist: aus
+    RECOMMENDED plus Luft, sonst eine Untergrenze."""
+    for m in RECOMMENDED:
+        if m["tag"] == tag:
+            return int(m["size_gb"] * 1000) + MODEL_MARGIN_MB, True
+    return UNKNOWN_MODEL_MIN_MB, False
+
+
+def _tree_mb(path: str) -> int:
+    total = 0
+    for dirpath, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, name)).st_size
+            except OSError:
+                pass
+    return int(total // (1024 * 1024))
+
+
+# ---- Ollama nachladen -------------------------------------------------------
+
+def ollama_installed() -> Dict[str, Any]:
+    """Liegt Ollama im Home, und in welcher Version (Stempel beim Entpacken)?"""
+    info = {"installed": os.path.isfile(OLLAMA_BIN) and os.access(OLLAMA_BIN, os.X_OK),
+            "version": "", "path": OLLAMA_DIR, "pin": OLLAMA_PIN}
+    try:
+        with open(OLLAMA_STAMP, encoding="utf-8") as f:
+            for line in f:
+                key, _, value = line.strip().partition("=")
+                if key == "version":
+                    info["version"] = value
+    except OSError:
+        pass
+    return info
+
+
+def _download(url: str, dest: str, progress: Optional[Callable[[Dict[str, Any]], None]],
+              timeout: float) -> str:
+    """url nach dest laden, SHA256 nebenbei rechnen; liefert die Prüfsumme."""
+    digest = hashlib.sha256()
+    req = urllib.request.Request(url, headers={"User-Agent": "hermes-os"})
+    with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done, last = 0, -1
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            f.write(chunk)
+            digest.update(chunk)
+            done += len(chunk)
+            percent = int(done * 100 / total) if total else 0
+            if progress and percent != last:
+                progress({"status": f"lade Ollama {OLLAMA_PIN}", "total": total, "completed": done,
+                          "percent": percent})
+                last = percent
+    return digest.hexdigest()
+
+
+def install_ollama(progress: Optional[Callable[[Dict[str, Any]], None]] = None, url: Optional[str] = None,
+                   sha256: Optional[str] = None, dest: Optional[str] = None, timeout: float = 60.0,
+                   force: bool = False) -> Dict[str, Any]:
+    """Ollama in der gepinnten Version ins Home laden: Platz prüfen, Archiv
+    laden, SHA256 vergleichen, ohne cuda_v12 entpacken (1,3 GB, nur für Treiber
+    vor 580), Stempel schreiben, Probelauf, dann erst an den Zielort. Scheitert
+    ein Schritt, bleibt ein vorhandenes Ollama unangetastet.
+
+    HERMES_OS_OLLAMA_URL und HERMES_OS_OLLAMA_SHA256 nur für Tests.
+    Rückgabe: {ok, skipped, version, path, error}."""
+    url = url or os.environ.get("HERMES_OS_OLLAMA_URL") or OLLAMA_URL
+    sha256 = (sha256 or os.environ.get("HERMES_OS_OLLAMA_SHA256") or OLLAMA_SHA256).lower()
+    dest = os.path.abspath(dest or OLLAMA_DIR)
+    out: Dict[str, Any] = {"ok": False, "skipped": False, "version": OLLAMA_PIN, "path": dest, "error": ""}
+    have = ollama_installed() if dest == os.path.abspath(OLLAMA_DIR) else {"installed": False, "version": ""}
+    if have["installed"] and have["version"] == OLLAMA_PIN and not force:
+        out.update(ok=True, skipped=True)
+        return out
+    for tool in ("tar", "zstd"):
+        if not shutil.which(tool):
+            out["error"] = f"{tool} fehlt; ohne {tool} lässt sich das Ollama-Archiv nicht entpacken"
+            return out
+    parent = os.path.dirname(dest)
+    room = space_check(INSTALL_NEED_MB, parent)
+    if not room["ok"]:
+        out["error"] = room["error"]
+        return out
+    os.makedirs(parent, exist_ok=True)
+    work = tempfile.mkdtemp(prefix=".ollama-install-", dir=parent)
+    try:
+        archive = os.path.join(work, OLLAMA_ASSET)
+        try:
+            got = _download(url, archive, progress, timeout)
+        except Exception as e:
+            out["error"] = f"Download von {url} fehlgeschlagen: {_error_text(e)}"
+            return out
+        if got != sha256:
+            out["error"] = (f"Prüfsumme stimmt nicht (erwartet {sha256[:16]}…, erhalten {got[:16]}…); "
+                            "nichts installiert")
+            return out
+        if progress:
+            progress({"status": "entpacke Ollama", "total": 0, "completed": 0, "percent": 100})
+        extract = os.path.join(work, "extract")
+        os.makedirs(extract)
+        p = _run(["tar", "--zstd", "-xf", archive, "-C", extract, "--no-same-owner", "--exclude=cuda_v12"],
+                 timeout=900)
+        os.unlink(archive)
+        if p.returncode != 0:
+            out["error"] = f"Entpacken fehlgeschlagen: {(p.stderr or p.stdout).strip()[-300:]}"
+            return out
+        # Das Archiv ist zum Entpacken nach /usr gedacht (bin/, lib/); falls ein
+        # Release doch usr/ voranstellt, beide Formen annehmen.
+        root = extract
+        if os.path.isdir(os.path.join(extract, "usr", "lib", "ollama")):
+            root = os.path.join(extract, "usr")
+        if not (os.path.isfile(os.path.join(root, "bin", "ollama")) and os.path.isdir(os.path.join(root, "lib", "ollama"))):
+            out["error"] = "Archiv ohne bin/ollama und lib/ollama; nichts installiert"
+            return out
+        stage = os.path.join(work, "stage")
+        os.makedirs(os.path.join(stage, "bin"))
+        os.makedirs(os.path.join(stage, "lib"))
+        os.replace(os.path.join(root, "bin", "ollama"), os.path.join(stage, "bin", "ollama"))
+        os.replace(os.path.join(root, "lib", "ollama"), os.path.join(stage, "lib", "ollama"))
+        os.chmod(os.path.join(stage, "bin", "ollama"), 0o755)
+        libdir = os.path.join(stage, "lib", "ollama")
+        backends = sorted(d for d in os.listdir(libdir) if os.path.isdir(os.path.join(libdir, d))
+                          and re.match(r"^(cuda_v\d+|vulkan|rocm.*)$", d))
+        with open(os.path.join(stage, ".hermes-os-release"), "w", encoding="utf-8") as f:
+            f.write(f"version={OLLAMA_PIN}\nasset={OLLAMA_ASSET}\nsha256={sha256}\n"
+                    f"backends={' '.join(['cpu'] + backends)}\nupdate=home\n")
+        try:
+            probe = _run([os.path.join(stage, "bin", "ollama"), "--version"], timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            out["error"] = f"Ollama startet nicht: {e}"
+            return out
+        if probe.returncode != 0:
+            out["error"] = f"Ollama startet nicht: {(probe.stderr or probe.stdout).strip()[-300:]}"
+            return out
+        old = os.path.join(work, "old")
+        if os.path.lexists(dest):
+            os.replace(dest, old)
+        try:
+            os.replace(stage, dest)
+        except OSError:
+            if os.path.lexists(old):
+                os.replace(old, dest)
+            raise
+        out["ok"] = True
+        out["backends"] = backends
+        return out
+    except Exception as e:
+        out["error"] = f"Installation fehlgeschlagen: {_error_text(e)}"
+        return out
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def remove_ollama(models: bool = False) -> Dict[str, Any]:
+    """Ollama aus dem Home löschen, mit models=True auch alle geladenen Modelle.
+    Den Dienst vorher stoppen (der Helfer tut das). Rückgabe: {ok, freed_mb, removed}."""
+    removed, freed = [], 0
+    for path in [OLLAMA_DIR] + ([MODELS_DIR] if models else []):
+        if os.path.lexists(path):
+            freed += _tree_mb(path)
+            shutil.rmtree(path, ignore_errors=True)
+            removed.append(path)
+    return {"ok": not any(os.path.lexists(p) for p in removed), "freed_mb": freed, "removed": removed}
 
 
 # ---- GPU --------------------------------------------------------------------
@@ -494,8 +722,11 @@ def status_summary(base_url: str = BASE_URL) -> Dict[str, Any]:
         model_block = read_hermes_model()
     except Exception as e:  # kaputte config.yaml soll den Status nicht verhindern
         model_block = {"error": str(e)}
+    ollama = ollama_installed()
+    ollama.update(need_mb=INSTALL_NEED_MB, size_mb=INSTALL_SIZE_MB, free_mb=free_mb(OLLAMA_DIR))
     return {"gpu": gpu, "unit": unit_state(), "server": srv,
-            "ollama_installed": os.path.exists(OLLAMA_BIN),
+            "ollama_installed": ollama["installed"], "ollama": ollama,
+            "models_free_mb": free_mb(MODELS_DIR),
             "recommended": recommend(gpu),
             "hermes": {"model": model_block.get("default", ""), "provider": model_block.get("provider", ""),
                        "base_url": model_block.get("base_url", ""), "local": is_local(model_block),

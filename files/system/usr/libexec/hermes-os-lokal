@@ -6,12 +6,16 @@
 # den Einrichtungsassistenten (Karte „Lokales Modell", ruft --json) und den
 # Agenten selbst. Die Logik liegt in /usr/share/hermes-os/local/local_model.py;
 # hier nur Ablauf und Ausgabe. Läuft mit Fedoras Python und PyYAML, braucht
-# weder die Hermes-Venv noch Root: Ollama ist ein Nutzerdienst.
+# weder die Hermes-Venv noch Root: Ollama ist ein Nutzerdienst. Das Programm
+# liegt nicht im Image; `ein` und `installieren` laden es ins Home
+# (~/.local/share/hermes-os/ollama).
 #
-#   hermes-os-lokal status                 GPU, Dienst, Modelle, was Hermes nutzt
-#   hermes-os-lokal ein [MODELL]           Dienst an, Modell laden, prüfen, eintragen
+#   hermes-os-lokal status                 GPU, Ollama, Dienst, Modelle, was Hermes nutzt
+#   hermes-os-lokal ein [MODELL]           Ollama laden (falls nötig), Dienst an, Modell laden, prüfen, eintragen
 #   hermes-os-lokal aus                    Dienst aus, vorherigen Anbieter zurück
+#   hermes-os-lokal entfernen              wie aus, dazu Ollama und alle Modelle löschen
 #   hermes-os-lokal modell [MODELL]        anderes Modell laden, prüfen, eintragen
+#   hermes-os-lokal installieren           nur Ollama ins Home laden (Fortschritt)
 #   hermes-os-lokal dienst-ein | dienst-aus
 #   hermes-os-lokal laden MODELL           nur laden (Fortschritt)
 #   hermes-os-lokal pruefen [MODELL]       Endpunkt und Werkzeugaufruf prüfen
@@ -19,7 +23,9 @@
 #   hermes-os-lokal --json <befehl>        Ausgabe als JSON-Zeilen (Assistent)
 #   hermes-os-lokal --check                Trockenlauf fürs Validierungs-Gate
 # Umgebung: OLLAMA_HOST (Adresse des Dienstes), HERMES_HOME,
-#           HERMES_OS_LOCAL_DIR (Modulverzeichnis, zum Testen aus dem Repo).
+#           HERMES_OS_LOCAL_DIR (Modulverzeichnis, zum Testen aus dem Repo),
+#           HERMES_OS_OLLAMA_DIR, HERMES_OS_OLLAMA_MODELS_DIR, HERMES_OS_OLLAMA_URL,
+#           HERMES_OS_OLLAMA_SHA256 (nur für Tests).
 # =============================================================================
 import importlib.util
 import json
@@ -70,8 +76,13 @@ def cmd_status(lm):
     print(gpu_line(st["gpu"]))
     u = st["unit"]
     srv = st["server"]
-    if not st["ollama_installed"]:
-        print("Ollama: nicht im Image (/usr/bin/ollama fehlt)")
+    ol = st["ollama"]
+    if ol["installed"]:
+        print(f"Ollama: {ol['version'] or 'Version unbekannt'} unter {ol['path']}"
+              + ("" if ol["version"] == ol["pin"] else f" (hermes-os erwartet {ol['pin']}; hermes-os-lokal installieren holt sie)"))
+    else:
+        print(f"Ollama: nicht installiert; ujust hermes-lokal-ein lädt Version {ol['pin']} (rund "
+              f"{ol['size_mb'] / 1024:.1f} GB) nach {ol['path']}, frei sind {ol['free_mb'] / 1024:.1f} GB")
     print("Dienst ollama.service: " + (f"{u['active'] or 'unbekannt'}, {u['enabled'] or 'nicht eingerichtet'}" if u["available"] else "systemctl nicht verfügbar")
           + (f"; Server {srv['version']} antwortet" if srv["running"] else f"; Server {srv['error']}"))
     if srv["models"]:
@@ -90,11 +101,41 @@ def cmd_status(lm):
     return 0
 
 
+def install(lm):
+    """Ollama ins Home laden, falls es fehlt oder eine andere Version hat."""
+    last = {"percent": -1}
+
+    def progress(row):
+        if JSON:
+            emit({"progress": row})
+        elif sys.stdout.isatty():
+            sys.stdout.write(f"\r  {row['status']:<32} {row['percent']:3d} %")
+            sys.stdout.flush()
+        elif row["percent"] // 10 != last["percent"] // 10:
+            print(f"  {row['status']:<32} {row['percent']:3d} %")
+        last["percent"] = row["percent"]
+
+    have = lm.ollama_installed()
+    if have["installed"] and have["version"] == lm.OLLAMA_PIN:
+        emit({"ok": True, "step": "installed", "skipped": True, "version": have["version"]},
+             f"Ollama {have['version']} liegt schon unter {have['path']}.")
+        return
+    emit({"step": "install", "version": lm.OLLAMA_PIN},
+         f"Lade Ollama {lm.OLLAMA_PIN} (rund {lm.INSTALL_SIZE_MB / 1024:.1f} GB) nach {lm.OLLAMA_DIR} …")
+    res = lm.install_ollama(progress=progress)
+    if not JSON and sys.stdout.isatty():
+        print()
+    if not res["ok"]:
+        fail(f"Ollama nicht installiert: {res['error']}")
+    emit({"ok": True, "step": "installed", "skipped": False, "version": res["version"]},
+         f"Ollama {res['version']} installiert (Prüfsumme stimmt).")
+
+
 def service_start(lm):
     if not shutil.which("systemctl"):
         fail("systemctl fehlt; Ollama lässt sich hier nicht als Dienst starten")
-    if not os.path.exists(lm.OLLAMA_BIN):
-        fail("Ollama liegt nicht im Image (/usr/bin/ollama fehlt)")
+    if not lm.ollama_installed()["installed"]:
+        fail(f"Ollama ist nicht installiert ({lm.OLLAMA_BIN} fehlt); ujust hermes-lokal-ein lädt es")
     lm.systemctl_user("enable", lm.UNIT)
     p = lm.systemctl_user("start", lm.UNIT)
     if p.returncode != 0:
@@ -125,6 +166,17 @@ def pull(lm, model):
             print(f"  {row['status']:<32} {row['percent']:3d} %")
         last["percent"] = row["percent"]
 
+    try:
+        present = any(m["name"] in (model, model + ":latest") for m in lm.list_models(lm.BASE_URL))
+    except Exception:
+        present = False
+    if not present:
+        need, known = lm.model_need_mb(model)
+        room = lm.space_check(need, lm.MODELS_DIR)
+        if not room["ok"]:
+            fail(f"{model} nicht geladen. {room['error']}. Ein kleineres Modell wählen oder Platz schaffen.")
+        if not known:
+            emit(None, f"Hinweis: die Größe von {model} kennt hermes-os nicht; frei sind {room['free_mb'] / 1024:.1f} GB.")
     emit({"step": "pull", "model": model}, f"Lade {model} (bleibt unter ~/.local/share/ollama) …")
     res = lm.pull_model(lm.BASE_URL, model, progress=progress, timeout=3600)
     if not JSON and sys.stdout.isatty():
@@ -185,6 +237,7 @@ def cmd_ein(lm, model):
         emit(None, f"Modell: {model} (Vorgabe für diesen Rechner)")
     if gpu["vendor"] != "nvidia":
         emit(None, "Hinweis: ohne NVIDIA-Karte rechnet Ollama auf der CPU, Antworten dauern deutlich länger.")
+    install(lm)
     service_start(lm)
     pull(lm, model)
     if check(lm, model) != 0:
@@ -193,8 +246,23 @@ def cmd_ein(lm, model):
     return 0
 
 
+def cmd_entfernen(lm):
+    """Wie aus, dazu Ollama und alle Modelle löschen: Platz zurück."""
+    cmd_aus(lm)
+    res = lm.remove_ollama(models=True)
+    if not res["ok"]:
+        fail("Löschen unvollständig: " + ", ".join(res["removed"]))
+    if res["removed"]:
+        emit({"ok": True, "step": "removed", "freed_mb": res["freed_mb"], "removed": res["removed"]},
+             f"Ollama und die Modelle gelöscht ({', '.join(res['removed'])}), {res['freed_mb'] / 1024:.1f} GB frei geworden.")
+    else:
+        emit({"ok": True, "step": "removed", "freed_mb": 0, "removed": []}, "Ollama war nicht installiert, nichts gelöscht.")
+    return 0
+
+
 def cmd_aus(lm):
-    service_stop(lm)
+    if shutil.which("systemctl"):
+        service_stop(lm)
     try:
         block = lm.restore_previous()
     except Exception as e:
@@ -220,6 +288,7 @@ def cmd_modell(lm, model):
         model = lm.recommended_default(lm.detect_gpu())
         emit(None, f"Modell: {model} (Vorgabe für diesen Rechner)")
     if not lm.server_status()["running"]:
+        install(lm)
         service_start(lm)
     pull(lm, model)
     if check(lm, model) != 0:
@@ -243,8 +312,11 @@ def check_only():
         print(f"FEHL  {p}")
     if problems:
         return 1
-    print(f"OK    hermes-os-lokal: Modul und PyYAML vorhanden"
-          + ("" if os.path.exists("/usr/bin/ollama") else " (kein /usr/bin/ollama, nur Trockenlauf)"))
+    missing = [t for t in ("tar", "zstd") if not shutil.which(t)]
+    if missing:
+        print(f"FEHL  {', '.join(missing)} fehlt; Ollama ließe sich nicht nachladen")
+        return 1
+    print("OK    hermes-os-lokal: Modul, PyYAML, tar und zstd vorhanden (Ollama wird bei Bedarf nachgeladen)")
     return 0
 
 
@@ -255,7 +327,8 @@ def main(argv):
     if "--check" in args:
         return check_only()
     if not args:
-        print(__doc__ or "Befehle: status | ein [MODELL] | aus | modell [MODELL] | dienst-ein | dienst-aus | laden MODELL | pruefen MODELL | eintragen MODELL")
+        print(__doc__ or "Befehle: status | ein [MODELL] | aus | entfernen | modell [MODELL] | installieren | "
+                         "dienst-ein | dienst-aus | laden MODELL | pruefen MODELL | eintragen MODELL")
         return 2
     cmd, rest = args[0], args[1:]
     model = rest[0].strip() if rest else ""
@@ -266,6 +339,11 @@ def main(argv):
         return cmd_ein(lm, model)
     if cmd == "aus":
         return cmd_aus(lm)
+    if cmd == "entfernen":
+        return cmd_entfernen(lm)
+    if cmd == "installieren":
+        install(lm)
+        return 0
     if cmd == "modell":
         return cmd_modell(lm, model)
     if cmd == "dienst-ein":

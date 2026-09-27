@@ -4,12 +4,16 @@ Documentation=https://github.com/ollama/ollama/blob/main/docs/faq.md
 # Nutzerdienst, kein Systemdienst: der Agent darf ihn ohne Rückfrage
 # schalten (systemctl --user), Modelle liegen im Home. Standardmäßig aus;
 # `ujust hermes-lokal-ein` oder der Einrichtungsassistent schalten ihn ein.
+# Ollama selbst liegt nicht im Image: dieselben Wege laden es vorher nach
+# ~/.local/share/hermes-os/ollama (local_model.py, gepinnte Version mit
+# Prüfsumme). Fehlt es, bleibt der Dienst still aus statt neu zu starten.
 After=graphical-session.target
 StartLimitIntervalSec=0
+ConditionPathExists=%h/.local/share/hermes-os/ollama/bin/ollama
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ollama serve
+ExecStart=%h/.local/share/hermes-os/ollama/bin/ollama serve
 # Nur lokal erreichbar; Hermes spricht http://127.0.0.1:11434/v1.
 Environment=OLLAMA_HOST=127.0.0.1:11434
 # Ohne Cloud: keine Anmeldung bei ollama.com, keine Cloud-Modelle, keine
@@ -34,10 +38,11 @@ Environment=OLLAMA_KEEP_ALIVE=1h
 # Hälfte des Cache-Speichers, Qualitätsverlust bei q8_0 nicht messbar.
 Environment=OLLAMA_FLASH_ATTENTION=1
 Environment=OLLAMA_KV_CACHE_TYPE=q8_0
-# Backends sucht Ollama beim Start selbst unter /usr/lib/ollama: CUDA 13
-# über den NVIDIA-Treiber (NVIDIA-Image), Vulkan über Mesa (AMD, Intel) oder
-# den NVIDIA-Treiber als Ausweich, sonst CPU. Keine ROCm-Bibliotheken im
-# Image; AMD läuft über Vulkan.
+# Backends sucht Ollama beim Start selbst neben dem Programm
+# (~/.local/share/hermes-os/ollama/lib/ollama): CUDA 13 über den
+# NVIDIA-Treiber (NVIDIA-Image), Vulkan über Mesa (AMD, Intel) oder den
+# NVIDIA-Treiber als Ausweich, sonst CPU. Keine ROCm-Bibliotheken; AMD läuft
+# über Vulkan.
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM

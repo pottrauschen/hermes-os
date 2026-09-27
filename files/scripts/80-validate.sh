@@ -566,26 +566,24 @@ if [ -f /ctx/tests/dashboard-gui-check.py ]; then
 else
   echo "  WARN: /ctx/tests/dashboard-gui-check.py not in build context, window check skipped"
 fi
-# 7m. Lokales Modell: Ollama aus dem Release-Tarball (30-ollama.sh), die
-#     User-Unit, der Helfer, die Rezepte und der Test gegen Attrappen und
-#     einen nachgebauten Ollama-Server. Zum Schluss schreibt der Helfer die
-#     config.yaml eines eigenen HERMES_HOME und Hermes selbst muss den
-#     Anbieter, die Adresse und die Kontextlänge daraus lesen (das ist der
-#     Vertrag: unser Schreiber, Hermes' Leser).
-if [ -x /usr/bin/ollama ] && OLLAMA_VER="$(/usr/bin/ollama --version 2>/dev/null | tail -1)"; then
-  pass "ollama binary: ${OLLAMA_VER}"
+# 7m. Lokales Modell, optional: Ollama liegt nicht im Image; hermes-os-lokal
+#     lädt es auf Wunsch ins Home (gepinnte Version, Prüfsumme). Hier: kein
+#     Ollama unter /usr, die User-Unit, der Helfer, die Rezepte und der Test
+#     gegen Attrappen, ein nachgebautes Release-Archiv und einen nachgebauten
+#     Ollama-Server. Zum Schluss schreibt der Helfer die config.yaml eines
+#     eigenen HERMES_HOME und Hermes selbst muss den Anbieter, die Adresse und
+#     die Kontextlänge daraus lesen (das ist der Vertrag: unser Schreiber,
+#     Hermes' Leser).
+if [ -e /usr/bin/ollama ] || [ -e /usr/lib/ollama ]; then
+  fail "Ollama is in the image (/usr/bin/ollama or /usr/lib/ollama); it must stay an optional download"
 else
-  fail "/usr/bin/ollama missing or not runnable"
+  pass "no Ollama in the image; hermes-os-lokal loads it on demand"
 fi
-if [ -d /usr/lib/ollama ] && [ -n "$(find /usr/lib/ollama -name 'libggml-cuda*' -print -quit 2>/dev/null)" ]; then
-  pass "ollama CUDA runtime libraries under /usr/lib/ollama"
+if grep -q '^ExecStart=%h/.local/share/hermes-os/ollama/bin/ollama serve' /usr/lib/systemd/user/ollama.service \
+   && grep -q '^ConditionPathExists=%h/.local/share/hermes-os/ollama/bin/ollama' /usr/lib/systemd/user/ollama.service; then
+  pass "ollama.service starts the downloaded Ollama from the home and stays off without it"
 else
-  fail "ollama CUDA runtime libraries missing under /usr/lib/ollama (GPU would silently fall back to CPU)"
-fi
-if grep -q '^version=' /usr/lib/ollama/.hermes-os-release 2>/dev/null; then
-  pass "ollama release stamp: $(tr '\n' ' ' < /usr/lib/ollama/.hermes-os-release)"
-else
-  fail "/usr/lib/ollama/.hermes-os-release missing"
+  fail "ollama.service does not point at ~/.local/share/hermes-os/ollama/bin/ollama (ExecStart, ConditionPathExists)"
 fi
 for f in /usr/lib/systemd/user/ollama.service /usr/libexec/hermes-os-lokal /usr/share/hermes-os/local/local_model.py; do
   if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
@@ -597,7 +595,9 @@ else
   fail "ollama.service lacks OLLAMA_CONTEXT_LENGTH=65536 or OLLAMA_HOST=127.0.0.1:11434"
 fi
 if command -v systemd-analyze >/dev/null 2>&1; then
-  if systemd-analyze --user verify /usr/lib/systemd/user/ollama.service 2>&1 | grep -v 'Failed to connect' | grep -qiE 'error|unknown|invalid'; then
+  # Das Programm fehlt im Build absichtlich; die Meldung dazu zählt nicht.
+  if systemd-analyze --user verify /usr/lib/systemd/user/ollama.service 2>&1 | grep -v -e 'Failed to connect' -e 'is not executable' \
+       | grep -qiE 'error|unknown|invalid'; then
     fail "systemd-analyze verify ollama.service"
   else
     pass "systemd-analyze verify ollama.service"
@@ -609,15 +609,16 @@ else
   fail "hermes-os-lokal --check failed"
 fi
 if grep -qE '^\s*hermes-lokal-ein\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-lokal-aus\b' <<< "${JUST_OUT}" \
-   && grep -qE '^\s*hermes-lokal-modell\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-lokal-status\b' <<< "${JUST_OUT}"; then
-  pass "ujust lists hermes-lokal-ein, -aus, -modell, -status"
+   && grep -qE '^\s*hermes-lokal-modell\b' <<< "${JUST_OUT}" && grep -qE '^\s*hermes-lokal-status\b' <<< "${JUST_OUT}" \
+   && grep -qE '^\s*hermes-lokal-entfernen\b' <<< "${JUST_OUT}"; then
+  pass "ujust lists hermes-lokal-ein, -aus, -modell, -status, -entfernen"
 else
   fail "ujust does not list the hermes-lokal recipes"
 fi
 if [ -f /ctx/tests/lokales-modell-check.py ]; then
   if /usr/bin/python3 /ctx/tests/lokales-modell-check.py --local-dir /usr/share/hermes-os/local \
        --helper /usr/libexec/hermes-os-lokal --template /usr/share/hermes-os/config.yaml.default; then
-    pass "local model: GPU detection, config writer, fake Ollama endpoint, helper"
+    pass "local model: GPU detection, download with checksum and space check, config writer, fake Ollama endpoint, helper"
   else
     fail "local model check failed (see above)"
   fi

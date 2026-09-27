@@ -13,22 +13,32 @@
 #   4. Endpunktprüfung gegen einen nachgebauten Ollama-Server auf 127.0.0.1:
 #      /api/version, /api/tags, /api/show, /api/pull als Strom, /v1/models und
 #      /v1/chat/completions mit und ohne Werkzeugaufruf.
-#   5. Den Helfer /usr/libexec/hermes-os-lokal (--json status, pruefen) gegen
-#      denselben Server, wenn er im Repo bzw. Image liegt.
+#   5. Nachladen (Ollama liegt nicht im Image) gegen ein nachgebautes
+#      Release-Archiv über file://: falsche Prüfsumme installiert nichts,
+#      richtige entpackt ohne cuda_v12 und schreibt den Stempel, zu wenig Platz
+#      bricht vorher ab, zweiter Aufruf überspringt, Entfernen räumt auf.
+#      Braucht tar und zstd, sonst nur ein Hinweis.
+#   6. Den Helfer /usr/libexec/hermes-os-lokal (--json status, pruefen,
+#      installieren, entfernen) gegen denselben Server, wenn er im Repo bzw.
+#      Image liegt.
 #
-# Läuft mit jedem Python 3.9+ mit PyYAML:
+# Kein Schritt geht ins Internet. Läuft mit jedem Python 3.9+ mit PyYAML:
 #   tests/lokales-modell-check.py [--local-dir DIR] [--helper PFAD] [--template DATEI]
 # Exit 0 = alles sauber. `make lint` und das Gate (80-validate.sh) führen ihn aus.
 # =============================================================================
 import argparse
+import glob
+import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODELS = {
@@ -150,6 +160,10 @@ def main():
     os.environ["OLLAMA_HOST"] = host          # Modul und Helfer sprechen den Nachbau an
     os.environ["HERMES_HOME"] = os.path.join(tmp, "home")
     os.makedirs(os.environ["HERMES_HOME"])
+    # Nachladen und Entfernen nur in Wegwerf-Ordnern, nie im echten Home
+    os.environ["HERMES_OS_OLLAMA_DIR"] = os.path.join(tmp, "share", "hermes-os", "ollama")
+    os.environ["HERMES_OS_OLLAMA_MODELS_DIR"] = os.path.join(tmp, "share", "ollama")
+    os.environ["HERMES_OS_OLLAMA_URL"] = "file:///nirgends/" + "ollama-linux-amd64.tar.zst"
 
     spec = importlib.util.spec_from_file_location("hermes_os_local_model", module_path)
     lm = importlib.util.module_from_spec(spec)
@@ -322,14 +336,91 @@ def main():
         check(not ep["reachable"] and ep["tools"] is None, "check_endpoint: Dienst aus", str(ep))
         st = lm.status_summary()
         check(st["server"]["running"] and st["hermes"]["local"] and st["hermes"]["model"] == "qwen3:14b"
-              and st["recommended"][0]["tag"] in ("qwen3.5:4b", "qwen3.5:9b") and "vendor" in st["gpu"],
-              "status_summary fasst GPU, Dienst und Hermes zusammen", str(st)[:300])
+              and st["recommended"][0]["tag"] in ("qwen3.5:4b", "qwen3.5:9b") and "vendor" in st["gpu"]
+              and st["ollama_installed"] is False and st["ollama"]["pin"] == lm.OLLAMA_PIN
+              and st["ollama"]["need_mb"] > st["ollama"]["size_mb"] > 0 and st["models_free_mb"] > 0,
+              "status_summary fasst GPU, Ollama (nicht installiert), Platz, Dienst und Hermes zusammen", str(st)[:300])
 
-        # ---- 5. Helfer ------------------------------------------------------------------
+        # ---- 5. Nachladen gegen ein nachgebautes Release-Archiv ---------------------
+        check(lm.OLLAMA_BIN == os.path.join(os.environ["HERMES_OS_OLLAMA_DIR"], "bin", "ollama")
+              and lm.OLLAMA_URL.startswith("https://github.com/ollama/ollama/releases/download/v" + lm.OLLAMA_PIN + "/")
+              and len(lm.OLLAMA_SHA256) == 64, "Pin: Version, Release-Adresse und SHA256, Ziel im Home", lm.OLLAMA_BIN)
+        need, known = lm.model_need_mb("qwen3.5:9b")
+        check(known and need >= 6600 + lm.MODEL_MARGIN_MB and lm.model_need_mb("eigenes:7b") == (lm.UNKNOWN_MODEL_MIN_MB, False),
+              "Platzbedarf: bekanntes Modell mit Luft, eigenes mit Untergrenze", str((need, known)))
+        check(lm.space_check(1, tmp)["ok"] and not lm.space_check(10 ** 9, tmp)["ok"]
+              and "Zu wenig Platz" in lm.space_check(10 ** 9, tmp)["error"]
+              and lm.free_mb(os.path.join(tmp, "gibt", "es", "nicht")) == lm.free_mb(tmp),
+              "space_check und free_mb (auch für einen Ordner, den es noch nicht gibt)")
+        if shutil.which("tar") and shutil.which("zstd"):
+            src = os.path.join(tmp, "release")
+            os.makedirs(os.path.join(src, "bin"))
+            for sub in ("", "cuda_v12", "cuda_v13", "vulkan"):
+                os.makedirs(os.path.join(src, "lib", "ollama", sub), exist_ok=True)
+                with open(os.path.join(src, "lib", "ollama", sub, "libggml-test.so"), "wb") as f:
+                    f.write(b"\0" * 4096)
+            fake = os.path.join(src, "bin", "ollama")
+            with open(fake, "w", encoding="utf-8") as f:
+                f.write(f'#!/bin/sh\necho "ollama version is {lm.OLLAMA_PIN}"\n')
+            os.chmod(fake, 0o755)
+            archive = os.path.join(tmp, lm.OLLAMA_ASSET)
+            subprocess.run(["tar", "--zstd", "-cf", archive, "-C", src, "bin", "lib"], check=True)
+            with open(archive, "rb") as f:
+                sha = hashlib.sha256(f.read()).hexdigest()
+            url = "file://" + urllib.request.pathname2url(archive)
+            dest = lm.OLLAMA_DIR
+            parent = os.path.dirname(dest)
+            res = lm.install_ollama(url=url, sha256="0" * 64)
+            check(not res["ok"] and "Prüfsumme" in res["error"] and not os.path.exists(dest)
+                  and not glob.glob(os.path.join(parent, ".ollama-install-*")),
+                  "falsche Prüfsumme: nichts installiert, nichts liegen gelassen", str(res))
+            seen = []
+            res = lm.install_ollama(progress=seen.append, url=url, sha256=sha)
+            stamp = open(lm.OLLAMA_STAMP, encoding="utf-8").read() if os.path.isfile(lm.OLLAMA_STAMP) else ""
+            check(res["ok"] and not res["skipped"] and os.access(lm.OLLAMA_BIN, os.X_OK)
+                  and os.path.isdir(os.path.join(dest, "lib", "ollama", "cuda_v13"))
+                  and not os.path.exists(os.path.join(dest, "lib", "ollama", "cuda_v12"))
+                  and f"version={lm.OLLAMA_PIN}\n" in stamp and "backends=cpu cuda_v13 vulkan\n" in stamp
+                  and f"sha256={sha}\n" in stamp and seen and seen[-1]["percent"] == 100
+                  and not glob.glob(os.path.join(parent, ".ollama-install-*")),
+                  "richtige Prüfsumme: installiert ohne cuda_v12, Stempel mit Version und Backends, Fortschritt bis 100",
+                  f"{res} {stamp!r}")
+            info = lm.ollama_installed()
+            check(info["installed"] and info["version"] == lm.OLLAMA_PIN, "ollama_installed liest den Stempel", str(info))
+            res = lm.install_ollama(url="file:///gibt/es/nicht", sha256=sha)
+            check(res["ok"] and res["skipped"], "zweiter Aufruf: gleiche Version liegt schon da, kein Download", str(res))
+            orig_free = lm.free_mb
+            lm.free_mb = lambda path: 100
+            try:
+                res = lm.install_ollama(url=url, sha256=sha, force=True)
+            finally:
+                lm.free_mb = orig_free
+            check(not res["ok"] and "Zu wenig Platz" in res["error"] and os.access(lm.OLLAMA_BIN, os.X_OK),
+                  "zu wenig Platz: Abbruch vor dem Download, vorhandenes Ollama bleibt", str(res))
+            os.makedirs(os.path.join(lm.MODELS_DIR, "models"), exist_ok=True)
+            with open(os.path.join(lm.MODELS_DIR, "models", "blob"), "wb") as f:
+                f.write(b"\0" * 4096)
+            res = lm.remove_ollama(models=True)
+            check(res["ok"] and not os.path.exists(dest) and not os.path.exists(lm.MODELS_DIR)
+                  and sorted(res["removed"]) == sorted([dest, lm.MODELS_DIR]),
+                  "remove_ollama löscht Programm und Modelle", str(res))
+            os.environ["HERMES_OS_OLLAMA_URL"] = url            # für den Helfer unten
+            os.environ["HERMES_OS_OLLAMA_SHA256"] = sha
+        else:
+            print("WARN  tar oder zstd fehlt, Nachladen nicht geprüft")
+
+        # ---- 6. Helfer ------------------------------------------------------------------
         if helper:
             env = dict(os.environ)
             env["HERMES_OS_LOCAL_DIR"] = args.local_dir
-            env["PATH"] = os.path.join(tmp, "leer") + os.pathsep + env.get("PATH", "")
+            # Ein systemctl, das nur mitschreibt: der Test darf keinen echten
+            # Nutzerdienst stoppen, falls er auf einem hermes-os-Desktop läuft.
+            fake_sys = os.path.join(tmp, "bin-systemctl")
+            os.makedirs(fake_sys)
+            with open(os.path.join(fake_sys, "systemctl"), "w", encoding="utf-8") as f:
+                f.write(f'#!/bin/sh\necho "$*" >> "{os.path.join(tmp, "systemctl.log")}"\nexit 0\n')
+            os.chmod(os.path.join(fake_sys, "systemctl"), 0o755)
+            env["PATH"] = fake_sys + os.pathsep + os.path.join(tmp, "leer") + os.pathsep + env.get("PATH", "")
             p = subprocess.run([sys.executable, helper, "--json", "status"], capture_output=True, text=True, env=env, timeout=60)
             try:
                 js = json.loads(p.stdout.strip().splitlines()[-1])
@@ -357,9 +448,30 @@ def main():
             check(p.returncode == 0 and after["model"]["default"] == "qwen3:14b" and after["model"]["provider"] == "custom",
                   "hermes-os-lokal eintragen schreibt den model-Block", (p.stdout + p.stderr)[-300:])
             p = subprocess.run([sys.executable, helper, "status"], capture_output=True, text=True, env=env, timeout=60)
-            check(p.returncode == 0 and "qwen3:14b" in p.stdout and "CPU" in p.stdout, "hermes-os-lokal status als Text", (p.stdout + p.stderr)[-300:])
+            # GPU-Zeile je nach Rechner („GPU: keine nutzbare, … CPU“ in der CI, die Karte in VM 112)
+            check(p.returncode == 0 and "qwen3:14b" in p.stdout and p.stdout.startswith("GPU: ")
+                  and "Ollama: nicht installiert" in p.stdout, "hermes-os-lokal status als Text", (p.stdout + p.stderr)[-300:])
             p = subprocess.run([sys.executable, helper, "--check"], capture_output=True, text=True, env=env, timeout=60)
-            check(p.returncode == 0, "hermes-os-lokal --check", (p.stdout + p.stderr)[-300:])
+            check(p.returncode == 0 or "zstd fehlt" in p.stdout or "tar fehlt" in p.stdout,
+                  "hermes-os-lokal --check", (p.stdout + p.stderr)[-300:])
+            if env.get("HERMES_OS_OLLAMA_SHA256"):
+                p = subprocess.run([sys.executable, helper, "--json", "installieren"], capture_output=True, text=True,
+                                   env=env, timeout=120)
+                rows = [json.loads(ln) for ln in p.stdout.splitlines() if ln.strip().startswith("{")]
+                check(p.returncode == 0 and any(r.get("progress") for r in rows)
+                      and rows[-1].get("step") == "installed" and rows[-1].get("ok") is True
+                      and os.access(lm.OLLAMA_BIN, os.X_OK),
+                      "hermes-os-lokal --json installieren: Fortschritt, dann installed", (p.stdout + p.stderr)[-300:])
+                p = subprocess.run([sys.executable, helper, "--json", "status"], capture_output=True, text=True, env=env, timeout=60)
+                js = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {}
+                check(js.get("ollama_installed") is True and js.get("ollama", {}).get("version") == lm.OLLAMA_PIN,
+                      "hermes-os-lokal --json status meldet Ollama mit Version", str(js.get("ollama")))
+                p = subprocess.run([sys.executable, helper, "entfernen"], capture_output=True, text=True, env=env, timeout=60)
+                log = open(os.path.join(tmp, "systemctl.log"), encoding="utf-8").read() if os.path.isfile(
+                    os.path.join(tmp, "systemctl.log")) else ""
+                check(p.returncode == 0 and not os.path.exists(lm.OLLAMA_DIR) and "gelöscht" in p.stdout
+                      and "disable --now ollama.service" in log,
+                      "hermes-os-lokal entfernen: Dienst aus, Programm weg", (p.stdout + p.stderr)[-300:])
         else:
             print("WARN  hermes-os-lokal nicht gefunden, Helfer-Prüfung übersprungen")
     finally:

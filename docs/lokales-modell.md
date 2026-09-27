@@ -1,10 +1,45 @@
-# Lokales Modell: Hermes ohne Cloud auf der eigenen GPU
+# Lokales Modell: Hermes ohne Cloud auf der eigenen GPU (optional)
 
-Stand: 2026-09-26. Wie Hermes auf hermes-os mit einem Modell läuft, das auf
-dem Rechner selbst rechnet, was dafür im Image liegt, warum es so gebaut ist
-und wo die Grenzen sind.
+Stand: 2026-09-27. Wie Hermes auf hermes-os mit einem Modell läuft, das auf
+dem Rechner selbst rechnet, was dafür im Image liegt und was erst auf Wunsch
+nachgeladen wird, warum es so gebaut ist und wo die Grenzen sind.
 
-## Entscheidung: Ollama, nativ im Image, als Nutzerdienst
+## Entscheidung: optional, Ollama nicht im Image
+
+Das lokale Modell ist eine Option, kein Bestandteil. Ollama selbst liegt
+seit 2026-09-27 nicht mehr im Image; wer es will, lädt es mit
+`ujust hermes-lokal-ein` oder der Karte im Assistenten in sein Home. Gründe:
+
+- **Kleine Modelle bringen wenig.** Was auf eine 12-GB-Karte passt, bleibt
+  bei Werkzeugaufrufen deutlich hinter den Cloud-Modellen zurück (in VM 112
+  verfehlte `qwen3.5:4b` das Meta-Werkzeug `tool_call` und wich auf die
+  Websuche aus). Das rechtfertigt nicht, jedes Image damit zu belasten.
+- **Rund 0,9 GB weniger in beiden Images** (`/usr/lib/ollama`, davon
+  0,85 GB CUDA 13) und kein Bump des Images für einen Ollama-Bump.
+- **Die CUDA-Laufzeit liegt nicht mehr im Image.** Das Ollama-Archiv
+  enthält cuBLAS und cudart; im Image verteilte hermes-os sie mit. Jetzt
+  kommt das Archiv auf Wunsch direkt von Ollamas Releases auf den Rechner.
+  Ob NVIDIAs Weitergabe-Bedingungen damit ganz erledigt sind, ist nicht
+  geprüft; das Image selbst enthält nichts mehr davon.
+
+Was im Image bleibt: der Nutzerdienst `ollama.service` (zeigt auf das
+Programm im Home und bleibt ohne es still aus), der Helfer
+`hermes-os-lokal`, das Modul `local_model.py`, die Rezepte, die Karte im
+Assistenten, `zstd` zum Entpacken. Alle übrigen Funktionen von hermes-os
+hängen nicht am lokalen Modell.
+
+**Nachladen, gepinnt wie früher im Build.** `local_model.install_ollama`
+lädt `ollama-linux-amd64.tar.zst` in der Version `OLLAMA_PIN` von
+`github.com/ollama/ollama/releases`, vergleicht die SHA256 mit
+`OLLAMA_SHA256` (aus der `sha256sum.txt` des Releases übernommen), entpackt
+ohne `cuda_v12` nach `~/.local/share/hermes-os/ollama/{bin,lib}` und schreibt
+den Stempel `.hermes-os-release` (Version, Prüfsumme, Backends). Vorher prüft
+es den Platz: Archiv (1,3 GB) und Ergebnis (0,9 GB) liegen beim Entpacken
+nebeneinander, dazu 1 GB Luft. Erst nach Prüfsumme, Entpacken und einem
+Probelauf (`ollama --version`) ersetzt es ein vorhandenes Ollama; scheitert
+ein Schritt, bleibt der alte Stand.
+
+## Warum Ollama, und warum als Nutzerdienst
 
 **Ollama statt llama-server.** Beide bringen einen OpenAI-kompatiblen
 Endpunkt mit Werkzeugaufrufen, den Hermes als Anbieter `custom` anspricht.
@@ -23,20 +58,17 @@ kennt für llama-server den Slug `llamacpp`, der aber Hermes' eigene
 Laufzeit meint und `model.base_url` ignoriert; ein fremder llama-server wäre
 ebenfalls `custom`. Das bleibt als Ausweg offen, braucht aber keinen Code.
 
-**Nativ im Image statt Podman-Quadlet.** Der Release-Tarball
+**Das native Archiv statt Podman-Quadlet.** Der Release-Tarball
 `ollama-linux-amd64.tar.zst` (v0.34.4 vom 2026-09-23, 1,3 GB, entpackt
 2,2 GB, Layout geprüft) enthält `bin/ollama` und `lib/ollama` mit
 CPU-Backends je Prozessorfamilie, CUDA 12 (1,3 GB), CUDA 13 (0,85 GB) und
 Vulkan (43 MB). cuBLAS und cudart liefert Ollama selbst mit; vom Host
-braucht es nur `libcuda.so.1` aus dem Treiber. `30-ollama.sh` holt ihn
-gepinnt mit SHA256-Prüfung gegen die `sha256sum.txt` des Releases, genau wie
-uv in `10-hermes.sh`, und legt ihn nach `/usr/bin/ollama` und
-`/usr/lib/ollama`. Gründe gegen den Container:
+braucht es nur `libcuda.so.1` aus dem Treiber. Gründe gegen den Container:
 
-- Ein Quadlet müsste `docker.io/ollama/ollama` (3,75 GB komprimiert) beim
-  ersten Gebrauch ins Home ziehen, mit `latest` oder einem Pin, den niemand
-  mit dem Image aktualisiert. Im Image ist Ollama ein Bestandteil wie
-  Hermes: eine Version, ein Bump, Rollback mit dem Image.
+- Ein Quadlet müsste `docker.io/ollama/ollama` (3,75 GB komprimiert) ins
+  Home ziehen, mit `latest` oder einem Pin, den niemand mit dem Image
+  aktualisiert. Das Archiv ist kleiner und in `local_model.py` gepinnt: eine
+  Version, ein Bump, geprüft mit SHA256.
 - GPU im Container braucht CDI. `aurora-dx-nvidia-open` bringt
   `nvidia-container-toolkit` und `nvidia-cdi-refresh.service` mit (die Datei
   liegt unter `/var/run/cdi/nvidia.yaml`), die AMD/Intel-Variante nichts
@@ -46,21 +78,24 @@ uv in `10-hermes.sh`, und legt ihn nach `/usr/bin/ollama` und
 - Der Agent auf dem Host sieht den Container nicht: `ollama ps`, Logs und
   Modelle lägen hinter `podman exec`.
 
-**Beide Dockerfiles bleiben identisch.** Nichts in `30-ollama.sh` fragt zur
-Bauzeit nach der GPU. Ollama prüft beim Start jedes Backend-Verzeichnis
-unter `/usr/lib/ollama`: CUDA über den NVIDIA-Treiber (nur im NVIDIA-Image
-vorhanden), Vulkan über Mesa (AMD, Intel) oder als Ausweich über den
-NVIDIA-Treiber, sonst CPU mit dem Log `inference compute id=cpu`. Die
-AMD/Intel-Variante baut also weiter, rechnet mit einer AMD- oder Intel-GPU
-über Vulkan und ohne GPU auf der CPU; der Helfer sagt vorher, was er
-vorfindet. `cuda_v12` fliegt beim Bau raus: die offenen Kernelmodule laufen
-erst ab Turing, das deckt CUDA 13 (Treiber ab 580; Aurora stable hat 615.71.09)
-ab. Spart 1,3 GB in beiden Images; `/usr/lib/ollama` ist rund 0,9 GB groß.
-ROCm-Bibliotheken liegen nicht im Image (eigener Tarball, 1 GB); AMD läuft
+**Ein Archiv für beide Varianten.** Nichts fragt beim Nachladen nach der
+GPU. Ollama prüft beim Start jedes Backend-Verzeichnis neben dem Programm
+(`~/.local/share/hermes-os/ollama/lib/ollama`): CUDA über den NVIDIA-Treiber
+(nur im NVIDIA-Image vorhanden), Vulkan über Mesa (AMD, Intel) oder als
+Ausweich über den NVIDIA-Treiber, sonst CPU mit dem Log
+`inference compute id=cpu`. Die AMD/Intel-Variante rechnet also mit einer
+AMD- oder Intel-GPU über Vulkan und ohne GPU auf der CPU; der Helfer sagt
+vorher, was er vorfindet. `cuda_v12` wird nicht entpackt: die offenen
+Kernelmodule laufen erst ab Turing, das deckt CUDA 13 (Treiber ab 580; Aurora
+stable hat 615.71.09) ab. Spart 1,3 GB im Home; das Programm ist rund 0,9 GB
+groß. ROCm-Bibliotheken kommen nicht mit (eigener Tarball, 1 GB); AMD läuft
 über Vulkan.
 
 **Nutzerdienst statt Systemdienst.** `ollama.service` liegt unter
 `/usr/lib/systemd/user`, ist ab Werk aus und hört nur auf `127.0.0.1:11434`.
+Er startet `%h/.local/share/hermes-os/ollama/bin/ollama` und hat dieselbe
+Datei als `ConditionPathExists`: ohne nachgeladenes Programm bleibt er still
+aus, statt in eine Neustartschleife zu laufen.
 Modelle liegen unter `~/.local/share/ollama/models` (`OLLAMA_MODELS`), nicht
 unter `/var/lib` und nicht im versteckten `~/.ollama`; ein Image-Update
 lässt sie in Ruhe. Das hält alles in der Grenze: `systemctl --user` und das
@@ -69,19 +104,21 @@ Home sind frei, der Agent darf den Dienst ohne Rückfrage schalten
 täte das Gegenteil (System-Unit, Nutzer `ollama`, Treiber per dnf) und ist
 auf bootc unbrauchbar.
 
-## Was im Image liegt
+## Was im Image liegt und was nachgeladen wird
 
 | Was | Wo |
 |---|---|
-| Build-Schritt, Pin `OLLAMA_PIN`, Prüfsumme | `files/scripts/30-ollama.sh` |
-| Ollama, Backends, Stempel | `/usr/bin/ollama`, `/usr/lib/ollama/{cuda_v13,vulkan,…}`, `/usr/lib/ollama/.hermes-os-release` |
+| Pin `OLLAMA_PIN`, Archiv, `OLLAMA_SHA256`, Nachladen, Platzprüfung, Entfernen | `files/system/usr/share/hermes-os/local/local_model.py` |
+| Ollama, Backends, Stempel (nachgeladen, nicht im Image) | `~/.local/share/hermes-os/ollama/bin/ollama`, `…/lib/ollama/{cuda_v13,vulkan,…}`, `…/.hermes-os-release` |
+| Modelle (nachgeladen) | `~/.local/share/ollama/models` |
 | Nutzerdienst | `files/system/usr/lib/systemd/user/ollama.service` |
 | Logik: GPU, Ollama-API, Vorschläge, Config-Schreibweg | `files/system/usr/share/hermes-os/local/local_model.py` |
 | Helfer für Rezepte, Assistent und Agent | `files/system/usr/libexec/hermes-os-lokal` |
-| Rezepte | `hermes-lokal-ein`, `-aus`, `-modell`, `-status` in `hermes-os.just` |
+| Rezepte | `hermes-lokal-ein`, `-aus`, `-entfernen`, `-modell`, `-status` in `hermes-os.just` |
 | Karte im Assistenten | `setup/Main.qml` (Seite „Lokales Modell“), Backend in `hermes-os-setup` |
 | Anleitung für den Agenten | Abschnitt „Lokales Modell statt Cloud“ in `skills/hermes-os-system/SKILL.md` |
-| Test | `tests/lokales-modell-check.py`, Gate `80-validate.sh` Abschnitt 7m, Größe in `89-tests.sh` |
+| `zstd` fürs Entpacken, PyYAML für den Helfer | `files/scripts/20-agent-layer.sh` |
+| Test | `tests/lokales-modell-check.py`, Gate `80-validate.sh` Abschnitt 7m, „kein Ollama im Image“ in `89-tests.sh` |
 
 ## Wie Hermes angebunden ist
 
@@ -176,17 +213,24 @@ die Prüfung auf Werkzeugaufrufe bleibt.
 ## Bedienung
 
 Im Assistenten (`ujust hermes-setup`, Menü „Hermes einrichten“): Anbieter
-„Lokales Modell (Ollama)“, dann auf einer Seite Dienst starten, Modell wählen
-und laden (Fortschritt), Verbindung prüfen, eintragen. Im Terminal oder
-durch den Agenten:
+„Lokales Modell (Ollama)“, dann auf einer Seite Ollama laden (nur beim
+ersten Mal, mit Fortschritt und Platzangabe), Dienst starten, Modell wählen
+und laden (Fortschritt; Modelle, die nicht auf die Platte passen, sind
+markiert), Verbindung prüfen, eintragen. Im Terminal oder durch den Agenten:
 
 ```sh
-ujust hermes-lokal-status              # GPU, Dienst, Modelle, was Hermes nutzt
-ujust hermes-lokal-ein                 # Dienst an, Vorgabe laden, prüfen, eintragen
+ujust hermes-lokal-status              # GPU, Ollama, Dienst, Modelle, was Hermes nutzt
+ujust hermes-lokal-ein                 # Ollama laden (falls nötig), Dienst an, Vorgabe laden, prüfen, eintragen
 ujust hermes-lokal-ein qwen3.5:4b      # mit eigenem Modell
 ujust hermes-lokal-modell gemma4:12b   # anderes Modell laden, prüfen, eintragen
 ujust hermes-lokal-aus                 # Dienst aus, vorheriger Anbieter zurück
+ujust hermes-lokal-entfernen           # wie aus, dazu Ollama und alle Modelle löschen
 ```
+
+Vor jedem Modell-Download prüft der Helfer den Platz unter
+`~/.local/share/ollama`: bekannte Modelle mit ihrer Größe plus 1 GB Luft,
+eigene Tags mit einer Untergrenze von 2 GB und einem Hinweis, dass die Größe
+unbekannt ist. Reicht es nicht, bricht er vorher ab.
 
 `aus` holt den model-Block und `agent.reasoning_effort` von vor dem
 Umschalten zurück (`~/.hermes/hermes-os/local-previous-model.json`). War
@@ -206,23 +250,33 @@ tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 Prüft die GPU-Erkennung gegen Attrappen (ein `nvidia-smi` im PATH, das eine
 RTX 3060 meldet; eines, das scheitert; ein `/dev/kfd`; nichts), die
 Vorschläge, den Config-Schreibweg gegen eine Wegwerf-`config.yaml` aus der
-Vorlage (Block, Rest, 0600, Merken und Zurückholen) und die Endpunktprüfung
+Vorlage (Block, Rest, 0600, Merken und Zurückholen), die Endpunktprüfung
 gegen einen nachgebauten Ollama-Server (`/api/version`, `/api/tags`,
 `/api/show`, `/api/pull` als Strom, `/v1/models`, `/v1/chat/completions`
-mit und ohne Werkzeugaufruf), dazu den Helfer. `make lint` und das Gate
-(`80-validate.sh` 7m) führen ihn aus; das Gate prüft außerdem Binary,
-Backends, Unit, Rezepte und den Vertrag mit Hermes.
+mit und ohne Werkzeugaufruf) und das Nachladen gegen ein nachgebautes
+Release-Archiv über `file://` (falsche Prüfsumme, richtige ohne `cuda_v12`,
+zu wenig Platz, zweiter Aufruf, Entfernen; braucht `tar` und `zstd`), dazu
+den Helfer mit einem `systemctl`, das nur mitschreibt. Kein Schritt geht ins
+Internet. `make lint` und das Gate (`80-validate.sh` 7m) führen ihn aus; das
+Gate prüft außerdem, dass kein Ollama im Image liegt, die Unit, die Rezepte
+und den Vertrag mit Hermes.
 
 Nur in Test-VM 112 (RTX 3060 per Passthrough, `docs/testumgebung.md`) lässt
-sich prüfen, was die Cloud nicht kann:
+sich prüfen, was die Cloud nicht kann. Am 2026-09-27 (noch mit Ollama im
+Image) bestanden: `inference compute … library=CUDA`, `qwen3.5:4b` mit
+100 % GPU und Kontext 65536, `os_services` über das lokale Modell, Bilder im
+Chat, `hermes-lokal-aus` mit Rückkehr zum Cloud-Anbieter. Die Vorgabe
+`qwen3.5:9b` passte nicht auf die 31-GB-Platte der VM (6,1 GB frei); daher
+die Platzprüfung.
 
 ```sh
-ujust hermes-lokal-ein                              # Dienst, Download 6,6 GB, Prüfung, Eintrag
+ujust hermes-lokal-ein                              # Ollama laden, Dienst, Download 6,6 GB, Prüfung, Eintrag
 journalctl --user -u ollama.service -n 40           # "inference compute" muss CUDA nennen
 ollama ps                                           # 100 % GPU, Kontext 65536, Größe im VRAM
 nvidia-smi --query-gpu=memory.used --format=csv     # Luft neben Plasma (rund 0,5 bis 1 GB)
 hermes                                              # Chat: "Welche Dienste sind fehlgeschlagen?" muss os_services aufrufen
 ujust hermes-lokal-aus                              # Anbieter zurück
+ujust hermes-lokal-entfernen                        # Programm und Modelle weg, Platz zurück
 ```
 
 Zeigt `ollama ps` weniger als 100 % GPU, ist der Kontext für die Karte zu
@@ -242,9 +296,16 @@ nicht den Kontext senken (Hermes startet dann nicht).
   key found in .env“. Der Endpunkt braucht keinen.
 - **Modellliste im Assistenten** kommt aus `local_model.RECOMMENDED`; wer ein
   fremdes Tag einträgt, bekommt keine Speicherwarnung, nur die
-  Werkzeugprüfung.
-- **Speicher des Downloads:** `~/.local/share/ollama` wächst je Modell um 3
-  bis 8 GB. `ollama rm <tag>` räumt auf; das Rezept `aus` löscht nichts.
-- **Bump:** `OLLAMA_PIN` in `30-ollama.sh`, danach in VM 112 die Schritte
-  oben. Ein neuer Tarball kann Backend-Verzeichnisse umbenennen; das Gate
-  sucht `libggml-cuda*` und den Stempel.
+  Werkzeugprüfung und die Platz-Untergrenze.
+- **Speicher:** Ollama selbst braucht rund 0,9 GB, `~/.local/share/ollama`
+  wächst je Modell um 3 bis 8 GB. `ollama rm <tag>` räumt ein Modell auf; das
+  Rezept `aus` löscht nichts, `entfernen` alles.
+- **Umstieg von einem Image mit Ollama darin:** Das alte `/usr/bin/ollama`
+  verschwindet mit dem Image-Update, die Modelle unter `~/.local/share/ollama`
+  bleiben. `ollama.service` bleibt aus, bis `ujust hermes-lokal-ein` das
+  Programm ins Home geladen hat; danach findet es die Modelle wieder.
+- **Bump:** `OLLAMA_PIN` und `OLLAMA_SHA256` in `local_model.py` (Wert aus der
+  `sha256sum.txt` des Releases), danach in VM 112 die Schritte oben. Ein neuer
+  Tarball kann Backend-Verzeichnisse umbenennen; der Stempel
+  `~/.local/share/hermes-os/ollama/.hermes-os-release` zeigt, welche Backends
+  mitkamen.
