@@ -77,6 +77,16 @@ Kirigami.ApplicationWindow {
         }
         return null
     }
+    function checkedNames(item) {
+        var out = []
+        function walk(it) {
+            if ((it.objectName === "modelOption" || it.objectName === "effortOption") && it.checked)
+                out.push(it.objectName + ":" + it.text)
+            for (var i = 0; i < it.children.length; i++) walk(it.children[i])
+        }
+        walk(item)
+        return out.join("|")
+    }
     function clickNamed(name) {
         var item = findNamed(name)
         if (item === null) return false
@@ -528,6 +538,85 @@ Kirigami.ApplicationWindow {
                             elide: Text.ElideRight
                             font: Kirigami.Theme.smallFont
                             opacity: 0.7
+                        }
+                        // Modell und Denkaufwand für die nächsten Nachrichten (tray/model_choice.py);
+                        // dieselbe Wahl steht im Menü am Symbol
+                        Controls.ToolButton {
+                            id: modelButton
+                            objectName: "modelButton"
+                            visible: backend.modelAvailable
+                            text: backend.modelText + "  ▾"
+                            font: Kirigami.Theme.smallFont
+                            Controls.ToolTip.text: "Modell und Denkaufwand für die nächsten Nachrichten"
+                            Controls.ToolTip.visible: hovered && !choicePopup.visible
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: { backend.refreshModels(); choicePopup.open() }
+
+                            Controls.Popup {
+                                id: choicePopup
+                                objectName: "choicePopup"
+                                // über dem Knopf, rechtsbündig mit ihm
+                                x: modelButton.width - width
+                                y: -height - Kirigami.Units.smallSpacing
+                                width: Kirigami.Units.gridUnit * 14
+                                padding: Kirigami.Units.smallSpacing
+                                // Zwei Gruppen: sonst hält Qt alle Punkte im Popup für eine Wahl
+                                Controls.ButtonGroup { id: modelGroup }
+                                Controls.ButtonGroup { id: effortGroup }
+                                contentItem: ColumnLayout {
+                                    spacing: 0
+                                    Kirigami.Heading {
+                                        Layout.fillWidth: true
+                                        Layout.margins: Kirigami.Units.smallSpacing
+                                        level: 5
+                                        text: "Modell"
+                                    }
+                                    Repeater {
+                                        model: backend.modelOptions
+                                        delegate: Controls.RadioDelegate {
+                                            required property var modelData
+                                            objectName: "modelOption"
+                                            Controls.ButtonGroup.group: modelGroup
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            checked: modelData.checked
+                                            onClicked: { backend.setModel(modelData.id); choicePopup.close() }
+                                        }
+                                    }
+                                    // Cloud-Anbieter: nur das aktuelle Modell, gewechselt wird im Assistenten
+                                    Controls.ItemDelegate {
+                                        objectName: "modelSetup"
+                                        visible: !backend.modelSwitchable
+                                        Layout.fillWidth: true
+                                        text: "Anderes Modell: Hermes einrichten …"
+                                        icon.name: "configure-symbolic"
+                                        onClicked: { choicePopup.close(); backend.openSetup() }
+                                    }
+                                    Kirigami.Separator {
+                                        Layout.fillWidth: true
+                                        Layout.topMargin: Kirigami.Units.smallSpacing
+                                        Layout.bottomMargin: Kirigami.Units.smallSpacing
+                                    }
+                                    Kirigami.Heading {
+                                        Layout.fillWidth: true
+                                        Layout.margins: Kirigami.Units.smallSpacing
+                                        level: 5
+                                        text: "Denkaufwand"
+                                    }
+                                    Repeater {
+                                        model: backend.effortOptions
+                                        delegate: Controls.RadioDelegate {
+                                            required property var modelData
+                                            objectName: "effortOption"
+                                            Controls.ButtonGroup.group: effortGroup
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            checked: modelData.checked
+                                            onClicked: { backend.setEffort(modelData.value); choicePopup.close() }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         // Runder Knopf: farbig, sobald es etwas zu senden gibt, sonst blass;
                         // während Hermes arbeitet, stoppt er den Lauf

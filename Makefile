@@ -39,6 +39,7 @@ lint:
 		files/system/usr/share/hermes-os/plugins/hermes_os/*.py \
 		files/system/usr/share/hermes-os/setup/hermes_bridge.py files/system/usr/libexec/hermes-os-setup \
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
+		files/system/usr/share/hermes-os/tray/model_choice.py \
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
 		files/system/usr/share/hermes-os/dashboard/dashboard_server.py files/system/usr/libexec/hermes-os-dashboard \
@@ -48,6 +49,7 @@ lint:
 		tests/*.py
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
+	python3 tests/model-choice-check.py --tray-dir files/system/usr/share/hermes-os/tray --local-dir files/system/usr/share/hermes-os/local
 	python3 tests/library-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	python3 tests/library2-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os --config-template files/system/usr/share/hermes-os/config.yaml.default
 	python3 tests/boundary-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os

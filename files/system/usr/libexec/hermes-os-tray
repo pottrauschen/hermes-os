@@ -81,6 +81,13 @@ try:
 except Exception as exc:  # --check meldet es lesbar
     hc = None
     _CLIENT_IMPORT_ERROR = str(exc)
+# Modell und Denkaufwand (Knopf im Fenster, Untermenüs am Symbol); ohne das Modul
+# läuft das Fenster weiter, nur ohne Wahl
+try:
+    import model_choice as mc
+except Exception as exc:
+    mc = None
+    _CHOICE_IMPORT_ERROR = str(exc)
 
 # Die Bibliothek (Adressen, Dateien, Ordner für den Agenten) teilt sich das
 # Symbol mit dem Plugin: dieselbe Ablage über dieselbe Datei library.py, hier
@@ -297,6 +304,8 @@ def check_only():
         problems.append(f"{MAIN_QML} fehlt")
     if hc is None:
         problems.append(f"hermes_client.py nicht importierbar: {_CLIENT_IMPORT_ERROR}")
+    if mc is None:
+        problems.append(f"model_choice.py nicht importierbar: {_CHOICE_IMPORT_ERROR}")
     else:
         problems.extend(f"hermes_client: {p}" for p in hc.self_test())
     if lib is None:
@@ -502,11 +511,13 @@ def main():
         libraryMcpChanged = Signal()        # Schalter der Doku-Server
         auditChanged = Signal()
         showAuditRequested = Signal()
+        modelChanged = Signal()             # Modell, Denkaufwand oder die Modell-Liste
         answerFinished = Signal(str)    # Antworttext eines Runs aus dem Fenster, leer bei Abbruch (voice.py liest vor)
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
         _runEvent = Signal(str, dict)
+        _modelsDone = Signal(list)
         _mirrorEvent = Signal(str, dict)
         _searchDone = Signal(str, list, str)
 
@@ -554,7 +565,10 @@ def main():
             self._poll_busy = False
             self._notify_proc = None
             self._context = ""          # Kontext aus einer Benachrichtigung für die nächste Nachricht
+            self._choice = mc.read_choice() if mc else {"model": "", "provider": "", "base_url": "", "effort": ""}
+            self._model_options = []    # nur für Endpunkte auf diesem Rechner (model_choice.py)
             queued = Qt.ConnectionType.QueuedConnection
+            self._modelsDone.connect(self._on_models, queued)
             self._healthDone.connect(self._on_health, queued)
             self._historyDone.connect(self._on_history, queued)
             self._runEvent.connect(self._on_run_event, queued)
@@ -633,6 +647,95 @@ def main():
         @Property(str, notify=stateChanged)
         def sessionId(self):
             return self._session_id
+
+        # ---- Modell und Denkaufwand (model_choice.py) ------------------------------
+        @Property(bool, notify=modelChanged)
+        def modelAvailable(self):
+            return mc is not None and bool(self._choice["model"])
+
+        @Property(str, notify=modelChanged)
+        def modelText(self):
+            return mc.button_text(self._choice, self._model_options) if mc else ""
+
+        @Property(bool, notify=modelChanged)
+        def modelSwitchable(self):
+            """Eine Liste zum Wählen gibt es nur für Endpunkte auf diesem Rechner."""
+            return mc is not None and mc.is_local(self._choice) and len(self._model_options) > 0
+
+        @Property("QVariantList", notify=modelChanged)
+        def modelOptions(self):
+            return [dict(o, checked=o["id"] == self._choice["model"]) for o in self._model_options]
+
+        @Property("QVariantList", notify=modelChanged)
+        def effortOptions(self):
+            if mc is None:
+                return []
+            return [{"value": v, "label": label, "checked": v == self._choice["effort"]} for v, label in mc.EFFORTS]
+
+        def _reload_choice(self):
+            if mc is None:
+                return
+            new = mc.read_choice()
+            if new == self._choice:
+                return
+            moved = (new["provider"], new["base_url"]) != (self._choice["provider"], self._choice["base_url"])
+            self._choice = new
+            self.modelChanged.emit()
+            if moved:
+                self.refreshModels()
+
+        @Slot()
+        def refreshModels(self):
+            """Liste des Endpunkts neu holen, im Hintergrund; Cloud-Anbieter haben keine."""
+            if mc is None:
+                return
+            choice = dict(self._choice)
+            if not mc.is_local(choice):
+                if self._model_options:
+                    self._model_options = []
+                    self.modelChanged.emit()
+                return
+
+            def work():
+                try:
+                    options = mc.fetch_models(choice["base_url"])
+                except Exception:
+                    options = []
+                self._modelsDone.emit(options)
+
+            threading.Thread(target=work, name="hermes-models", daemon=True).start()
+
+        def _on_models(self, options):
+            options = list(options or [])
+            if options != self._model_options:
+                self._model_options = options
+                self.modelChanged.emit()
+
+        @Slot(str)
+        def setModel(self, model):
+            if mc is None or not model or model == self._choice["model"]:
+                return
+            try:
+                mc.write_model(model)
+            except Exception as exc:
+                self._model.append("error", f"Modell nicht umgestellt: {type(exc).__name__}: {exc}")
+                return
+            self._reload_choice()
+            self._model.append("info", f"Modell für die nächsten Nachrichten: {mc.model_label(model, self._model_options)}",
+                               when=now_hhmm())
+
+        @Slot(str)
+        def setEffort(self, effort):
+            if mc is None or effort == self._choice["effort"]:
+                return
+            try:
+                mc.write_effort(effort)
+            except Exception as exc:
+                self._model.append("error", f"Denkaufwand nicht umgestellt: {type(exc).__name__}: {exc}")
+                return
+            self._reload_choice()
+            self._model.append("info", f"Denkaufwand für die nächsten Nachrichten: {mc.EFFORT_LABEL.get(effort, effort)}",
+                               when=now_hhmm())
 
         # ---- Anhänge: Bilder für die nächste Nachricht ------------------------------
         @Property("QVariantList", notify=attachmentsChanged)
@@ -1115,6 +1218,7 @@ def main():
             if self._poll_busy:
                 return
             self._poll_busy = True
+            self._reload_choice()
             settings = hc.gateway_settings()
             if settings != self._settings:
                 self._settings = settings
@@ -1543,6 +1647,35 @@ def main():
     act_open.triggered.connect(toggle_window)
     act_new = menu.addAction("Neues Gespräch")
     act_new.triggered.connect(backend.newConversation)
+    # Modell und Denkaufwand: dieselbe Wahl wie der Knopf im Fenster, mit Haken am Stand
+    menu_model = menu.addMenu("Modell")
+    menu_effort = menu.addMenu("Denkaufwand")
+
+    def fill_choice_menus():
+        menu_model.clear()
+        options = backend.modelOptions
+        if options:
+            for o in options:
+                act = menu_model.addAction(o["label"])
+                act.setCheckable(True)
+                act.setChecked(bool(o["checked"]))
+                act.triggered.connect(lambda _checked=False, m=o["id"]: backend.setModel(m))
+        else:
+            current = menu_model.addAction(backend.modelText.split(" · ")[0] if backend.modelAvailable else "kein Modell")
+            current.setEnabled(False)
+            menu_model.addAction("Anderes Modell: Hermes einrichten …").triggered.connect(backend.openSetup)
+        menu_effort.clear()
+        for e in backend.effortOptions:
+            act = menu_effort.addAction(e["label"])
+            act.setCheckable(True)
+            act.setChecked(bool(e["checked"]))
+            act.triggered.connect(lambda _checked=False, v=e["value"]: backend.setEffort(v))
+
+    fill_choice_menus()
+    backend.modelChanged.connect(fill_choice_menus)
+    menu.aboutToShow.connect(backend.refreshModels)
+    backend.refreshModels()     # einmal beim Start, damit der Knopf gleich den kurzen Namen zeigt
+    menu.addSeparator()
     if backend.libraryAvailable:
         menu.addAction("Bibliothek").triggered.connect(backend.showLibrary)
     if backend.auditAvailable:

@@ -148,6 +148,7 @@ class StubBackend(QObject):
     libraryMcpChanged = Signal()
     auditChanged = Signal()
     showAuditRequested = Signal()
+    modelChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -172,7 +173,52 @@ class StubBackend(QObject):
         self._audit_period = "today"
         self._audit_changes = False
         self.audit_source = list(AUDIT_ROWS)
+        # Modell und Denkaufwand wie model_choice.py: ein Endpunkt auf diesem Rechner mit Liste
+        self._choice_model = "claude-sonnet-5"
+        self._choice_effort = ""
+        self._choice_options = [{"id": "claude-sonnet-5", "label": "Sonnet 5"},
+                                {"id": "claude-opus-5-5", "label": "Opus 5.5"}]
         self.calls = []
+
+    # Modell und Denkaufwand wie im echten Backend
+    @Property(bool, notify=modelChanged)
+    def modelAvailable(self):
+        return True
+
+    @Property(str, notify=modelChanged)
+    def modelText(self):
+        label = next((o["label"] for o in self._choice_options if o["id"] == self._choice_model), self._choice_model)
+        effort = {"": "Vorgabe", "low": "wenig", "medium": "mittel", "high": "gründlich"}.get(self._choice_effort, "?")
+        return f"{label} · {effort}"
+
+    @Property(bool, notify=modelChanged)
+    def modelSwitchable(self):
+        return bool(self._choice_options)
+
+    @Property("QVariantList", notify=modelChanged)
+    def modelOptions(self):
+        return [dict(o, checked=o["id"] == self._choice_model) for o in self._choice_options]
+
+    @Property("QVariantList", notify=modelChanged)
+    def effortOptions(self):
+        return [{"value": v, "label": label, "checked": v == self._choice_effort}
+                for v, label in (("", "Vorgabe"), ("low", "wenig"), ("medium", "mittel"), ("high", "gründlich"))]
+
+    @Slot()
+    def refreshModels(self):
+        self.calls.append(("refreshModels",))
+
+    @Slot(str)
+    def setModel(self, model):
+        self.calls.append(("setModel", model))
+        self._choice_model = model
+        self.modelChanged.emit()
+
+    @Slot(str)
+    def setEffort(self, effort):
+        self.calls.append(("setEffort", effort))
+        self._choice_effort = effort
+        self.modelChanged.emit()
 
     # Protokoll wie im echten Backend: Model, Filter, Export
     @Property(bool, constant=True)
@@ -717,6 +763,36 @@ def main():
          send_enabled and sent and ("send", "Welches Image ist gebootet?") in backend.calls
          and inp is not None and inp.property("text") == "",
          f"enabled={send_enabled} sent={sent} calls={backend.calls} text={inp and inp.property('text')!r}")
+
+    # 3b. Modell und Denkaufwand: Knopf mit Stand, Auswahl öffnet sich, Klick stellt um
+    model_btn, popup = child("modelButton"), child("choicePopup")
+    btn_text = str(model_btn.property("text")) if model_btn is not None else ""
+    if model_btn is not None:
+        QMetaObject.invokeMethod(model_btn, "clicked")
+        settle(300)
+    opened = popup is not None and popup.property("visible")
+    # Popups hängen auf der Overlay-Ebene, nicht unter root.contentItem: im Popup suchen
+    content = popup.property("contentItem") if popup is not None else None
+    options = int(root.countNamed("modelOption", content)) if content is not None else 0
+    efforts = int(root.countNamed("effortOption", content)) if content is not None else 0
+    # je Teil genau ein Punkt: Sonnet 5 bei den Modellen, Vorgabe beim Denkaufwand
+    checked = str(root.checkedNames(content)) if content is not None else ""
+    shot("model-choice")
+    first = root.findNamed("modelOption", content) if opened and content is not None else None
+    picked = first is not None
+    if picked:
+        QMetaObject.invokeMethod(first, "clicked")
+    settle(200)
+    step("Modellwahl: Knopf zeigt Modell und Denkaufwand, Auswahl mit Modellen und Stufen, Klick ruft setModel",
+         model_btn is not None and model_btn.property("visible") and btn_text.startswith("Sonnet 5 · Vorgabe")
+         and opened and options == 2 and efforts == 4 and ("refreshModels",) in backend.calls
+         and checked == "modelOption:Sonnet 5|effortOption:Vorgabe"
+         and picked and any(c[0] == "setModel" for c in backend.calls),
+         f"text={btn_text!r} opened={opened} options={options} efforts={efforts} checked={checked!r} "
+         f"calls={backend.calls[-4:]}")
+    if popup is not None and popup.property("visible"):
+        QMetaObject.invokeMethod(popup, "close")
+        settle(100)
 
     # 4. Bilder anhängen: Streifen mit Vorschauen, Senden auch ohne Text, Entfernen,
     #    Senden räumt den Streifen weg

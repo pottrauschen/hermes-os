@@ -269,6 +269,16 @@ if [ -f /ctx/tests/tray-client-check.py ]; then
 else
   echo "  WARN: /ctx/tests/tray-client-check.py not in build context, client check skipped"
 fi
+if [ -f /ctx/tests/model-choice-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/model-choice-check.py --tray-dir /usr/share/hermes-os/tray \
+       --local-dir /usr/share/hermes-os/local; then
+    pass "model and reasoning choice reads and writes config.yaml, lists local endpoint models"
+  else
+    fail "model choice check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/model-choice-check.py not in build context, model choice check skipped"
+fi
 if [ -f /ctx/tests/tray-gui-check.py ]; then
   mkdir -p /tmp/hermes-validate-xdg
   if HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
