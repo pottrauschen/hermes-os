@@ -88,7 +88,7 @@ Plasma-Sitzung noch nicht gebootet.
 | Menüeintrag „Hermes", trägt `X-KDE-Shortcuts=Meta+H` | `files/system/usr/share/applications/hermes-os-tray.desktop` |
 | Dieselbe Datei für den globalen Kurzbefehl | `files/system/usr/share/kglobalaccel/hermes-os-tray.desktop` |
 | Autostart in der Plasma-Sitzung | `files/system/etc/xdg/autostart/hermes-os-tray.desktop` |
-| Programmsymbol und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
+| Programmsymbol (geflügelte Sprechblase mit H, Pixel-Art als SVG, ein Pfad je Farbe) und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
 | Client-Test gegen ein nachgebautes Gateway | `tests/tray-client-check.py` |
 | Render-Test des Fensters ohne Display | `tests/tray-gui-check.py` |
 | Schaubilder des Fensters für Design-Änderungen (breit und schmal, mit echt wirkendem Gespräch) | `tests/tray-showcase.py` |
