@@ -415,7 +415,7 @@ else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
-# 7l. Sehen und Hören (docs/sehen-hoeren.md): Kürzel-Dateien für „Was sehe ich
+# 7n. Sehen und Hören (docs/sehen-hoeren.md): Kürzel-Dateien für „Was sehe ich
 #     hier?", die Module des Leisten-Symbols, die Symbole für Zuhören und
 #     Sprechen, der Sprachhelfer in der Hermes-Venv (Importe von faster-whisper,
 #     piper und Hermes' Helfern, ohne Modelle zu laden) und der Test ohne
