@@ -33,7 +33,7 @@ ANSWER = (
     "- Oben links steht der Zustand: *Hermes ist bereit*.\n"
     "- In der Mitte läuft der Verlauf mit deinem Bildschirmfoto.\n"
     "- Unten ist die Eingabe mit Knöpfen für Bild, Ausschnitt und Mikrofon.\n\n"
-    "Gebootet ist `hermes-os-privat` in Version `44.20260922.1.20260927.privat`. "
+    "Gebootet ist `hermes-os-nvidia` in Version `44.20260922.1.20260927`. "
     "Auf `/var` sind noch 5,7 GB frei; das ist knapp, wenn du lokale Modelle laden willst. "
     "Soll ich nachsehen, was dort am meisten Platz braucht?"
 )

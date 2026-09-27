@@ -24,18 +24,18 @@ Universal-Blue-Muster.
 | Schreibgeschützte Basis, Updates mit Rollback | Aurora, fertig |
 | Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
-| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Kontor (das Chat-Fenster) per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
-| Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Kontor mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
+| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Kontor (das Chat-Fenster) per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, seit 26./27.09. in der Plasma-Sitzung von VM 112 im Gebrauch, Freigaben dort am 27.09. in einer Einzelprüfung, siehe [docs/systemagent.md](docs/systemagent.md) |
+| Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Kontor mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, am 27.09. in der Plasma-Sitzung von VM 112 geprüft, siehe [docs/krunner.md](docs/krunner.md) |
 | Optional ohne Cloud: lokales Modell auf der eigenen GPU (Ollama nicht im Image, wird auf Wunsch ins Home geladen, Nutzerdienst, Vorgabe `qwen3.5:9b` für 12 GB) | Karte im Assistenten, `ujust hermes-lokal-ein`, `ujust hermes-lokal-entfernen`, siehe [docs/lokales-modell.md](docs/lokales-modell.md); in VM 112 auf der RTX 3060 mit CUDA geprüft, kleine Modelle bleiben schwächer als Cloud-Modelle |
-| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen; Erkennung (faster-whisper) und Ausgabe (piper) laufen lokal | Leisten-Symbol, gebaut, Tests ohne Hardware grün, Test in VM 112 offen, siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md); im Terminal: `hermes`, dann `/voice on` |
+| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen; Erkennung (faster-whisper) und Ausgabe (piper) laufen lokal | Leisten-Symbol, gebaut, Tests ohne Hardware grün, „Was sehe ich hier?“ in VM 112 im Gebrauch, Sprechen und Vorlesen ungeprüft (kein Mikrofon), siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md); im Terminal: `hermes`, dann `/voice on` |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
 | Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur, Zeitzone Europe/Berlin | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
 | Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert; Spiegel je Eintrag mit Volltextsuche (SQLite FTS5), Doku-Server context7 und deepwiki als Schalter | Bibliothek, Stufe zwei, Seite im Kontor mit Ablegen, Suche und Spiegeln, siehe [docs/bibliothek.md](docs/bibliothek.md) |
-| Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, Test in der VM offen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
+| Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, am 27.09. in VM 112 in einer Einzelprüfung gelaufen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
-| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; offscreen gegen das echte Hermes geprüft, Plasma-Sitzung in VM 112 offen, siehe [docs/dashboard.md](docs/dashboard.md) |
+| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; offscreen gegen das echte Hermes geprüft, am 27.09. in der Plasma-Sitzung von VM 112 in einer Einzelprüfung gelaufen, siehe [docs/dashboard.md](docs/dashboard.md) |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Kontor, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
 
@@ -183,13 +183,22 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
 - **Erster Boot am 2026-09-26** in einer Proxmox-VM, Ablauf und Befunde in
   [docs/testumgebung.md](docs/testumgebung.md): Image, Hermes, Plugin, Skill, Rezepte
   und First-Login greifen. Offen bleibt der Boot auf echter Hardware per `bootc switch`.
-- **Oberfläche:** Der Assistent für den ersten Login und das Leisten-Symbol sind gebaut;
-  das Symbol lief bisher nur durch Gate und Tests, nicht in der VM. Hermes' eigenes
-  Web-Dashboard (`hermes dashboard`) ist im Image: das Frontend baut eine Node-Stufe im
-  Dockerfile, ein QtWebEngine-Fenster zeigt es, erreichbar aus Menü, Leisten-Symbol,
-  Assistent und `ujust hermes-dashboard`. Fenster und Server sind offscreen gegen das
-  echte Hermes geprüft, das Gate wiederholt das im Build; in der Plasma-Sitzung von
-  VM 112 ist das Fenster noch nicht gelaufen. Siehe [docs/dashboard.md](docs/dashboard.md).
+- **Oberfläche, Stand 2026-09-27:** Der Einrichtungsassistent lief beim ersten Boot am
+  2026-09-26 als Testfassung aus dem Home, aus dem Image am 27.09., jeweils in der
+  Plasma-Sitzung von VM 112. Das Leisten-Symbol ist dort seit dem 26. und 27.09. im
+  täglichen Gebrauch: Zustände des Symbols, das Kontor (so heißt das Chat-Fenster seit
+  dem 27.09., Titel „Hermes-Kontor“, neues Symbol: geflügelte Sprechblase mit H), Modell
+  und Denkaufwand, „Hermes fragen“ in KRunner, „Was sehe ich hier?“ und die Bibliothek.
+  Freigabe-Kasten und -Benachrichtigung, Protokoll, Morgenbericht und Dashboard-Fenster
+  sind gebaut und im Build getestet und liefen am 27.09. in Einzelprüfungen in der
+  Sitzung, nicht im Alltag. Ungeprüft ist die Sprache (Sprechen und Vorlesen): VM 112 hat
+  kein Mikrofon. Das Dashboard ist Hermes' eigenes Web-Dashboard (`hermes dashboard`):
+  das Frontend baut eine Node-Stufe im Dockerfile, ein QtWebEngine-Fenster zeigt es,
+  erreichbar aus Menü, Leisten-Symbol, Assistent und `ujust hermes-dashboard`; Fenster
+  und Server sind außerdem offscreen gegen das echte Hermes geprüft, das Gate wiederholt
+  das im Build. Siehe [docs/systemagent.md](docs/systemagent.md),
+  [docs/sehen-hoeren.md](docs/sehen-hoeren.md),
+  [docs/morgenbericht.md](docs/morgenbericht.md) und [docs/dashboard.md](docs/dashboard.md).
 - **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
   Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
   kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).

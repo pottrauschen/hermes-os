@@ -145,10 +145,14 @@ journalctl --user -u 'hermes-os-notify-*' -n 20        # die wartende Benachrich
 
 ## Offen
 
-- Prüfung in der Test-VM 112: Cron-Lauf aus dem Gateway in der Plasma-Sitzung,
-  Benachrichtigung am Bildschirm, Knopf öffnet das Fenster mit dem Bericht,
-  auch wenn das Symbol noch nicht lief; Zeitzone; `df` auf der echten
-  bootc-Platte; ein nachgeholter Lauf direkt nach der Anmeldung, wenn
-  Plasmas Benachrichtigungsdienst vielleicht noch nicht bereit ist.
+- Rest der Prüfung in der Test-VM 112. Am 27.09. lief dort eine Einzelprüfung:
+  Job ohne Modell (2,5 s), Benachrichtigung mit „Im Chat besprechen“ bei
+  laufendem und bei beendetem Symbol (dann startet `--discuss` eine Instanz),
+  Vergleich mit dem Vortag, Plattenplatz der bootc-Platte, `-aus` entfernt Job
+  und Skript. Offen: Läufe zur eingestellten Uhrzeit im Alltag samt Zeitzone;
+  ein nachgeholter Lauf direkt nach der Anmeldung, wenn Plasmas
+  Benachrichtigungsdienst vielleicht noch nicht bereit ist; eine einmal
+  gesehene, nicht nachgestellte leere Berichtsblase bei frisch gestartetem
+  Symbol.
 - Bericht auch an Messaging-Plattformen (`deliver telegram` und Co.), wenn der
   Nutzer das will; heute bewusst nur am Desktop.

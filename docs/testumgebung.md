@@ -1,7 +1,7 @@
 # Testumgebung: Bauen und Booten im Homelab
 
 Wo hermes-os gebootet wird, solange kein Rechner dafür frei ist: auf dem
-Proxmox-Host `.40`, nach dem Muster des Projekts ainux. Das Image kommt fertig
+Proxmox-Host `<proxmox-host>`, nach dem Muster des Projekts ainux. Das Image kommt fertig
 aus der CI; im Homelab entsteht nur der Datenträger daraus, und der bootet in
 einer Test-VM. Der Weg über `bootc switch` auf einem echten Rechner steht in der
 README und bleibt der Weg für Geräte.
@@ -10,9 +10,9 @@ README und bleibt der Weg für Geräte.
 
 | Was | Wo | Eigenschaften |
 |---|---|---|
-| Bau-VM `ainux-build` | VM 110 auf `.40`, `<user>@192.168.1.36` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
-| Test-VM `hermes-test` | VM 112 auf `.40`, `<user>@192.168.1.142` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`, seit 2026-09-27 das private Image darauf |
-| Zwischenablage für die Platte | `.40`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
+| Bau-VM `ainux-build` | VM 110 auf `<proxmox-host>`, `<user>@<bau-vm>` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
+| Test-VM `hermes-test` | VM 112 auf `<proxmox-host>`, `<user>@<test-vm>` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`, seit 2026-09-27 das private Image darauf |
+| Zwischenablage für die Platte | `<proxmox-host>`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
 
 Die Bau-VM gehört dem Projekt ainux und wird mitbenutzt (Entscheidung
 2026-09-26). hermes-os legt dort nur `~/hermes-os` an und das gepullte Image im
@@ -41,7 +41,7 @@ ab; der Neustart wiederholt nur den Datenträgerbau, nicht den Pull.
    `bootc status` in der gebooteten VM verglichen. Ergebnis:
    `~/hermes-os/output/qcow2/disk.qcow2`.
 
-3. **Platte importieren.** Auf `.40` als root: `/root/hermes-import.sh` holt
+3. **Platte importieren.** Auf `<proxmox-host>` als root: `/root/hermes-import.sh` holt
    die Datei per SSH von 110 auf den ZFS-Pool, importiert sie mit
    `qm importdisk` nach `vmdata`, hängt sie als `scsi0` mit
    `discard=on,iothread=1` ein, setzt die Bootreihenfolge und löscht die
@@ -121,9 +121,9 @@ trotzdem alles, was man an der Sitzung braucht; die Hilfen dafür liegen in
 
 | Was | Wie |
 |---|---|
-| Anmelden am Anmeldebildschirm | auf dem Host `.40` als root: `qm sendkey 112 shift`, dann das Passwort Taste für Taste, dann `ret`. Auf deutscher Belegung liegt `-` auf der US-Taste `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
-| Befehle in der Sitzung | `ssh <user>@192.168.1.142`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
-| Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@192.168.1.142:hos/s.png .` auf den PC |
+| Anmelden am Anmeldebildschirm | auf dem Host `<proxmox-host>` als root: `qm sendkey 112 shift`, dann das Passwort Taste für Taste, dann `ret`. Auf deutscher Belegung liegt `-` auf der US-Taste `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
+| Befehle in der Sitzung | `ssh <user>@<test-vm>`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
+| Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@<test-vm>:hos/s.png .` auf den PC |
 | Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"` |
 | Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Kontor, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
 | Leisten-Symbol zeigen | `/usr/libexec/hermes-os-tray --show` (reicht an die laufende Instanz weiter) |

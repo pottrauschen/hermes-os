@@ -1,6 +1,6 @@
 ---
 name: hermes-os-system
-description: Wie hermes-os aufgebaut ist und wie man es bedient. Lesen, bevor du Systemaufgaben ausführst (Update, Rollback, Apps installieren, Dienste, Container).
+description: Wie hermes-os aufgebaut ist und wie man es bedient. Lesen, bevor du Systemaufgaben ausführst (Update, Rollback, Apps installieren, Dienste, Container) oder den Desktop änderst (Leiste, Design, Fenster, Widgets); Desktop-Änderungen erst nach Bildschirmfoto als erledigt melden.
 ---
 
 # hermes-os: Aufbau und Bedienung
@@ -178,8 +178,68 @@ Sprache und Stimme kommen aus `~/.hermes/config.yaml` (`stt`, `tts.piper`);
 ohne Mikrofon sagt das Leisten-Symbol es. Bei einer vorgelesenen Antwort hilft
 es, kurz zu antworten, die Sprachausgabe endet nach 1500 Zeichen.
 
+## Änderungen am Desktop
+
+Eine sichtbare Änderung am Desktop (Leiste, Hintergrund, Design, Fenster, Widgets)
+meldest du erst als erledigt, wenn ein Bildschirmfoto sie zeigt. Exit-Code 0 von
+`kwriteconfig6` oder einem `evaluateScript` über `qdbus-qt6` und ein zurückgelesener
+Wert belegen nur, dass etwas geschrieben wurde, nicht, was auf dem Bildschirm steht:
+Plasma übernimmt manche Werte erst nach einem Neustart der Shell, andere gar nicht.
+
+1. Ändern.
+2. Foto machen (frei, ohne Root und ohne Freigabe; das Gateway läuft in der
+   Plasma-Sitzung und hat deren Umgebung):
+   ```
+   mkdir -p "$XDG_RUNTIME_DIR/hermes-os"
+   f="$XDG_RUNTIME_DIR/hermes-os/sichtpruefung-$(date +%s).png"
+   systemd-run --user --wait --collect -q kscreen-doctor --dpms on; sleep 1
+   timeout 20 spectacle --new-instance --background --nonotify --fullscreen --output "$f"
+   ls -l "$f"
+   ```
+   `kscreen-doctor --dpms on` weckt eine abgeschaltete Anzeige, sonst liefert Spectacle
+   das letzte Bild vor dem Abschalten. Jedes Foto bekommt einen neuen Namen, damit kein
+   altes als neues durchgeht. Findet `ls` keine Datei, ist das Foto gescheitert, und
+   das sagst du so.
+3. Ansehen: `vision_analyze` mit dem Pfad, den `ls` ausgegeben hat (ausgeschrieben,
+   ohne Variable), und einer genauen Frage zu dem, was sich ändern sollte. Das ganze
+   Foto kommt verkleinert an; kleine Stellen vergrößerst du mit einem zweiten Aufruf
+   und `region` [x1, y1, x2, y2] in Pixeln des Fotos.
+4. Berichten: Zeigt das Foto die Änderung, sag „erledigt“ und was darauf zu sehen ist,
+   und häng es mit `MEDIA:<pfad>` an, dann zeigt das Kontor es dem Nutzer. Zeigt es
+   sie nicht oder nicht eindeutig, sag, was das Foto zeigt und was fehlt. Nicht raten,
+   kein „sollte jetzt passen“: einen anderen Weg versuchen und neu fotografieren, oder
+   den Nutzer fragen.
+
+**Leiste:** Eine schwebende Leiste legt Plasma an den Rand, solange ein nicht
+minimiertes Fenster sie berührt; ein maximiertes tut das immer. Ein Foto mit so einem
+Fenster belegt „fest“ nicht, und der Abstand einer schwebenden Leiste zum Rand ist nur
+wenige Pixel groß. Sieh dir deshalb den Rand mit der Leiste mit `region` an (Leiste
+unten bei 1920 × 1080: [0, 1000, 1920, 1080]) und frag zweierlei: „Liegt die Leiste am
+Bildschirmrand an, oder schwebt sie mit Abstand zum Rand?“ und „Berührt ein Fenster die
+Leiste?“. Liegt sie an und berührt ein Fenster sie, oder bist du dir nicht sicher,
+fotografiere noch einmal bei „Desktop anzeigen“ (dann gilt die Leiste als nicht
+berührt), alles in einem Aufruf, der die Fenster danach zurückholt:
+```
+qdbus-qt6 org.kde.KWin /KWin org.kde.KWin.showDesktop true; sleep 1
+f="$XDG_RUNTIME_DIR/hermes-os/sichtpruefung-$(date +%s).png"
+timeout 20 spectacle --new-instance --background --nonotify --fullscreen --output "$f"
+qdbus-qt6 org.kde.KWin /KWin org.kde.KWin.showDesktop false
+ls -l "$f"
+```
+Oder bitte den Nutzer, das Fenster wegzuschieben, und fotografiere neu.
+
+Kein Foto zeigt unsichtbare Einstellungen (Tastatur, Kürzel, Verhalten) oder eine
+Änderung, die erst nach neuer Anmeldung wirkt (etwa die Sprache der Oberfläche). Dort
+liest du die Einstellung zurück (`kreadconfig6` oder dieselbe Abfrage, mit der du
+geschrieben hast) und sagst „eingetragen, bitte einmal ausprobieren“ oder „eingetragen,
+sichtbar nach der nächsten Anmeldung“, nicht „erledigt“. Fehlt dir `vision_analyze`
+oder scheitert es, lies eine sichtbare Änderung ebenso zurück, sag dem Nutzer, was er
+jetzt sehen müsste, und bitte ihn nachzusehen; „erledigt“ erst nach seiner Bestätigung.
+
 ## Was du nicht tust
 
 - `rpm-ostree install` oder `bootc switch` ohne ausdrückliche Zustimmung
 - Dateien unter `/etc` oder `/usr` ändern ohne Zustimmung
-- Etwas als erledigt melden, dessen Ergebnis du nicht gesehen hast
+- Etwas als erledigt melden, dessen Ergebnis du nicht gesehen hast; bei sichtbaren
+  Änderungen am Desktop heißt gesehen: auf dem Bildschirmfoto (Abschnitt „Änderungen
+  am Desktop“)

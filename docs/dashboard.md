@@ -1,13 +1,14 @@
 # Dashboard: Hermes' Web-Oberfläche als Fenster
 
-Stand: 2026-09-26. Hermes bringt mit `hermes dashboard` eine eigene
+Stand: 2026-09-27. Hermes bringt mit `hermes dashboard` eine eigene
 Web-Oberfläche mit: Modelle und Schlüssel, Sessions, Cron, Plugins, Skills,
 Umgebungsvariablen, Systemstatus. In hermes-os ist sie ins Image gebaut und
 als Fenster erreichbar, weil im Image kein Browser liegt. Gebaut, durch
 `make lint` und den Test gegen Attrappen gelaufen; das Frontend lokal mit
 Node 22 gebaut; das Fenster offscreen mit echtem QtWebEngine gegen das echte
-`hermes dashboard` gefahren; das Gate wiederholt beides im Image-Build. In
-der Plasma-Sitzung von VM 112 ist das Fenster noch nicht gelaufen.
+`hermes dashboard` gefahren; das Gate wiederholt beides im Image-Build. Am
+27.09. lief das Fenster in einer Einzelprüfung in der Plasma-Sitzung von
+VM 112, im Alltag noch nicht (siehe [Testen](#testen)).
 
 ## Was es tut
 
@@ -187,11 +188,13 @@ systemd-run --user --unit hos-dash --collect -p ExitType=cgroup \
   /usr/bin/python3 /tmp/hos/libexec/hermes-os-dashboard
 ```
 
-Offen für VM 112: Fenster erscheint, Seite lädt, Sandbox von Chromium unter
-Wayland ohne Sonderflags, Schließen beendet den Scope
-(`systemctl --user list-units 'hermes-os-dashboard-*'`), Fehlerseite bei
-`hermes dashboard --stop` von außen, Menüpunkt am Symbol und Knopf im
-Assistenten.
+Am 27.09. in VM 112 gelaufen: Fenster unter Wayland mit eigenem Scope auf
+Port 9119, Schließen beendet den Scope
+(`systemctl --user list-units 'hermes-os-dashboard-*'`), nach
+`hermes dashboard --stop` von außen kommt die Fehlerseite erst beim Neuladen,
+„Erneut versuchen“ startet den Server neu. Offen für VM 112: Sandbox von
+Chromium unter Wayland ohne Sonderflags bestätigen, Menüpunkt am Symbol und
+Knopf im Assistenten.
 
 ## Grenzen
 

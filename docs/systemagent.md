@@ -1,12 +1,14 @@
 # Systemagent: das Leisten-Symbol
 
-Stand: 2026-09-26. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
+Stand: 2026-09-27. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
 ein Fenster, das dauernd offen steht: ein Symbol in der Systemleiste, das
 Kontor (das Chat-Fenster, Titel „Hermes-Kontor“) mit Sprechblasen und
 Bildern, Freigaben als Benachrichtigung.
 Gebaut, durch Gate und Tests gelaufen, das Fenster offscreen in der Test-VM
-gerendert und der Bildweg gegen das echte Gateway geprüft; als Symbol in der
-Plasma-Sitzung noch nicht gebootet.
+gerendert und der Bildweg gegen das echte Gateway geprüft. Seit dem 26. und
+27.09. sind Symbol und Kontor in der Plasma-Sitzung von VM 112 im täglichen
+Gebrauch; Freigabe-Kasten und -Benachrichtigung liefen dort am 27.09. in einer
+Einzelprüfung.
 
 ## Was es tut
 

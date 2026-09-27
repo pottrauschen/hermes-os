@@ -12,6 +12,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `README.md` | Was das System kann, Aufbau, die Grenze, Bauen, erster Login, Status |
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
 | `docs/handbuch.md` | für Nutzer: erster Start, Kontor, Kürzel, Freigaben, Bibliothek, Morgenbericht, Updates und Rollback, ujust-Befehle, wenn etwas nicht geht |
+| `docs/release-notes.md` | Release-Notes je Version, neueste oben; 0.1 als Entwurf: englische Kurzfassung, was hermes-os ist, was drin ist, Installation per `bootc switch`, was noch fehlt, Dank und Lizenz |
 | `docs/entwicklung.md` | Einstieg für Entwickler: wer was tut (PC, CI, VM), Aufbau des Repos, Ablauf einer Änderung, was unter Windows läuft, Oberflächen offscreen prüfen, Testfassungen aus dem Home, Hermes-Bump, Stolperfallen am Windows-Arbeitsplatz |
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, GPU-Passthrough, VM 112 von hier bedienen (`tests/vm-hilfen.sh`), Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage |
@@ -24,7 +25,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `docs/protokoll.md` | Protokoll: Seite im Kontor, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
 | `docs/krunner.md` | KRunner-Runner „Hermes fragen“: `hermes <Frage>` und `h: <Frage>`, D-Bus-Anbindung im Leisten-Symbol, Nur nachschlagen, Test, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
-| `docs/sehen-hoeren.md` | Sehen und Hören: „Was sehe ich hier?“ (Meta+Umschalt+H, Bildschirmausschnitt an Hermes) und Push-to-Talk (Meta+Leertaste, faster-whisper und Piper aus der Hermes-Venv), Kürzel, Tests, Stolperfallen |
+| `docs/sehen-hoeren.md` | Sehen und Hören: „Was sehe ich hier?“ (Meta+Umschalt+H, Bildschirmausschnitt an Hermes) und Push-to-Talk (Meta+Leertaste, faster-whisper und Piper aus der Hermes-Venv), Sichtprüfung nach Desktop-Änderungen (Spectacle und `vision_analyze`), Kürzel, Tests, Stolperfallen |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 
 ## Arbeitsregeln

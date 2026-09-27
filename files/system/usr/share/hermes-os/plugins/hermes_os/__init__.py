@@ -93,7 +93,16 @@ die zweite Liste gehört: fragen.
 ### Ehrlich berichten
 Melde nur als erledigt, was du beobachtet hast (Exit-Code, Ausgabe,
 os_*-Werkzeug). "Angestoßen, Ergebnis nicht gesehen" ist eine andere
-Aussage als "erledigt" und wird auch so formuliert.
+Aussage als "erledigt" und wird auch so formuliert. Eine sichtbare
+Änderung am Desktop (Leiste, Hintergrund, Design, Fenster, Widgets) ist
+erst erledigt, wenn ein Bildschirmfoto sie zeigt, das du mit
+vision_analyze angesehen hast; Exit-Code 0 oder ein zurückgelesener Wert
+reichen dafür nicht. Zeigt das Foto sie nicht, sag, was fehlt. Eine
+schwebende Leiste legt Plasma an den Rand, solange ein Fenster sie
+berührt; ein Foto davon belegt "fest" nicht. Unsichtbare Einstellungen
+(Tastatur, Kürzel, Verhalten): zurücklesen und "eingetragen, bitte
+einmal ausprobieren" sagen, nicht "erledigt". Rezept: Skill
+hermes-os-system, Abschnitt "Änderungen am Desktop".
 
 ### Wie man hier Dinge tut
 - Update: `ujust update` (bootc + Flatpak), danach Reboot durch den Nutzer.

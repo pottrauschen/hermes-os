@@ -26,6 +26,9 @@ SHELL := /bin/bash
 .PHONY: clean image bib_image iso qcow2 run-qemu-qcow run-qemu-iso lint
 
 .ONESHELL:
+# Mit .ONESHELL bekommt bash jedes Rezept als ein Skript. Ohne -e zählte nur der
+# Exit-Code des letzten Befehls, ein gescheiterter Check in lint bliebe unbemerkt.
+.SHELLFLAGS := -ec
 
 clean:
 	$(SUDO) rm -rf ./output
@@ -62,7 +65,11 @@ lint:
 	python3 tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 	python3 tests/sehen-hoeren-check.py --tray-dir files/system/usr/share/hermes-os/tray
 	@# Kürzel-Kopien für kglobalaccel müssen den Einträgen im Menü gleichen (80-validate.sh prüft das im Build)
-	@for d in hermes-os-tray hermes-os-sehen; do \n		diff <(sed 's/$$//' files/system/usr/share/applications/$$d.desktop) \n		     <(sed 's/$$//' files/system/usr/share/kglobalaccel/$$d.desktop) >/dev/null \n			|| { echo "$$d.desktop: kglobalaccel copy differs from applications"; exit 1; }; \n	done; echo "kglobalaccel copies match the menu entries"
+	@for d in hermes-os-tray hermes-os-sehen; do \
+		diff <(sed 's/\r$$//' files/system/usr/share/applications/$$d.desktop) \
+		     <(sed 's/\r$$//' files/system/usr/share/kglobalaccel/$$d.desktop) >/dev/null \
+			|| { echo "$$d.desktop: kglobalaccel copy differs from applications"; exit 1; }; \
+	done; echo "kglobalaccel copies match the menu entries"
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }

@@ -14,7 +14,7 @@ Windows-PC            entwickeln: Repo, Claude Code, Second Brain, GitHub-Zugang
 GitHub Actions        bauen: beide Images, Gate, Tests, Push nach GHCR (rund 30 min)
   └ ghcr.io/pottrauschen/hermes-os, hermes-os-nvidia
 Test-VM 112           testen: bootc upgrade, Neustart, am Bildschirm (KVM) oder von hier
-  auf Proxmox .40
+  auf dem Proxmox-Host
 ```
 
 Der Windows-PC kann keine VM fahren und keine Images bauen (kein Podman,
@@ -27,8 +27,8 @@ einen neuen Datenträger ([testumgebung.md](testumgebung.md)).
 | Repo | `github.com/pottrauschen/hermes-os`, Zweig `main` |
 | Images | `ghcr.io/pottrauschen/hermes-os` (AMD/Intel), `…/hermes-os-nvidia` |
 | Hermes-Upstream | `NousResearch/hermes-agent`, gepinnt über `HERMES_REF` im Dockerfile |
-| Test-VM | VM 112, `<user>@192.168.1.142`, Anmeldung per SSH-Schlüssel |
-| Proxmox-Host | `root@192.168.1.40` (`qm …`) |
+| Test-VM | VM 112, `<user>@<test-vm>`, Anmeldung per SSH-Schlüssel |
+| Proxmox-Host | `root@<proxmox-host>` (`qm …`) |
 
 ## Aufbau des Repos
 
@@ -94,10 +94,10 @@ QML-Warnung ist ein Fehler. Sie brauchen PySide6 und Kirigami, laufen also in
 der VM, ohne die Sitzung dort zu stören:
 
 ```sh
-ssh <user>@192.168.1.142 'mkdir -p ~/ui-test/qml'
-sed 's/\r$//' files/system/usr/share/hermes-os/tray/Main.qml | ssh <user>@192.168.1.142 'cat > ~/ui-test/qml/Main.qml'
-sed 's/\r$//' tests/tray-gui-check.py | ssh <user>@192.168.1.142 'cat > ~/ui-test/tray-gui-check.py'
-ssh <user>@192.168.1.142 'cd ~/ui-test && python3 tray-gui-check.py --qml-dir ~/ui-test/qml --out ~/ui-test/bilder'
+ssh <user>@<test-vm> 'mkdir -p ~/ui-test/qml'
+sed 's/\r$//' files/system/usr/share/hermes-os/tray/Main.qml | ssh <user>@<test-vm> 'cat > ~/ui-test/qml/Main.qml'
+sed 's/\r$//' tests/tray-gui-check.py | ssh <user>@<test-vm> 'cat > ~/ui-test/tray-gui-check.py'
+ssh <user>@<test-vm> 'cd ~/ui-test && python3 tray-gui-check.py --qml-dir ~/ui-test/qml --out ~/ui-test/bilder'
 ```
 
 `--out` legt je Schritt ein PNG ab (`tray-streaming.png`, `tray-approval.png`

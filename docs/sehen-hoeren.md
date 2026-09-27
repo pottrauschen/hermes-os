@@ -1,11 +1,13 @@
 # Sehen und Hören
 
-Stand: 2026-09-26. Zwei Wege, Hermes ohne Tippen zu erreichen, beide im
+Stand: 2026-09-27. Zwei Wege, Hermes ohne Tippen zu erreichen, beide im
 Leisten-Symbol ([systemagent.md](systemagent.md)): ein Bildschirmausschnitt
 mit der Frage „Was sehe ich hier?“ und Push-to-Talk mit Antwort per Sprache.
 Gebaut, `make lint` und der Test ohne Hardware grün, das Fenster mit Stubs
-offscreen gerendert; in der Plasma-Sitzung noch nicht ausprobiert, siehe
-[Offen](#offen).
+offscreen gerendert. „Was sehe ich hier?“ läuft seit dem 27.09. in der
+Plasma-Sitzung von VM 112. Von Push-to-Talk ist dort nur das Kürzel geprüft;
+Aufnahme, Erkennung und Vorlesen sind ungeprüft, weil VM 112 kein Mikrofon hat,
+siehe [Offen](#offen).
 
 ## Was sehe ich hier?
 
@@ -28,6 +30,53 @@ Doppelklick geht der Ausschnitt an Hermes:
 
 `hermes-os-tray --look "Frage"` macht dasselbe mit eigener Frage, auch aus
 Skripten; die laufende Instanz bekommt den Befehl über den lokalen Socket.
+
+## Sichtprüfung: Hermes sieht selbst nach
+
+Nach einer sichtbaren Änderung am Desktop (Leiste, Hintergrund, Design, Fenster,
+Widgets) meldet Hermes „erledigt“ erst, wenn ein Bildschirmfoto sie zeigt.
+Anlass: Er meldete die Taskleiste (schwebend nach fest) als erledigt, weil
+`evaluateScript` `floating=false` zurückgab, während sie noch schwebte. Die
+Regel steht im System-Prompt des Plugins („Ehrlich berichten“ in
+`plugins/hermes_os/__init__.py`), das Rezept im Skill (Abschnitt „Änderungen am
+Desktop“). Neue Abhängigkeiten braucht es nicht:
+
+1. **Foto:** Hermes ruft Spectacle aus seinem Terminal-Werkzeug,
+   `spectacle --new-instance --background --nonotify --fullscreen --output <datei>`.
+   Das geht, weil das Gateway als Nutzerdienst an der Plasma-Sitzung hängt und
+   deren Umgebung erbt (`WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`,
+   `XDG_RUNTIME_DIR`); Hermes' lokale Shell reicht sie weiter. Vorher weckt
+   `systemd-run --user --wait --collect -q kscreen-doctor --dpms on` eine
+   abgeschaltete Anzeige.
+2. **Ansehen:** `vision_analyze` (Werkzeugsatz `vision`, auch im Satz des
+   API-Servers, über den das Kontor spricht) liest die Datei vom lokalen Pfad.
+   Kann das Hauptmodell Bilder, etwa Claude über OpenRouter, kommt das Bild
+   direkt in seinen Kontext (`_vision_analyze_native` in
+   `tools/vision_tools.py`); sonst beschreibt es ein Hilfsmodell für Bilder.
+   Das ganze Foto kommt auf höchstens 1568 Pixel Kantenlänge verkleinert an;
+   `region` (Pixel des Fotos) vergrößert einen Ausschnitt in voller Auflösung.
+3. **Zeigen:** `MEDIA:<pfad>` in der Antwort legt das Foto in die Blase im
+   Kontor ([systemagent.md](systemagent.md), Abschnitt Bilder).
+
+Die Fotos liegen unter `$XDG_RUNTIME_DIR/hermes-os/` (tmpfs, beim Abmelden
+weg), mit Zeitstempel im Namen: Ein neuer Name je Foto verhindert, dass ein
+altes als neues durchgeht. Fehlt `vision_analyze` (Modell ohne Bilder und kein
+Hilfsmodell erreichbar), liest Hermes die Einstellung zurück und bittet den
+Nutzer nachzusehen, statt „erledigt“ zu sagen. Unsichtbare Einstellungen
+(Tastatur, Kürzel, Verhalten) zeigt kein Foto; dort liest Hermes zurück und sagt
+„eingetragen, bitte einmal ausprobieren“.
+
+**Die Leiste täuscht.** Eine schwebende Leiste legt Plasma an den Rand, solange
+ein nicht minimiertes Fenster sie berührt, ein maximiertes also immer: In
+`views/Panel.qml` der Plasma-Shell (6.7.5) setzt `touchingWindow` die Schwebe
+auf null, nur „Desktop anzeigen“ hebt das auf. Ein Foto mit so einem Fenster
+zeigt die Leiste anliegend, obwohl sie noch auf schwebend steht, und der
+Abstand einer schwebenden Leiste ist im verkleinerten Foto nur wenige Pixel
+groß. Das Rezept sieht deshalb den Rand mit der Leiste über `region` an, fragt,
+ob ein Fenster sie berührt, und fotografiert dann oder im Zweifel noch einmal
+bei „Desktop anzeigen“: `qdbus-qt6 org.kde.KWin /KWin
+org.kde.KWin.showDesktop true`, Foto, `… showDesktop false` holt die Fenster
+zurück. Die Grenze des Plugins und Hermes' Detektor lassen beide Aufrufe frei.
 
 ## Push-to-Talk
 
@@ -210,13 +259,12 @@ journalctl --user -u hos-tray -f                           # Warnungen des Symbo
 
 ## Offen
 
-- Test in VM 112: Auswahlrahmen aus dem Hintergrund, Benachrichtigung mit Bild
-  und Knopf, Anhang bei offenem Fenster; Anmeldung bei KGlobalAccel (Eintrag in
-  den Systemeinstellungen, Drücken und Loslassen, Verhalten nach `kwin_wayland
-  --replace`); Mikrofon und Lautsprecher in der VM (Audio-Gerät in Proxmox),
-  erster Download von Modell und Stimme, Latenz von Erkennung und Synthese auf
-  der CPU; Tastenwiederholung; Meta+Leertaste gegen fcitx5, falls
-  eingeschaltet.
+- Rest des Tests in VM 112 (am 27.09. liefen Auswahlrahmen, Benachrichtigung
+  mit Bild und Knopf, Anhang bei offenem Fenster, Drücken, Loslassen und
+  Wiederholung der Kürzel): Eintrag in den Systemeinstellungen, Verhalten nach
+  `kwin_wayland --replace`; Mikrofon und Lautsprecher in der VM (Audio-Gerät in
+  Proxmox), erster Download von Modell und Stimme, Latenz von Erkennung und
+  Synthese auf der CPU; Meta+Leertaste gegen fcitx5, falls eingeschaltet.
 - Antwort schon beim Streamen sprechen (satzweise), heute erst nach dem
   Abschluss des Runs.
 - Eigene Frage ohne Fenster: eine Benachrichtigung mit Eingabefeld
@@ -224,3 +272,8 @@ journalctl --user -u hos-tray -f                           # Warnungen des Symbo
   zurück; dafür bräuchte es einen eigenen Aufruf von
   `org.freedesktop.Notifications` über `dbus_peer`.
 - Wake-Word aus dem Leisten-Symbol; heute nur Kürzel und Knopf.
+- Sichtprüfung in VM 112 proben: Foto aus dem Gateway heraus, `vision_analyze`
+  mit dem eingerichteten Modell, keine Rückfrage von Hermes' Sicherheitsscan
+  (tirith) oder Freigabe-Tor beim Rezept; die Grenze des Plugins lässt alle
+  seine Befehle frei. Dazu die Leiste mit einem Fenster, das sie berührt, und
+  der Weg über „Desktop anzeigen“.
