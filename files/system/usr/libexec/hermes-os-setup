@@ -23,6 +23,12 @@ VENV_PY = "/usr/lib/hermes-agent/.venv/bin/python"
 HERMES = "/usr/bin/hermes"
 FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
 DASHBOARD = "/usr/libexec/hermes-os-dashboard"      # Fenster mit Hermes' Web-Dashboard (docs/dashboard.md)
+# Lokales Modell (Ollama im Image): eigener Helfer im Nutzerkontext, kein
+# Hermes-Import nötig; die Karte im Assistenten ruft ihn mit --json.
+LOCAL_HELPER = os.environ.get("HERMES_OS_LOCAL_HELPER", "/usr/libexec/hermes-os-lokal")
+LOCAL_ROW = {"slug": "local", "label": "Lokales Modell (Ollama)", "auth": "local", "env": "",
+             "signup": "", "login": [],
+             "hint": "Kein Schlüssel, keine Cloud: Ollama läuft als dein Nutzerdienst auf diesem Rechner."}
 SETUP_DIR = os.environ.get("HERMES_OS_SETUP_DIR", "/usr/share/hermes-os/setup")
 BRIDGE = os.path.join(SETUP_DIR, "hermes_bridge.py")
 MAIN_QML = os.path.join(SETUP_DIR, "Main.qml")
@@ -82,6 +88,11 @@ def main():
         modelsFailed = Signal(str)
         saved = Signal(str, str)                          # Provider, Modell
         saveFailed = Signal(str)
+        # Lokales Modell: Stand, Fortschritt beim Laden, fertige Schritte, Fehler
+        localStatusReady = Signal("QVariantMap")
+        localProgress = Signal(str, int)                  # Status, Prozent
+        localStepDone = Signal(str, "QVariantMap")        # service, pulled, check, saved
+        localFailed = Signal(str, str)                    # Schritt, Meldung
 
         def __init__(self):
             super().__init__()
@@ -97,9 +108,15 @@ def main():
         def _load_catalog(self):
             r = bridge_sync(["catalog"])
             if r.get("ok"):
-                self._providers = r["providers"]
+                self._providers = list(r["providers"])
             else:
                 self._catalog_error = r.get("error", "Katalog nicht lesbar")
+            # Die Karte „Lokales Modell" kommt nicht aus Hermes' Katalog (dort
+            # ist der Custom-Endpunkt ohne Schlüssel ausgeblendet), sondern
+            # aus dem Image: gleich hinter OpenRouter, sobald der Helfer da ist.
+            if os.access(LOCAL_HELPER, os.X_OK):
+                pos = 1 if self._providers and self._providers[0].get("slug") == "openrouter" else 0
+                self._providers.insert(pos, dict(LOCAL_ROW))
 
         def _read_current(self):
             try:
@@ -195,6 +212,105 @@ def main():
                 else:
                     self.saveFailed.emit(r.get("error", "unbekannter Fehler"))
             self._start(["save", slug, model.strip()], key.strip(), done)
+
+        # ---- Lokales Modell über den Helfer --------------------------------
+        def _run_local(self, step, args, on_result):
+            """hermes-os-lokal --json <args>: Zeilen mit progress werden sofort
+            weitergereicht, die letzte Zeile ist das Ergebnis. Ein Schritt zur
+            Zeit (busy), wie bei der Brücke."""
+            if self._proc is not None:
+                return
+            self._set_busy(True)
+            proc = QProcess(self)
+            env = QProcessEnvironment.systemEnvironment()
+            env.insert("PYTHONDONTWRITEBYTECODE", "1")
+            proc.setProcessEnvironment(env)
+            proc.setProgram(LOCAL_HELPER)
+            proc.setArguments(["--json", *args])
+            lines = []
+            buf = {"rest": ""}
+
+            def read():
+                buf["rest"] += bytes(proc.readAllStandardOutput()).decode("utf-8", "replace")
+                *done, buf["rest"] = buf["rest"].split("\n")
+                for line in done:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if "progress" in row:
+                        p = row["progress"]
+                        self.localProgress.emit(str(p.get("status", "")), int(p.get("percent", 0)))
+                    else:
+                        lines.append(row)
+
+            def finished(code, status):
+                read()
+                if buf["rest"].strip():
+                    try:
+                        lines.append(json.loads(buf["rest"].strip()))
+                    except json.JSONDecodeError:
+                        pass
+                err = bytes(proc.readAllStandardError()).decode("utf-8", "replace")
+                self._proc = None
+                self._set_busy(False)
+                result = lines[-1] if lines else {"ok": False, "error": (err.strip() or "keine Antwort")[-400:]}
+                if code != 0 and result.get("ok", True) and not result.get("error"):
+                    result = dict(result, ok=False, error=(err.strip() or f"Helfer endete mit Code {code}")[-400:])
+                on_result(result)
+
+            proc.readyReadStandardOutput.connect(read)
+            proc.finished.connect(finished)
+            self._proc = proc
+            proc.start()
+
+        @Slot()
+        def localStatus(self):
+            def done(r):
+                if "gpu" in r:
+                    self.localStatusReady.emit(r)
+                else:
+                    self.localFailed.emit("status", r.get("error", "Stand nicht lesbar"))
+            self._run_local("status", ["status"], done)
+
+        @Slot()
+        def localStart(self):
+            def done(r):
+                if r.get("ok"):
+                    self.localStepDone.emit("service", r)
+                else:
+                    self.localFailed.emit("service", r.get("error", "Dienst startet nicht"))
+            self._run_local("service", ["dienst-ein"], done)
+
+        @Slot(str)
+        def localPull(self, model):
+            def done(r):
+                if r.get("ok"):
+                    self.localStepDone.emit("pulled", r)
+                else:
+                    self.localFailed.emit("pulled", r.get("error", "Laden fehlgeschlagen"))
+            self._run_local("pulled", ["laden", model.strip()], done)
+
+        @Slot(str)
+        def localCheck(self, model):
+            def done(r):
+                if r.get("ok"):
+                    self.localStepDone.emit("check", r)
+                else:
+                    self.localFailed.emit("check", r.get("error", "Prüfung fehlgeschlagen"))
+            self._run_local("check", ["pruefen", model.strip()], done)
+
+        @Slot(str)
+        def localSave(self, model):
+            def done(r):
+                if r.get("ok"):
+                    self.localStepDone.emit("saved", r)
+                else:
+                    self.localFailed.emit("saved", r.get("error", "Eintragen fehlgeschlagen"))
+            self._run_local("saved", ["eintragen", model.strip()], done)
 
         # ---- Sprünge nach draußen ------------------------------------------
         @Slot(str)

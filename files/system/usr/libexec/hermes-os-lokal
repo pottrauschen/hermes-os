@@ -1,0 +1,289 @@
+#!/usr/bin/python3
+# =============================================================================
+# hermes-os -- lokales Modell: Dienst, Modelle, Prüfung, Eintrag in Hermes
+# =============================================================================
+# Gemeinsamer Einstieg für die ujust-Rezepte (hermes-lokal-ein, -aus, -modell),
+# den Einrichtungsassistenten (Karte „Lokales Modell", ruft --json) und den
+# Agenten selbst. Die Logik liegt in /usr/share/hermes-os/local/local_model.py;
+# hier nur Ablauf und Ausgabe. Läuft mit Fedoras Python und PyYAML, braucht
+# weder die Hermes-Venv noch Root: Ollama ist ein Nutzerdienst.
+#
+#   hermes-os-lokal status                 GPU, Dienst, Modelle, was Hermes nutzt
+#   hermes-os-lokal ein [MODELL]           Dienst an, Modell laden, prüfen, eintragen
+#   hermes-os-lokal aus                    Dienst aus, vorherigen Anbieter zurück
+#   hermes-os-lokal modell [MODELL]        anderes Modell laden, prüfen, eintragen
+#   hermes-os-lokal dienst-ein | dienst-aus
+#   hermes-os-lokal laden MODELL           nur laden (Fortschritt)
+#   hermes-os-lokal pruefen [MODELL]       Endpunkt und Werkzeugaufruf prüfen
+#   hermes-os-lokal eintragen MODELL       nur Hermes umstellen
+#   hermes-os-lokal --json <befehl>        Ausgabe als JSON-Zeilen (Assistent)
+#   hermes-os-lokal --check                Trockenlauf fürs Validierungs-Gate
+# Umgebung: OLLAMA_HOST (Adresse des Dienstes), HERMES_HOME,
+#           HERMES_OS_LOCAL_DIR (Modulverzeichnis, zum Testen aus dem Repo).
+# =============================================================================
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+LOCAL_DIR = os.environ.get("HERMES_OS_LOCAL_DIR", "/usr/share/hermes-os/local")
+FIRST_LOGIN = "/usr/libexec/hermes-os-first-login"
+JSON = False
+
+
+def load_module():
+    path = os.path.join(LOCAL_DIR, "local_model.py")
+    spec = importlib.util.spec_from_file_location("hermes_os_local_model", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def emit(obj=None, text=""):
+    """JSON-Zeile im --json-Modus, sonst Text."""
+    if JSON:
+        if obj is not None:
+            sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    elif text:
+        sys.stdout.write(text + "\n")
+    sys.stdout.flush()
+
+
+def fail(message, code=1):
+    emit({"ok": False, "error": message}, "FEHLER: " + message)
+    sys.exit(code)
+
+
+def gpu_line(gpu):
+    if gpu["vendor"] == "nvidia":
+        return f"GPU: {gpu['name']}, {gpu['vram_mb']} MB, Treiber {gpu['driver']}"
+    return "GPU: keine nutzbare, " + gpu["detail"]
+
+
+def cmd_status(lm):
+    st = lm.status_summary()
+    emit(st)
+    if JSON:
+        return 0
+    print(gpu_line(st["gpu"]))
+    u = st["unit"]
+    srv = st["server"]
+    if not st["ollama_installed"]:
+        print("Ollama: nicht im Image (/usr/bin/ollama fehlt)")
+    print("Dienst ollama.service: " + (f"{u['active'] or 'unbekannt'}, {u['enabled'] or 'nicht eingerichtet'}" if u["available"] else "systemctl nicht verfügbar")
+          + (f"; Server {srv['version']} antwortet" if srv["running"] else f"; Server {srv['error']}"))
+    if srv["models"]:
+        print("Modelle: " + ", ".join(f"{m['name']} ({m['size_gb']} GB)" for m in srv["models"]))
+    else:
+        print("Modelle: keine geladen")
+    h = st["hermes"]
+    if h["local"]:
+        print(f"Hermes: nutzt das lokale Modell {h['model']}" + (" (vorheriger Anbieter gemerkt)" if h["previous_saved"] else ""))
+    elif h["model"]:
+        print(f"Hermes: nutzt {h['provider'] or 'einen Anbieter'} mit {h['model']}")
+    else:
+        print("Hermes: kein Modell eingetragen")
+    print("Vorschlag: " + ", ".join(f"{r['tag']}{' (Vorgabe)' if r['default'] else ''}{'' if r['fits'] else ' (passt nicht in den Speicher)'}"
+                                  for r in st["recommended"]))
+    return 0
+
+
+def service_start(lm):
+    if not shutil.which("systemctl"):
+        fail("systemctl fehlt; Ollama lässt sich hier nicht als Dienst starten")
+    if not os.path.exists(lm.OLLAMA_BIN):
+        fail("Ollama liegt nicht im Image (/usr/bin/ollama fehlt)")
+    lm.systemctl_user("enable", lm.UNIT)
+    p = lm.systemctl_user("start", lm.UNIT)
+    if p.returncode != 0:
+        fail(f"ollama.service startet nicht: {(p.stderr or p.stdout).strip()[-300:]}")
+    if not lm.wait_for_server(seconds=45):
+        fail("ollama.service läuft, antwortet aber nicht auf " + lm.BASE_URL + " (journalctl --user -u ollama.service)")
+    st = lm.server_status()
+    emit({"ok": True, "step": "service", "version": st["version"]}, f"Dienst läuft: Ollama {st['version']} auf {lm.BASE_URL}")
+
+
+def service_stop(lm):
+    if not shutil.which("systemctl"):
+        fail("systemctl fehlt")
+    lm.systemctl_user("disable", "--now", lm.UNIT)
+    emit({"ok": True, "step": "service-stopped"}, "Dienst ollama.service gestoppt und ausgeschaltet.")
+
+
+def pull(lm, model):
+    last = {"percent": -1}
+
+    def progress(row):
+        if JSON:
+            emit({"progress": row})
+        elif sys.stdout.isatty():
+            sys.stdout.write(f"\r  {row['status']:<32} {row['percent']:3d} %")
+            sys.stdout.flush()
+        elif row["percent"] // 10 != last["percent"] // 10 or row["status"] == "success":
+            print(f"  {row['status']:<32} {row['percent']:3d} %")
+        last["percent"] = row["percent"]
+
+    emit({"step": "pull", "model": model}, f"Lade {model} (bleibt unter ~/.local/share/ollama) …")
+    res = lm.pull_model(lm.BASE_URL, model, progress=progress, timeout=3600)
+    if not JSON and sys.stdout.isatty():
+        print()
+    if not res["ok"]:
+        fail(f"Laden von {model} fehlgeschlagen: {res['error']}")
+    emit({"ok": True, "step": "pulled", "model": model}, f"{model} geladen.")
+
+
+def check(lm, model):
+    if not model:
+        fail("kein Modell angegeben (hermes-os-lokal pruefen MODELL)")
+    ep = lm.check_endpoint(lm.HERMES_BASE_URL, model)
+    emit(dict(ep, step="check", model=model))
+    if not ep["reachable"]:
+        emit(None, f"Endpunkt {lm.HERMES_BASE_URL}: {ep['error']}")
+        return 1
+    if not ep["model_present"]:
+        emit(None, f"Endpunkt erreichbar, aber {ep['error']}")
+        return 1
+    if ep["tools"]:
+        emit(None, f"Endpunkt {lm.HERMES_BASE_URL} antwortet, {model} liefert einen Werkzeugaufruf. Bereit für Hermes.")
+        return 0
+    emit(None, f"{model}: {ep['error']}. Hermes braucht Werkzeugaufrufe; ein anderes Modell wählen"
+               + (f" (Antwort war: {ep['reply']!r})" if ep["reply"] else "") + ".")
+    return 1
+
+
+def save(lm, model):
+    if not model:
+        fail("kein Modell angegeben")
+    try:
+        lm.remember_previous()
+        block = lm.write_hermes_config(model)
+    except Exception as e:
+        fail(f"config.yaml nicht geschrieben: {type(e).__name__}: {e}")
+    first_login()
+    emit({"ok": True, "step": "saved", "model": model, "config": lm.config_path(), "block": block},
+         f"Hermes eingetragen: {model} über {block['base_url']} (provider {block['provider']}, Kontext {block['context_length']}) "
+         f"in {lm.config_path()}. Das Gateway liest die Datei bei jedem Gesprächsschritt neu, ein Neustart ist nicht nötig.")
+
+
+def first_login():
+    """Das First-Login-Skript ist idempotent: legt den Schlüssel für den API-Server
+    des Gateways an und schaltet das Gateway ein, sobald ein Anbieter in
+    config.yaml steht. Ohne Schlüssel-Anbieter gibt es sonst keine .env."""
+    if os.access(FIRST_LOGIN, os.X_OK) and shutil.which("systemctl"):
+        subprocess.run([FIRST_LOGIN], timeout=120, check=False)
+
+
+def cmd_ein(lm, model):
+    gpu = lm.detect_gpu()
+    emit({"step": "gpu", "gpu": gpu}, gpu_line(gpu))
+    if not model:
+        model = lm.recommended_default(gpu)
+        emit(None, f"Modell: {model} (Vorgabe für diesen Rechner)")
+    if gpu["vendor"] != "nvidia":
+        emit(None, "Hinweis: ohne NVIDIA-Karte rechnet Ollama auf der CPU, Antworten dauern deutlich länger.")
+    service_start(lm)
+    pull(lm, model)
+    if check(lm, model) != 0:
+        sys.exit(1)
+    save(lm, model)
+    return 0
+
+
+def cmd_aus(lm):
+    service_stop(lm)
+    try:
+        block = lm.restore_previous()
+    except Exception as e:
+        fail(f"vorherigen Anbieter nicht zurückgeschrieben: {type(e).__name__}: {e}")
+    if block:
+        emit({"ok": True, "step": "restored", "block": block},
+             f"Hermes nutzt wieder {block.get('provider', '?')} mit {block.get('default', '?')}.")
+    elif block == {}:
+        emit({"ok": True, "step": "restored", "block": {}},
+             "Vor dem lokalen Modell war kein Anbieter eingetragen; Hermes ist jetzt ohne Modell. Anbieter wählen: ujust hermes-setup")
+    else:
+        current = lm.read_hermes_model()
+        if lm.is_local(current):
+            emit({"ok": True, "step": "restored", "block": None},
+                 "Hermes zeigt weiter auf den lokalen Endpunkt, der jetzt aus ist. Anbieter neu wählen: ujust hermes-setup")
+        else:
+            emit({"ok": True, "step": "restored", "block": current}, "Hermes war nicht auf das lokale Modell gestellt, nichts geändert.")
+    return 0
+
+
+def cmd_modell(lm, model):
+    if not model:
+        model = lm.recommended_default(lm.detect_gpu())
+        emit(None, f"Modell: {model} (Vorgabe für diesen Rechner)")
+    if not lm.server_status()["running"]:
+        service_start(lm)
+    pull(lm, model)
+    if check(lm, model) != 0:
+        sys.exit(1)
+    save(lm, model)
+    return 0
+
+
+def check_only():
+    problems = []
+    try:
+        import yaml  # noqa: F401
+    except Exception as e:
+        problems.append(f"PyYAML fehlt: {e}")
+    try:
+        lm = load_module()
+        lm.recommend({"vendor": "none", "vram_mb": 0})
+    except Exception as e:
+        problems.append(f"local_model.py lädt nicht: {e}")
+    for p in problems:
+        print(f"FEHL  {p}")
+    if problems:
+        return 1
+    print(f"OK    hermes-os-lokal: Modul und PyYAML vorhanden"
+          + ("" if os.path.exists("/usr/bin/ollama") else " (kein /usr/bin/ollama, nur Trockenlauf)"))
+    return 0
+
+
+def main(argv):
+    global JSON
+    args = [a for a in argv[1:] if a != "--json"]
+    JSON = "--json" in argv
+    if "--check" in args:
+        return check_only()
+    if not args:
+        print(__doc__ or "Befehle: status | ein [MODELL] | aus | modell [MODELL] | dienst-ein | dienst-aus | laden MODELL | pruefen MODELL | eintragen MODELL")
+        return 2
+    cmd, rest = args[0], args[1:]
+    model = rest[0].strip() if rest else ""
+    lm = load_module()
+    if cmd == "status":
+        return cmd_status(lm)
+    if cmd == "ein":
+        return cmd_ein(lm, model)
+    if cmd == "aus":
+        return cmd_aus(lm)
+    if cmd == "modell":
+        return cmd_modell(lm, model)
+    if cmd == "dienst-ein":
+        service_start(lm)
+        return 0
+    if cmd == "dienst-aus":
+        service_stop(lm)
+        return 0
+    if cmd == "laden":
+        if not model:
+            fail("kein Modell angegeben")
+        pull(lm, model)
+        return 0
+    if cmd == "pruefen":
+        return check(lm, model or lm.read_hermes_model().get("default", ""))
+    if cmd == "eintragen":
+        save(lm, model)
+        return 0
+    fail(f"unbekannter Befehl: {cmd}", 2)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

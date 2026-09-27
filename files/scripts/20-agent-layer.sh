@@ -11,8 +11,8 @@ SHARE=/usr/share/hermes-os
 
 # ---- Rechte ------------------------------------------------------------------
 chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup /usr/libexec/hermes-os-tray \
-  /usr/libexec/hermes-os-morgenbericht /usr/libexec/hermes-os-dashboard
-chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* "${SHARE}/dashboard/"* \
+  /usr/libexec/hermes-os-morgenbericht /usr/libexec/hermes-os-dashboard /usr/libexec/hermes-os-lokal
+chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* "${SHARE}/dashboard/"* "${SHARE}/local/"* \
   /usr/share/applications/hermes-os-setup.desktop /usr/share/applications/hermes-os-tray.desktop \
   /usr/share/applications/hermes-os-dashboard.desktop \
   /usr/share/kglobalaccel/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-tray.desktop \
@@ -67,6 +67,8 @@ dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
 # User-Manager preset-all ausführt. Das First-Login-Skript schaltet die Unit
 # ein, sobald ein Provider konfiguriert ist.
 chmod 0644 /usr/lib/systemd/user/hermes-gateway.service /usr/lib/environment.d/60-hermes-os.conf
+# Dasselbe für ollama.service (lokales Modell, 30-ollama.sh legt das Binary ab).
+chmod 0644 /usr/lib/systemd/user/ollama.service
 
 # ---- Sicherheitsnetz: Hermes darf sich nicht selbst aktualisieren -----------
 # Der Code liegt read-only unter /usr. `hermes update` würde scheitern; ein
