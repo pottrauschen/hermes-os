@@ -6,7 +6,9 @@
 # Lädt tray/Main.qml mit einem Stub statt des echten Backends und spielt die
 # Zustände durch: Gateway aus, bereit, Nachricht senden, Bilder anhängen und
 # entfernen, Streaming mit Bildern in den Blasen, Freigabe mit Knöpfen,
-# Schlüssel fehlt, Bibliothek, Protokoll mit Filtern und Export. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
+# Schlüssel fehlt, Bibliothek (Einträge, Ablegen, Spiegeln mit Fortschritt, Suche
+# mit Trefferliste, Notiz ändern, Schalter der Doku-Server), Protokoll mit Filtern
+# und Export. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
 # oder ein umbenanntes Kirigami-Element schon im Image-Build auffällt.
 #
 # Aufruf:
@@ -138,6 +140,9 @@ class StubBackend(QObject):
     attachmentsChanged = Signal()
     libraryChanged = Signal()
     showLibraryRequested = Signal()
+    libraryMirrorChanged = Signal()
+    librarySearchChanged = Signal()
+    libraryMcpChanged = Signal()
     auditChanged = Signal()
     showAuditRequested = Signal()
 
@@ -149,6 +154,15 @@ class StubBackend(QObject):
         self._configured = False
         self._attachments = []
         self._library = []
+        self._mirrors = {}
+        self._search_hits = []
+        self._search_note = ""
+        self._searching = False
+        self._mcp = [{"id": "context7", "title": "Context7", "url": "https://mcp.context7.com/mcp",
+                      "description": "Doku zu Bibliotheken", "enabled": False},
+                     {"id": "deepwiki", "title": "DeepWiki", "url": "https://mcp.deepwiki.com/mcp",
+                      "description": "Fragen zu GitHub-Projekten", "enabled": True}]
+        self._mcp_message = ""
         self._model = StubModel()
         self._audit = StubAuditModel()
         self._audit_rows = []
@@ -266,6 +280,97 @@ class StubBackend(QObject):
     def showLibrary(self):
         self.calls.append(("libshow",))
         self.showLibraryRequested.emit()
+
+    # Stufe zwei wie im echten Backend: Spiegel, Suche, Ablegen, Notiz, Doku-Server
+    @Property("QVariantMap", notify=libraryMirrorChanged)
+    def libraryMirror(self):
+        return {k: dict(v) for k, v in self._mirrors.items()}
+
+    @Property(bool, notify=libraryMirrorChanged)
+    def libraryMirrorRunning(self):
+        return any(v.get("running") for v in self._mirrors.values())
+
+    @Slot(str)
+    def libraryMirrorStart(self, entry_id):
+        self.calls.append(("libmirror", entry_id))
+        self._mirrors[entry_id] = {"status": "running", "pages": 1, "running": True, "errorCount": 0,
+                                   "current": "https://docs.kde.org/a.html", "text": "Spiegel läuft: 1 Seite bisher. https://docs.kde.org/a.html"}
+        self.libraryMirrorChanged.emit()
+
+    @Slot(str)
+    def libraryMirrorCancel(self, entry_id):
+        self.calls.append(("libmirrorcancel", entry_id))
+
+    def finish_mirror(self, entry_id):
+        self._mirrors[entry_id] = {"status": "done", "pages": 5, "running": False, "errorCount": 1,
+                                   "current": "", "text": "Spiegel: 5 Seiten, Stand 26.09.2026 14:02, 1 Fehler."}
+        self.libraryMirrorChanged.emit()
+
+    @Property("QVariantList", notify=librarySearchChanged)
+    def librarySearchHits(self):
+        return [dict(h) for h in self._search_hits]
+
+    @Property(str, notify=librarySearchChanged)
+    def librarySearchNote(self):
+        return self._search_note
+
+    @Property(bool, notify=librarySearchChanged)
+    def librarySearching(self):
+        return self._searching
+
+    @Slot(str)
+    def librarySearch(self, query):
+        self.calls.append(("libsearch", query))
+        if query == "":
+            self._search_hits, self._search_note = [], ""
+        else:
+            self._search_hits = [{"title": "Versteckte Dateien", "source": "https://docs.kde.org/b.html", "entryId": "e1",
+                                  "entryTitle": "KDE-Handbücher", "snippet": "Mit Alt+Punkt zeigt Dolphin [versteckte] Dateien."},
+                                 {"title": "Notiz", "source": "/home/tina/notiz.txt", "entryId": "e2",
+                                  "entryTitle": "Unterlagen", "snippet": "…[versteckte] Einstellungen…"}]
+            self._search_note = f"2 Treffer für „{query}“."
+        self.librarySearchChanged.emit()
+
+    @Slot(str, str, str, result=str)
+    def libraryUpdate(self, entry_id, title, note):
+        self.calls.append(("libupdate", entry_id, title, note))
+        for e in self._library:
+            if e["id"] == entry_id:
+                e["title"], e["note"] = title or e["title"], note
+        self.libraryChanged.emit()
+        return ""
+
+    @Slot(list, str, result=str)
+    def libraryDrop(self, urls, text):
+        sources = [u.toString() if hasattr(u, "toString") else str(u) for u in urls]
+        self.calls.append(("libdrop", sources, text))
+        for src in sources:
+            self._library.append({"id": f"e{len(self._library) + 1}", "kind": "url" if src.startswith("http") else "file",
+                                  "source": src, "title": src, "note": "", "added": ""})
+        self.libraryChanged.emit()
+        return "Eingetragen: " + ", ".join(sources)
+
+    @Slot(str)
+    def libraryOpenSource(self, source):
+        self.calls.append(("libopensource", source))
+
+    @Property("QVariantList", notify=libraryMcpChanged)
+    def libraryMcp(self):
+        return [dict(m) for m in self._mcp]
+
+    @Property(str, notify=libraryMcpChanged)
+    def libraryMcpMessage(self):
+        return self._mcp_message
+
+    @Slot(str, bool, result=str)
+    def libraryMcpSet(self, server_id, enabled):
+        self.calls.append(("mcpset", server_id, bool(enabled)))
+        for m in self._mcp:
+            if m["id"] == server_id:
+                m["enabled"] = bool(enabled)
+        self._mcp_message = f"{server_id} {'eingetragen' if enabled else 'ausgetragen'}. Das Gateway übernimmt das von selbst."
+        self.libraryMcpChanged.emit()
+        return self._mcp_message
 
     # Steuerung durch den Test
     def set_state(self, state, configured=None):
@@ -676,6 +781,79 @@ def main():
     step("Bibliothek: Signal aus dem Menü hält die Seite offen, Zurück zeigt wieder den Chat",
          still_open and not root.libraryOpen() and inp is not None and inp.property("enabled"),
          f"still_open={still_open} open={root.libraryOpen()}")
+
+    # 9b. Bibliothek, Stufe zwei: Ablegen, Spiegeln mit Fortschritt, Suche mit
+    #     Trefferliste, Titel und Notiz ändern, Schalter der Doku-Server
+    root.openLibrary()
+    settle()
+    dropped = root.libraryDropped([QUrl("https://docs.kde.org/"), QUrl.fromLocalFile("/tmp/notiz.txt")], "")
+    settle()
+    msg = child("libraryMessage")
+    shot("library-dropped")
+    step("Bibliothek: Ablegen legt Einträge an und zeigt die Meldung",
+         ("libdrop", ["https://docs.kde.org/", "file:///tmp/notiz.txt"], "") in backend.calls and count("libraryRow") == 2
+         and msg is not None and msg.property("visible") and "Eingetragen" in str(dropped),
+         f"calls={backend.calls[-1:]} rows={count('libraryRow')} msg={dropped!r}")
+    mirror_text = root.findNamed("libraryMirrorText", None)   # Delegate: nur die QML-Seite findet ihn
+    before = str(mirror_text.property("text")) if mirror_text is not None else ""
+    clicked = root.clickNamed("libraryMirrorButton")
+    settle(200)
+    mirror_btn = root.findNamed("libraryMirrorButton", None)
+    running_text = str(mirror_text.property("text")) if mirror_text is not None else ""
+    shot("library-mirroring")
+    step("Bibliothek: Spiegeln startet backend.libraryMirrorStart, Zeile zeigt den Fortschritt, Knopf wird zu Abbrechen",
+         clicked and ("libmirror", "e1") in backend.calls and before.startswith("Kein Spiegel") and "läuft" in running_text
+         and mirror_btn is not None and "abbrechen" in str(mirror_btn.property("text")),
+         f"clicked={clicked} before={before!r} running={running_text!r} btn={mirror_btn and mirror_btn.property('text')!r}")
+    backend.finish_mirror("e1")
+    settle(200)
+    done_text = str(mirror_text.property("text")) if mirror_text is not None else ""
+    step("Bibliothek: fertiger Spiegel zeigt Seitenzahl und Zeitpunkt, Knopf heißt wieder Spiegeln",
+         "5 Seiten" in done_text and mirror_btn is not None and str(mirror_btn.property("text")) == "Spiegeln",
+         f"text={done_text!r} btn={mirror_btn and mirror_btn.property('text')!r}")
+    root.typeLibrarySearch("versteckte")
+    root.librarySearchCurrent()
+    settle(200)
+    note = child("librarySearchNote")
+    shot("library-search")
+    step("Bibliothek: Suche ruft backend.librarySearch, zwei Treffer mit Ausschnitt, Hinweis sichtbar",
+         ("libsearch", "versteckte") in backend.calls and count("librarySearchHit") == 2 and note is not None
+         and note.property("visible") and "2 Treffer" in str(note.property("text")),
+         f"calls={backend.calls[-1:]} hits={count('librarySearchHit')}")
+    opened_hit = root.clickNamed("librarySearchOpen")
+    settle(100)
+    step("Bibliothek: Öffnen am Treffer ruft backend.libraryOpenSource mit der Quelle",
+         opened_hit and ("libopensource", "https://docs.kde.org/b.html") in backend.calls, f"calls={backend.calls[-1:]}")
+    root.typeLibrarySearch("")
+    root.librarySearchCurrent()
+    settle(100)
+    step("Bibliothek: leere Suche räumt die Treffer weg", count("librarySearchHit") == 0, f"hits={count('librarySearchHit')}")
+    edit_clicked = root.clickNamed("libraryEdit")
+    settle(200)
+    title_field, note_field = root.findNamed("libraryEditTitle", None), root.findNamed("libraryEditNote", None)
+    fields_visible = title_field is not None and title_field.property("visible") and note_field is not None
+    if fields_visible:
+        title_field.setProperty("text", "KDE-Handbücher")
+        note_field.setProperty("text", "deutsch unter stable_kf6/de")
+    saved = root.clickNamed("librarySave")
+    settle(200)
+    shot("library-edited")
+    step("Bibliothek: Bearbeiten öffnet die Felder, Speichern ruft backend.libraryUpdate, Notiz steht in der Zeile",
+         edit_clicked and fields_visible and saved and ("libupdate", "e1", "KDE-Handbücher", "deutsch unter stable_kf6/de") in backend.calls
+         and root.findNamed("libraryEditTitle", None) is not None
+         and not root.findNamed("libraryEditTitle", None).property("visible"),
+         f"edit={edit_clicked} fields={fields_visible} saved={saved} calls={backend.calls[-1:]}")
+    mcp_rows = count("libraryMcpRow")
+    toggled = root.toggleNamed("libraryMcpSwitch")
+    settle(200)
+    mcp_msg = child("libraryMcpMessage")
+    shot("library-mcp")
+    step("Bibliothek: zwei Doku-Server mit Schalter, Umschalten ruft backend.libraryMcpSet und zeigt den Hinweis",
+         mcp_rows == 2 and toggled and ("mcpset", "context7", True) in backend.calls and mcp_msg is not None
+         and mcp_msg.property("visible") and "Gateway" in str(mcp_msg.property("text")),
+         f"rows={mcp_rows} toggled={toggled} calls={backend.calls[-1:]}")
+    root.closeLibrary()
+    settle()
 
     # 10. Protokoll: Seite öffnen, Zeilen mit Symbol je Ergebnis, Ausgabe aufklappen,
     #     Filter Zeitraum und Änderungen, Export, zurück

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes-Dashboard
+Name[en]=Hermes Dashboard
+GenericName=Einstellungen des Agenten
+GenericName[en]=Agent settings
+Comment=Hermes' Web-Oberfläche: Modelle, Schlüssel, Sessions, Cron, Plugins
+Comment[en]=Hermes web dashboard: models, keys, sessions, cron, plugins
+Exec=/usr/libexec/hermes-os-dashboard
+Icon=hermes-os
+Terminal=false
+Categories=System;Settings;
+Keywords=hermes;agent;ki;ai;dashboard;einstellungen;settings;
+StartupNotify=true
+StartupWMClass=hermes-os-dashboard
