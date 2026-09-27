@@ -341,6 +341,17 @@ def main():
             check(p.returncode == 0 and "Werkzeugaufruf" in p.stdout, "hermes-os-lokal pruefen meldet den Werkzeugaufruf", (p.stdout + p.stderr)[-300:])
             p = subprocess.run([sys.executable, helper, "pruefen", "textonly:latest"], capture_output=True, text=True, env=env, timeout=120)
             check(p.returncode != 0 and "kein Werkzeug" in p.stdout + p.stderr, "hermes-os-lokal pruefen scheitert ohne Werkzeugaufruf", (p.stdout + p.stderr)[-300:])
+            # Im JSON für den Assistenten heißt ok „bereit für Hermes“: ohne Werkzeugaufruf false
+            p = subprocess.run([sys.executable, helper, "--json", "pruefen", "textonly:latest"], capture_output=True, text=True, env=env, timeout=120)
+            steps = []
+            for line in p.stdout.splitlines():
+                try:
+                    steps.append(json.loads(line))
+                except ValueError:
+                    pass
+            chk = next((d for d in steps if isinstance(d, dict) and d.get("step") == "check"), {})
+            check(chk.get("ok") is False and chk.get("tools") is False and "kein Werkzeug" in (chk.get("error") or ""),
+                  "hermes-os-lokal --json pruefen meldet ok=false ohne Werkzeugaufruf", str(chk)[-300:])
             p = subprocess.run([sys.executable, helper, "eintragen", "qwen3:14b"], capture_output=True, text=True, env=env, timeout=120)
             after = yaml.safe_load(open(cfg_path, encoding="utf-8"))
             check(p.returncode == 0 and after["model"]["default"] == "qwen3:14b" and after["model"]["provider"] == "custom",
