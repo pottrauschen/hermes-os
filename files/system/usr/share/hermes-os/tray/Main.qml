@@ -29,6 +29,11 @@ Kirigami.ApplicationWindow {
     pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.None
 
     readonly property int bubbleRadius: Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing
+    // Lesespalte: Verlauf und Eingabe werden nie breiter, im breiten Fenster mittig.
+    // Lange Zeilen lesen sich schlecht; 36 Rastereinheiten sind gut 70 Zeichen.
+    readonly property int readingWidth: Kirigami.Units.gridUnit * 36
+    // Ab dieser Fensterbreite tragen die Knöpfe im Kopf ihren Namen neben dem Symbol
+    readonly property bool wideHeader: width >= Kirigami.Units.gridUnit * 34
     readonly property var suggestions: ["Welches Image ist gebootet?", "Gibt es ein Update?", "Starte Firefox"]
 
     // Farben der Zustände, dieselben wie in den Leisten-Symbolen
@@ -264,46 +269,24 @@ Kirigami.ApplicationWindow {
         header: Controls.ToolBar {
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
-                Item {
-                    Layout.leftMargin: Kirigami.Units.smallSpacing
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.medium
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.medium
-                    Kirigami.Icon {
-                        anchors.fill: parent
-                        source: "hermes-os"
-                    }
-                    Rectangle {
-                        objectName: "stateDot"
-                        width: Kirigami.Units.smallSpacing * 3
-                        height: width
-                        radius: width / 2
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.rightMargin: -2
-                        anchors.bottomMargin: -2
-                        color: root.stateColor(backend.state)
-                        border.width: 2
-                        border.color: Kirigami.Theme.backgroundColor
-                    }
+                // Name und Symbol stehen im Fensterrahmen und in der Taskleiste; hier nur
+                // ein Punkt in der Farbe des Zustands, dieselbe wie im Leisten-Symbol
+                Rectangle {
+                    objectName: "stateDot"
+                    Layout.leftMargin: Kirigami.Units.largeSpacing
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitWidth: Kirigami.Units.smallSpacing * 2 + 2
+                    implicitHeight: implicitWidth
+                    radius: width / 2
+                    color: root.stateColor(backend.state)
                 }
-                ColumnLayout {
+                // Der Name steht schon im Fensterrahmen; hier nur der Zustand, der ihn nennt
+                // („Hermes ist bereit“). Während Hermes zuhört, versteht oder spricht, steht das hier.
+                Controls.Label {
+                    objectName: "stateLabel"
                     Layout.fillWidth: true
-                    spacing: 0
-                    Kirigami.Heading {
-                        Layout.fillWidth: true
-                        text: "Hermes"
-                        level: 3
-                        elide: Text.ElideRight
-                    }
-                    Controls.Label {
-                        objectName: "stateLabel"
-                        Layout.fillWidth: true
-                        // Während Hermes zuhört, versteht oder spricht, steht das hier
-                        text: voice.state !== "idle" ? voice.stateText : backend.stateText
-                        elide: Text.ElideRight
-                        font: Kirigami.Theme.smallFont
-                        opacity: 0.7
-                    }
+                    text: voice.state !== "idle" ? voice.stateText : backend.stateText
+                    elide: Text.ElideRight
                 }
                 // Sprachzustand: Mikrofon pulsiert beim Zuhören, Lautsprecher beim Sprechen
                 Kirigami.Icon {
@@ -332,7 +315,7 @@ Kirigami.ApplicationWindow {
                 Controls.ToolButton {
                     objectName: "libraryButton"
                     icon.name: "bookmarks"
-                    display: Controls.AbstractButton.IconOnly
+                    display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
                     text: "Bibliothek"
                     visible: backend.libraryAvailable
                     Controls.ToolTip.text: "Bibliothek: Adressen, Dateien und Ordner, die Hermes kennen soll"
@@ -343,7 +326,7 @@ Kirigami.ApplicationWindow {
                 Controls.ToolButton {
                     objectName: "auditButton"
                     icon.name: "view-history"
-                    display: Controls.AbstractButton.IconOnly
+                    display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
                     text: "Protokoll"
                     visible: backend.auditAvailable
                     Controls.ToolTip.text: "Protokoll: was Hermes am System getan hat"
@@ -353,18 +336,18 @@ Kirigami.ApplicationWindow {
                 }
                 Controls.ToolButton {
                     icon.name: "list-add"
-                    display: Controls.AbstractButton.IconOnly
-                    text: "Neues Gespräch"
-                    Controls.ToolTip.text: text
+                    display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
+                    text: "Neu"
+                    Controls.ToolTip.text: "Neues Gespräch"
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: backend.newConversation()
                 }
                 Controls.ToolButton {
                     icon.name: "configure"
-                    display: Controls.AbstractButton.IconOnly
-                    text: "Hermes einrichten"
-                    Controls.ToolTip.text: text
+                    display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
+                    text: "Einrichten"
+                    Controls.ToolTip.text: "Hermes einrichten: Anbieter, Schlüssel und Modell"
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: backend.openSetup()
@@ -382,10 +365,11 @@ Kirigami.ApplicationWindow {
             }
             Rectangle {
                 id: composer
-                anchors.left: parent.left
-                anchors.right: parent.right
+                // So breit wie die Lesespalte des Verlaufs, im breiten Fenster mittig
+                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.top
-                anchors.margins: Kirigami.Units.largeSpacing
+                anchors.topMargin: Kirigami.Units.largeSpacing
+                width: Math.min(parent.width - Kirigami.Units.largeSpacing * 2, root.readingWidth)
                 height: composerCol.implicitHeight + Kirigami.Units.smallSpacing * 2
                 radius: Kirigami.Units.largeSpacing
                 Kirigami.Theme.colorSet: Kirigami.Theme.View
@@ -497,7 +481,9 @@ Kirigami.ApplicationWindow {
                         spacing: Kirigami.Units.smallSpacing
                         Controls.ToolButton {
                             objectName: "attachButton"
-                            icon.name: "insert-image"
+                            // Einfarbige Symbole: die bunten Breeze-Fassungen von Kamera und
+                            // Mikrofon wirkten neben dem Bild-Symbol unruhig
+                            icon.name: "insert-image-symbolic"
                             display: Controls.AbstractButton.IconOnly
                             text: "Bild anhängen"
                             enabled: backend.state === "ready" && !backend.busy
@@ -508,7 +494,7 @@ Kirigami.ApplicationWindow {
                         }
                         Controls.ToolButton {
                             objectName: "lookButton"
-                            icon.name: "camera-photo"
+                            icon.name: "camera-photo-symbolic"
                             display: Controls.AbstractButton.IconOnly
                             text: "Bildschirmausschnitt anhängen"
                             visible: look.available
@@ -521,7 +507,7 @@ Kirigami.ApplicationWindow {
                         Controls.ToolButton {
                             objectName: "voiceButton"
                             icon.name: voice.state === "recording" || voice.state === "speaking"
-                                       ? "media-playback-stop" : "audio-input-microphone"
+                                       ? "media-playback-stop-symbolic" : "audio-input-microphone-symbolic"
                             display: Controls.AbstractButton.IconOnly
                             text: voice.state === "recording" ? "Aufnahme beenden"
                                 : (voice.state === "speaking" ? "Vorlesen abbrechen" : "Mit Hermes sprechen")
@@ -534,23 +520,30 @@ Kirigami.ApplicationWindow {
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: voice.toggle()
                         }
+                        // Nur, wenn Bilder mitgehen; der Tastenhinweis steht am Senden-Knopf
                         Controls.Label {
                             Layout.fillWidth: true
-                            text: backend.attachmentCount > 0
-                                ? (backend.attachmentCount === 1 ? "1 Bild geht mit" : backend.attachmentCount + " Bilder gehen mit")
-                                : "Enter sendet, Umschalt+Enter macht eine neue Zeile"
+                            text: backend.attachmentCount === 1 ? "1 Bild geht mit"
+                                : (backend.attachmentCount > 1 ? backend.attachmentCount + " Bilder gehen mit" : "")
                             elide: Text.ElideRight
                             font: Kirigami.Theme.smallFont
-                            opacity: 0.6
+                            opacity: 0.7
                         }
-                        Controls.Button {
+                        // Runder Knopf: farbig, sobald es etwas zu senden gibt, sonst blass;
+                        // während Hermes arbeitet, stoppt er den Lauf
+                        Controls.RoundButton {
                             id: sendButton
                             objectName: "sendButton"
                             text: backend.busy ? "Stopp" : "Senden"
-                            icon.name: backend.busy ? "process-stop" : "document-send"
-                            highlighted: !backend.busy
+                            display: Controls.AbstractButton.IconOnly
+                            icon.name: backend.busy ? "media-playback-stop-symbolic" : "document-send-symbolic"
+                            highlighted: enabled && !backend.busy
                             enabled: backend.busy || (backend.state === "ready"
                                      && (inputField.text.trim().length > 0 || backend.attachmentCount > 0))
+                            Controls.ToolTip.text: backend.busy ? "Stopp: Hermes anhalten"
+                                : "Senden (Enter) · Umschalt+Enter für eine neue Zeile"
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: backend.busy ? backend.stopRun() : root.sendCurrent()
                         }
                     }
@@ -618,7 +611,10 @@ Kirigami.ApplicationWindow {
                     topMargin: Kirigami.Units.largeSpacing
                     bottomMargin: Kirigami.Units.largeSpacing
                     clip: true
-                    spacing: Kirigami.Units.smallSpacing
+                    // Abstände setzt jede Zeile selbst (topGap), abhängig von der Zeile davor;
+                    // section liefert dafür ListView.previousSection, gezeichnet wird nichts
+                    spacing: 0
+                    section.property: "role"
                     model: backend.messages
                     boundsBehavior: Flickable.StopAtBounds
                     Controls.ScrollBar.vertical: Controls.ScrollBar {}
@@ -643,81 +639,106 @@ Kirigami.ApplicationWindow {
                         readonly property bool mine: role === "user"
                         readonly property bool isBubble: role === "user" || role === "assistant" || role === "error"
                         readonly property var imageList: images ? images : []
-                        readonly property int avatarSlot: Kirigami.Units.iconSizes.smallMedium + Kirigami.Units.smallSpacing * 2
-                        readonly property int maxBubble: Math.max(Kirigami.Units.gridUnit * 6, Math.round((width - avatarSlot) * 0.84))
+                        // Lesespalte, im breiten Fenster mittig; die Blase des Nutzers höchstens 80 % davon
+                        readonly property int column: Math.min(width, root.readingWidth)
+                        readonly property int colX: Math.round((width - column) / 2)
+                        readonly property int maxBubble: Math.max(Kirigami.Units.gridUnit * 6, Math.round(column * 0.8))
+                        // Rhythmus: vor jeder neuen Frage deutlich Luft, Werkzeugzeilen eng
+                        // beieinander, sonst ein gleichmäßiger Abstand
+                        readonly property string prevRole: ListView.previousSection
+                        readonly property int topGap: index === 0 ? 0
+                            : (role === "user" ? Math.round(Kirigami.Units.gridUnit * 1.75)
+                            : (role === "tool" && prevRole === "tool" ? Kirigami.Units.smallSpacing
+                            : (role === "info" ? Kirigami.Units.gridUnit : Kirigami.Units.largeSpacing)))
                         width: ListView.view ? ListView.view.width - ListView.view.leftMargin - ListView.view.rightMargin : 0
-                        implicitHeight: isBubble ? bubbleWrap.implicitHeight
-                                      : (role === "tool" ? toolRow.implicitHeight : infoPill.implicitHeight)
+                        implicitHeight: topGap + (isBubble ? bubbleWrap.implicitHeight
+                                      : (role === "tool" ? toolRow.implicitHeight : infoPill.implicitHeight))
 
-                        // Sprechblase: Nutzer rechts in Akzentfarbe, Hermes links mit Symbol
+                        // Uhrzeit dezent: als Hinweis, wenn der Zeiger über der Nachricht steht
+                        HoverHandler { id: rowHover }
+                        Controls.ToolTip.text: row.time
+                        Controls.ToolTip.visible: rowHover.hovered && row.time.length > 0 && row.isBubble
+                        Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+
+                        // Nutzer rechts in einer Blase in Akzentfarbe, Hermes links als ruhiger
+                        // Text ohne Kasten, Fehler in einem roten Kasten
                         Item {
                             id: bubbleWrap
                             visible: row.isBubble
+                            y: row.topGap
                             width: row.width
-                            implicitHeight: bubble.height + (timeLabel.visible ? timeLabel.implicitHeight + 2 : 0)
+                            implicitHeight: (imageFlow.visible ? imageFlow.height : 0)
+                                            + (imageFlow.visible && bubble.visible ? 2 : 0)
+                                            + (bubble.visible ? bubble.height : 0)
 
-                            Kirigami.Icon {
-                                id: avatar
-                                visible: !row.mine
-                                source: row.role === "error" ? "dialog-error" : "hermes-os"
-                                width: Kirigami.Units.iconSizes.smallMedium
-                                height: width
-                                anchors.left: parent.left
-                                anchors.bottom: bubble.bottom
+                            // Bilder als kleine Vorschau über der Nachricht, nicht in der Blase;
+                            // ein Klick öffnet sie groß im Bildbetrachter
+                            Flow {
+                                id: imageFlow
+                                visible: row.imageList.length > 0
+                                width: row.maxBubble
+                                x: row.mine ? row.colX + row.column - width : row.colX
+                                layoutDirection: row.mine ? Qt.RightToLeft : Qt.LeftToRight
+                                spacing: Kirigami.Units.smallSpacing
+                                Repeater {
+                                    model: row.imageList
+                                    // Kleine Karte; groß wird das Bild erst mit einem Klick
+                                    delegate: BubbleImage {
+                                        required property string modelData
+                                        source: modelData
+                                        maxWidth: Kirigami.Units.gridUnit * 10
+                                        maxHeight: Kirigami.Units.gridUnit * 7
+                                    }
+                                }
                             }
                             // Unsichtbare Messung: die natürliche Breite des Textes ohne
-                            // Umbruch, damit kurze Antworten kurze Blasen bekommen
+                            // Umbruch, damit kurze Nachrichten kurze Blasen bekommen
                             Text {
                                 id: measure
                                 visible: false
                                 text: row.text
-                                textFormat: row.role === "assistant" ? Text.MarkdownText : Text.PlainText
+                                textFormat: Text.PlainText
                                 font: Kirigami.Theme.defaultFont
                             }
                             Rectangle {
                                 id: bubble
-                                readonly property int pad: Kirigami.Units.largeSpacing
-                                readonly property int innerMax: row.maxBubble - pad * 2
-                                readonly property int wanted: Math.ceil(Math.max(measure.implicitWidth, imageCol.childrenRect.width,
-                                                                                typing.visible ? typing.width : 0))
-                                width: Math.min(row.maxBubble, wanted + pad * 2)
-                                height: content.implicitHeight + pad * 2
-                                x: row.mine ? row.width - width : row.avatarSlot
+                                // Antworten von Hermes stehen ohne Kasten in der ganzen Spalte
+                                readonly property bool plain: row.role === "assistant"
+                                readonly property int padX: plain ? 0 : Kirigami.Units.largeSpacing
+                                readonly property int padY: plain ? Kirigami.Units.smallSpacing
+                                                                  : Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing / 2
+                                visible: row.text.length > 0 || typing.visible
+                                width: plain ? row.column
+                                     : Math.min(row.maxBubble, Math.ceil(measure.implicitWidth) + padX * 2)
+                                height: content.implicitHeight + padY * 2
+                                x: row.mine ? row.colX + row.column - width : row.colX
+                                y: imageFlow.visible ? imageFlow.height + 2 : 0  // Bild und Frage als Einheit
                                 radius: root.bubbleRadius
                                 bottomRightRadius: row.mine ? Kirigami.Units.smallSpacing : root.bubbleRadius
-                                bottomLeftRadius: row.mine ? root.bubbleRadius : Kirigami.Units.smallSpacing
-                                color: row.mine ? Kirigami.Theme.highlightColor
-                                     : (row.role === "error" ? Kirigami.Theme.negativeBackgroundColor : chatArea.bubbleColor)
-                                border.width: row.mine ? 0 : 1
-                                border.color: row.role === "error" ? Kirigami.Theme.negativeTextColor : chatArea.hairline
+                                // Nutzerblase in gedämpfter Akzentfarbe statt voller Fläche:
+                                // erkennbar als eigene Nachricht, aber nicht das Lauteste im Fenster
+                                color: row.mine ? Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor,
+                                                                                    Kirigami.Theme.highlightColor, 0.32)
+                                     : (row.role === "error" ? Kirigami.Theme.negativeBackgroundColor : "transparent")
+                                border.width: row.role === "error" ? 1 : 0
+                                border.color: Kirigami.Theme.negativeTextColor
 
                                 Column {
                                     id: content
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    anchors.margins: bubble.pad
+                                    anchors.leftMargin: bubble.padX
+                                    anchors.rightMargin: bubble.padX
+                                    anchors.topMargin: bubble.padY
                                     spacing: Kirigami.Units.smallSpacing
-                                    Column {
-                                        id: imageCol
-                                        width: parent.width
-                                        spacing: Kirigami.Units.smallSpacing
-                                        visible: row.imageList.length > 0
-                                        Repeater {
-                                            model: row.imageList
-                                            delegate: BubbleImage {
-                                                required property string modelData
-                                                source: modelData
-                                                maxWidth: bubble.innerMax
-                                            }
-                                        }
-                                    }
                                     // Drei pulsierende Punkte, solange Hermes noch nichts geschrieben hat
                                     Row {
                                         id: typing
                                         visible: row.role === "assistant" && row.text.length === 0
                                                  && row.imageList.length === 0 && backend.busy
                                         spacing: Kirigami.Units.smallSpacing
+                                        topPadding: Kirigami.Units.smallSpacing
                                         Repeater {
                                             model: 3
                                             Rectangle {
@@ -745,66 +766,95 @@ Kirigami.ApplicationWindow {
                                         text: row.text
                                         textFormat: row.role === "assistant" ? TextEdit.MarkdownText : TextEdit.PlainText
                                         wrapMode: TextEdit.Wrap
-                                        color: row.mine ? Kirigami.Theme.highlightedTextColor
-                                             : (row.role === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor)
+                                        color: row.role === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                                         onLinkActivated: link => Qt.openUrlExternally(link)
                                     }
                                 }
                             }
-                            Controls.Label {
-                                id: timeLabel
-                                visible: row.time.length > 0 && row.role !== "error"
-                                text: row.time
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.5
-                                anchors.top: bubble.bottom
-                                anchors.topMargin: 2
-                                x: row.mine ? bubble.x + bubble.width - width : bubble.x
-                            }
                         }
 
-                        // Werkzeugaufruf: kleine Zeile mit Symbol, in Monospace
-                        RowLayout {
+                        // Werkzeugaufruf: ein kleines Kärtchen je Aufruf. Solange er läuft, dreht
+                        // sich ein Kreis, danach Haken und Dauer (hermes-os-tray schließt die Zeile ab)
+                        Rectangle {
                             id: toolRow
                             visible: row.role === "tool"
-                            x: row.avatarSlot
-                            width: row.width - row.avatarSlot
-                            spacing: Kirigami.Units.smallSpacing
-                            Kirigami.Icon {
-                                source: row.meta === "completed" ? "dialog-ok-apply"
-                                      : (row.meta === "error" ? "dialog-error" : "media-playback-start")
-                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                opacity: 0.7
-                            }
-                            Controls.Label {
-                                Layout.fillWidth: true
-                                text: row.text
-                                elide: Text.ElideRight
-                                font: Kirigami.Theme.fixedWidthFont
-                                opacity: 0.7
-                                color: row.meta === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                            readonly property bool running: row.meta === "started" && backend.busy
+                            x: row.colX
+                            y: row.topGap
+                            width: Math.min(row.column, toolLine.implicitWidth + Kirigami.Units.largeSpacing * 2)
+                            implicitHeight: toolLine.implicitHeight + Kirigami.Units.smallSpacing * 2
+                            height: implicitHeight
+                            radius: height / 2
+                            color: Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.06)
+                            RowLayout {
+                                id: toolLine
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: Kirigami.Units.largeSpacing
+                                anchors.rightMargin: Kirigami.Units.largeSpacing
+                                spacing: Kirigami.Units.smallSpacing
+                                Controls.BusyIndicator {
+                                    visible: toolRow.running
+                                    running: visible
+                                    padding: 0
+                                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                                }
+                                Kirigami.Icon {
+                                    visible: !toolRow.running
+                                    source: row.meta === "completed" ? "dialog-ok-apply-symbolic"
+                                          : (row.meta === "error" ? "dialog-error" : "media-playback-start-symbolic")
+                                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                                    opacity: row.meta === "error" ? 1 : 0.6
+                                }
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    text: row.text
+                                    elide: Text.ElideRight
+                                    font: Kirigami.Theme.smallFont
+                                    opacity: row.meta === "error" ? 1 : 0.7
+                                    color: row.meta === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                                }
                             }
                         }
 
-                        // Hinweis: mittig, als kleine Pille
-                        Rectangle {
+                        // Hinweis des Systems (Freigabe beantwortet, abgebrochen): steht zwischen
+                        // zwei feinen Linien wie ein Datumstrenner, damit er als Meldung des Systems
+                        // erkennbar ist und nicht wie eine Nachricht aussieht
+                        Item {
                             id: infoPill
                             visible: row.role === "info"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: Math.min(row.width, infoLabel.implicitWidth + Kirigami.Units.largeSpacing * 2)
-                            implicitHeight: infoLabel.implicitHeight + Kirigami.Units.smallSpacing * 2
+                            x: row.colX
+                            y: row.topGap
+                            width: row.column
+                            implicitHeight: infoLabel.implicitHeight + Kirigami.Units.smallSpacing
                             height: implicitHeight
-                            radius: height / 2
-                            color: chatArea.bubbleColor
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: infoLabel.left
+                                anchors.rightMargin: Kirigami.Units.largeSpacing
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: 1
+                                color: chatArea.hairline
+                            }
                             Controls.Label {
                                 id: infoLabel
                                 anchors.centerIn: parent
-                                width: Math.min(implicitWidth, row.width - Kirigami.Units.largeSpacing * 2)
+                                width: Math.min(implicitWidth, parent.width - Kirigami.Units.gridUnit * 4)
                                 text: row.text
                                 elide: Text.ElideRight
                                 font: Kirigami.Theme.smallFont
-                                opacity: 0.8
+                                opacity: 0.6
+                            }
+                            Rectangle {
+                                anchors.left: infoLabel.right
+                                anchors.right: parent.right
+                                anchors.leftMargin: Kirigami.Units.largeSpacing
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: 1
+                                color: chatArea.hairline
                             }
                         }
                     }

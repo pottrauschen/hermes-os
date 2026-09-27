@@ -68,10 +68,12 @@ class StubModel(QAbstractListModel):
         self.endInsertRows()
         return n
 
-    def set_text(self, row, text):
+    def set_text(self, row, text, meta=None):
         self._rows[row]["text"] = text
+        if meta is not None:
+            self._rows[row]["meta"] = meta
         idx = self.index(row, 0)
-        self.dataChanged.emit(idx, idx, [self.TextRole])
+        self.dataChanged.emit(idx, idx, [self.TextRole, self.MetaRole])
 
     def set_images(self, row, images):
         self._rows[row]["images"] = list(images or [])
@@ -753,16 +755,17 @@ def main():
     settle()
     shot("typing")
     busy_stop = send_btn is not None and send_btn.property("text") == "Stopp" and send_btn.property("enabled")
-    backend._model.append("tool", "os_status", "started")
+    # Wie hermes-os-tray: eine Zeile je Werkzeugaufruf, am Ende mit Dauer abgeschlossen
+    tool_row = backend._model.append("tool", "os_status", "started")
     backend._model.set_text(row, "Gebootet ist **hermes-os** `44.20260926`. Hier ein Bild dazu:")
     backend._model.set_images(row, [QUrl.fromLocalFile(pics[1]).toString()])
-    backend._model.append("tool", "os_status fertig (0.3 s)", "completed")
+    backend._model.set_text(tool_row, "os_status · 0,3 s", "completed")
     settle()
     lv = child("messageList")
     images = count("bubbleImage")
     shot("streaming")
-    step("Streaming: Stopp-Knopf während der Arbeit, vier Zeilen im Verlauf, zwei Bilder in Blasen",
-         busy_stop and lv is not None and lv.property("count") == 4 and lv.property("contentHeight") > 0
+    step("Streaming: Stopp-Knopf während der Arbeit, drei Zeilen im Verlauf, zwei Bilder in Blasen",
+         busy_stop and lv is not None and lv.property("count") == 3 and lv.property("contentHeight") > 0
          and images == 2,
          f"stop={busy_stop} count={lv and lv.property('count')} h={lv and lv.property('contentHeight')} "
          f"images={images}")
@@ -794,7 +797,7 @@ def main():
     shot("answered")
     step("Freigabe beantwortet: Karte verschwindet, Senden-Knopf zurück, Hinweis im Verlauf",
          box is not None and not box.property("visible") and send_btn is not None
-         and send_btn.property("text") == "Senden" and lv is not None and lv.property("count") == 5,
+         and send_btn.property("text") == "Senden" and lv is not None and lv.property("count") == 4,
          f"visible={box and box.property('visible')} btn={send_btn and send_btn.property('text')} "
          f"count={lv and lv.property('count')}")
 

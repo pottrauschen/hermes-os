@@ -14,14 +14,24 @@ Plasma-Sitzung noch nicht gebootet.
   orange (arbeitet), gelb (fragt nach einer Freigabe). Der Tooltip nennt den
   Zustand und die Hermes-Version.
 - **Klick oder Meta+H** öffnet ein Kirigami-Fenster wie einen Messenger: oben
-  Symbol mit Statuspunkt und Zustand, in der Mitte der Verlauf in Sprechblasen
-  (eigene rechts in Akzentfarbe, Hermes links mit Symbol, Uhrzeit darunter),
-  unten die Eingabe als Karte. Antworten kommen gestreamt, vorher pulsieren
-  drei Punkte; Werkzeugaufrufe stehen als kleine Monospace-Zeilen dazwischen,
-  Hinweise als Pille in der Mitte. Text lässt sich markieren und kopieren,
-  Markdown wird gerendert. Enter sendet, Umschalt+Enter macht eine neue Zeile.
-  Ein leerer Verlauf zeigt eine Begrüßung mit anklickbaren Vorschlägen. Escape
-  versteckt das Fenster, Schließen ebenso; das Symbol bleibt.
+  ein Punkt in der Farbe des Zustands mit dem Zustand als Text („Hermes ist
+  bereit“) und die Knöpfe Bibliothek, Protokoll, Neu und Einrichten (im
+  breiten Fenster mit Namen, im schmalen als Symbole mit Erklärung). Verlauf
+  und Eingabe stehen in einer Lesespalte von höchstens 36 Rastereinheiten
+  (gut 70 Zeichen), im breiten Fenster mittig. Eigene Nachrichten stehen
+  rechts in einer Blase in gedämpfter Akzentfarbe, Antworten von Hermes links
+  als Text ohne Kasten, Fehler in einem roten Kasten; Bilder erscheinen als
+  kleine Karte über der Nachricht. Die Uhrzeit zeigt sich beim Drüberfahren.
+  Antworten kommen gestreamt, vorher pulsieren drei Punkte. Jeder
+  Werkzeugaufruf ist ein Kärtchen („✓ os_status · 0,3 s“), das beim Start
+  erscheint und am Ende Dauer oder Fehler bekommt; Hinweise des Systems
+  („Freigabe: Einmal erlaubt“) stehen zwischen zwei feinen Linien. Vor jeder
+  neuen Frage ist mehr Luft als zwischen den Teilen einer Antwort. Text lässt
+  sich markieren und kopieren, Markdown wird gerendert. Enter sendet,
+  Umschalt+Enter macht eine neue Zeile (steht in der Erklärung am runden
+  Senden-Knopf). Ein leerer Verlauf zeigt eine Begrüßung mit anklickbaren
+  Vorschlägen. Escape versteckt das Fenster, Schließen ebenso; das Symbol
+  bleibt.
 - **Bilder mitschicken**: über den Knopf neben dem Textfeld (Dateidialog), mit
   Strg+V aus der Zwischenablage (Screenshot mit Spectacle, dann einfügen) oder
   indem man Dateien ins Fenster zieht. Angehängte Bilder erscheinen als
@@ -76,6 +86,7 @@ Plasma-Sitzung noch nicht gebootet.
 | Programmsymbol und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
 | Client-Test gegen ein nachgebautes Gateway | `tests/tray-client-check.py` |
 | Render-Test des Fensters ohne Display | `tests/tray-gui-check.py` |
+| Schaubilder des Fensters für Design-Änderungen (breit und schmal, mit echt wirkendem Gespräch) | `tests/tray-showcase.py` |
 
 Wie der Assistent läuft das Symbol mit Fedoras Python und PySide6 aus Aurora,
 nicht mit der Hermes-Venv. Es importiert nichts aus Hermes; alles läuft über

@@ -326,6 +326,18 @@ def check_only():
     return 0
 
 
+def tool_duration(seconds):
+    """Dauer eines Werkzeugaufrufs für die Zeile im Verlauf: „0,3 s“, ab einer Minute
+    „1 min 5 s“; ohne Angabe „fertig“."""
+    try:
+        s = float(seconds)
+    except (TypeError, ValueError):
+        return "fertig"
+    if s >= 60:
+        return f"{int(s // 60)} min {int(round(s % 60))} s"
+    return f"{s:.1f} s".replace(".", ",")
+
+
 def main():
     if "--check" in sys.argv:
         sys.exit(check_only())
@@ -538,6 +550,7 @@ def main():
             self._history_loaded = False
             self._run_id = ""
             self._assistant_row = -1
+            self._open_tools = []       # (Werkzeug, Zeile) der laufenden Aufrufe, für tool.completed
             self._poll_busy = False
             self._notify_proc = None
             self._context = ""          # Kontext aus einer Benachrichtigung für die nächste Nachricht
@@ -1237,6 +1250,7 @@ def main():
             text = hc.with_context(self._context, text)
             self._context = ""
             self._assistant_row = -1
+            self._open_tools = []
             self._set_busy(True)
             self._set_state("busy")
             client, sid = self._client, self._session_id
@@ -1294,12 +1308,21 @@ def main():
             elif name == "tool.started":
                 tool = str(event.get("tool") or "")
                 preview = str(event.get("preview") or "").strip().splitlines()
-                self._model.append("tool", f"{tool}: {preview[0][:160]}" if preview else tool, "started")
+                row = self._model.append("tool", f"{tool}: {preview[0][:160]}" if preview else tool, "started")
+                self._open_tools.append((tool, row))
             elif name == "tool.completed":
+                # Eine Zeile je Aufruf: die Startzeile desselben Werkzeugs bekommt Dauer
+                # oder Fehler angehängt, statt dass eine zweite Zeile dazukommt
                 tool = str(event.get("tool") or "")
                 failed = bool(event.get("error"))
-                mark = "Fehler" if failed else f"{event.get('duration', 0)} s"
-                self._model.append("tool", f"{tool} fertig ({mark})", "error" if failed else "completed")
+                mark = "Fehler" if failed else tool_duration(event.get("duration"))
+                meta = "error" if failed else "completed"
+                hit = next((i for i, (t, _) in enumerate(self._open_tools) if t == tool), None)
+                if hit is None:
+                    self._model.append("tool", f"{tool} · {mark}", meta)
+                else:
+                    _, row = self._open_tools.pop(hit)
+                    self._model.set_text(row, f"{self._model.text(row)} · {mark}", meta)
             elif name == "approval.request":
                 choices = [c for c in (event.get("choices") or ["once", "deny"]) if c in hc.APPROVAL_CHOICES]
                 description = str(event.get("description") or "")
