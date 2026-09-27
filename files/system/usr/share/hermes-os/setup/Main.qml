@@ -604,7 +604,7 @@ Kirigami.ApplicationWindow {
                         text: {
                             var rec = localPage.recommended
                             for (var i = 0; i < rec.length; i++) if (rec[i].tag === root.localModel) return rec[i].note
-                            return root.localModel !== "" ? "Eigenes Modell; es muss Werkzeugaufrufe können (Ollama-Bibliothek, Filter „tools")." : ""
+                            return root.localModel !== "" ? "Eigenes Modell; es muss Werkzeugaufrufe können (Ollama-Bibliothek, Filter „tools“)." : ""
                         }
                     }
                 }
