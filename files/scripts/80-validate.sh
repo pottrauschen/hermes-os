@@ -415,7 +415,7 @@ else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
-# 7l. Lokales Modell: Ollama aus dem Release-Tarball (30-ollama.sh), die
+# 7m. Lokales Modell: Ollama aus dem Release-Tarball (30-ollama.sh), die
 #     User-Unit, der Helfer, die Rezepte und der Test gegen Attrappen und
 #     einen nachgebauten Ollama-Server. Zum Schluss schreibt der Helfer die
 #     config.yaml eines eigenen HERMES_HOME und Hermes selbst muss den
