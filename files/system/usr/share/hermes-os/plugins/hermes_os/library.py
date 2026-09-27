@@ -580,7 +580,19 @@ def fold(text: str) -> str:
 def open_index(path: Optional[Path] = None) -> sqlite3.Connection:
     """Verbindung mit fertigem Schema; jede Aufruferin (Thread) nimmt ihre eigene."""
     p = Path(path) if path else index_path()
+    # Der Index enthält Volltext aus Dateien, die selbst 0600 sein können:
+    # Ordner 0700, Datei 0600 (SQLite legt -wal und -shm mit den Rechten der
+    # Datei an), unabhängig von der umask.
     p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(p.parent, 0o700)
+    except OSError:
+        pass
+    os.close(os.open(str(p), os.O_RDWR | os.O_CREAT, 0o600))
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
     con = sqlite3.connect(str(p), timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
@@ -870,6 +882,7 @@ def _mirror_url(con, entry, status, seen_sources, depth, max_pages, delay, refre
 
 def _mirror_folder(con, entry, status, seen_sources, max_pages, report, fail, check_cancel):
     root = entry["source"]
+    real_root = os.path.realpath(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in sorted(filenames):
@@ -878,12 +891,18 @@ def _mirror_folder(con, entry, status, seen_sources, max_pages, report, fail, ch
             suffix = Path(name).suffix.lower()
             if suffix != ".pdf" and suffix not in TEXT_SUFFIXES:
                 continue
+            full = os.path.join(dirpath, name)
+            # Verweise, die aus dem Ordner hinauszeigen, bleiben draußen, wie bei
+            # library_fetch: sonst landet fremder Text über den Spiegel im Index.
+            real = os.path.realpath(full)
+            if real != real_root and not real.startswith(real_root + os.sep):
+                fail(full, "Verweis zeigt aus dem Ordner hinaus, übersprungen")
+                continue
             if status["pages"] >= max_pages:
                 fail(root, f"mehr als {max_pages} Dateien; der Rest bleibt außen vor")
                 report()
                 return
             check_cancel()
-            full = os.path.join(dirpath, name)
             status["current"] = full
             try:
                 got = read_file(full)

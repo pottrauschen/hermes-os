@@ -475,6 +475,7 @@ def main():
             self._library = lib.load_entries() if lib is not None else []
             self._mirrors = {}              # Kennung -> Stand (docs/bibliothek.md, Stufe zwei)
             self._mirror_jobs = {}          # Kennung -> threading.Event zum Abbrechen
+            self._remove_after_mirror = set()   # Entfernen gewünscht, während der Spiegel lief
             self._search_query = ""
             self._search_hits = []
             self._search_note = ""
@@ -772,6 +773,11 @@ def main():
                 entry = next((e for e in self._library if e["id"] == entry_id), None)
                 title = entry["title"] if entry else entry_id
                 self._model.append("info", f"Bibliothek: {title}, {lib.describe_mirror(status)}")
+                if entry_id in self._remove_after_mirror:
+                    self._remove_after_mirror.discard(entry_id)
+                    self._mirrors.pop(entry_id, None)
+                    lib.remove_entry(entry_id)
+                    self.libraryReload()
             self.libraryMirrorChanged.emit()
 
         @Property("QVariantList", notify=librarySearchChanged)
@@ -914,7 +920,15 @@ def main():
 
         @Slot(str)
         def libraryRemove(self, entry_id):
-            if lib is not None and lib.remove_entry(entry_id):
+            if lib is None:
+                return
+            if entry_id in self._mirror_jobs:
+                # Läuft noch ein Spiegel: abbrechen, entfernen erst, wenn der
+                # Arbeitsthread fertig ist, sonst schreibt er den Eintrag zurück.
+                self._remove_after_mirror.add(entry_id)
+                self._mirror_jobs[entry_id].set()
+                return
+            if lib.remove_entry(entry_id):
                 self.libraryReload()
 
         @Slot(result=str)
