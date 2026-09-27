@@ -421,7 +421,7 @@ else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
 fi
 
-# 7h. Dashboard: gebautes Frontend aus der Node-Stufe, Stempel passt zum
+# 7l. Dashboard: gebautes Frontend aus der Node-Stufe, Stempel passt zum
 #     Release, Fenster mit QtWebEngine, Menüeintrag, Rezept. Dann die Logik
 #     des Fensters gegen Attrappen (tests/dashboard-check.py) und schließlich
 #     das echte `hermes dashboard` aus der Venv: über dashboard_server.py
