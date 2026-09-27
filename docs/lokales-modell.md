@@ -81,7 +81,7 @@ auf bootc unbrauchbar.
 | Rezepte | `hermes-lokal-ein`, `-aus`, `-modell`, `-status` in `hermes-os.just` |
 | Karte im Assistenten | `setup/Main.qml` (Seite „Lokales Modell“), Backend in `hermes-os-setup` |
 | Anleitung für den Agenten | Abschnitt „Lokales Modell statt Cloud“ in `skills/hermes-os-system/SKILL.md` |
-| Test | `tests/lokales-modell-check.py`, Gate `80-validate.sh` Abschnitt 7l, Größe in `89-tests.sh` |
+| Test | `tests/lokales-modell-check.py`, Gate `80-validate.sh` Abschnitt 7m, Größe in `89-tests.sh` |
 
 ## Wie Hermes angebunden ist
 
@@ -210,7 +210,7 @@ Vorlage (Block, Rest, 0600, Merken und Zurückholen) und die Endpunktprüfung
 gegen einen nachgebauten Ollama-Server (`/api/version`, `/api/tags`,
 `/api/show`, `/api/pull` als Strom, `/v1/models`, `/v1/chat/completions`
 mit und ohne Werkzeugaufruf), dazu den Helfer. `make lint` und das Gate
-(`80-validate.sh` 7l) führen ihn aus; das Gate prüft außerdem Binary,
+(`80-validate.sh` 7m) führen ihn aus; das Gate prüft außerdem Binary,
 Backends, Unit, Rezepte und den Vertrag mit Hermes.
 
 Nur in Test-VM 112 (RTX 3060 per Passthrough, `docs/testumgebung.md`) lässt
