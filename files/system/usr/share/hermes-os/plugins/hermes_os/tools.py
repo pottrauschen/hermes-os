@@ -99,14 +99,25 @@ def _deployments() -> Tuple[Optional[Dict[str, Any]], str]:
     return {"booted": booted, "staged": staged, "rollback": others[0] if others else None, "count": len(deps)}, out
 
 
+# Präfixe der Bildreferenz in rpm-ostree/bootc (ostree-ext): ostree-image-signed:,
+# ostree-unverified-image:, ostree-unverified-registry: (Kurzform ohne docker://,
+# so steht es nach `bootc switch` in VM 112), ostree-remote-image:REMOTE: und
+# ostree-remote-registry:REMOTE:.
+_OSTREE_REF_PREFIX = re.compile(r"^ostree-(?:image-signed|unverified-(?:image|registry)|remote-(?:image|registry):[^:]+):")
+
+
 def _image_ref(dep: Optional[Dict[str, Any]]) -> Tuple[str, str]:
     """(docker-Referenz ohne Transportpräfix, Digest) eines Deployments."""
     if not dep:
         return "", ""
     ref = str(dep.get("container-image-reference") or "")
-    # ostree-image-signed:docker://ghcr.io/x/y:latest  ->  ghcr.io/x/y:latest
+    # ostree-image-signed:docker://ghcr.io/x/y:latest    ->  ghcr.io/x/y:latest
+    # ostree-unverified-registry:ghcr.io/x/y:latest      ->  ghcr.io/x/y:latest
+    ref = _OSTREE_REF_PREFIX.sub("", ref)
     if "docker://" in ref:
         ref = ref.split("docker://", 1)[1]
+    elif ref.startswith("registry:"):
+        ref = ref[len("registry:"):]
     digest = str(dep.get("container-image-reference-digest") or "")
     return ref, digest
 

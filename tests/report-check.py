@@ -51,8 +51,13 @@ def load_plugin(plugin_dir):
     return mods["tools"], mods["report"]
 
 
-def deployments(staged=False):
-    deps = [{"booted": True, "container-image-reference": "ostree-image-signed:docker://ghcr.io/pottrauschen/hermes-os:latest",
+SIGNED_REF = "ostree-image-signed:docker://ghcr.io/pottrauschen/hermes-os:latest"
+# So steht es in VM 112 nach `bootc switch` (Kurzform ohne docker://)
+UNVERIFIED_REF = "ostree-unverified-registry:ghcr.io/pottrauschen/hermes-os-nvidia:latest"
+
+
+def deployments(staged=False, ref=SIGNED_REF):
+    deps = [{"booted": True, "container-image-reference": ref,
              "container-image-reference-digest": BOOTED_DIGEST, "version": "44.20260920", "timestamp": 1}]
     if staged:
         deps.insert(0, {"staged": True, "container-image-reference": deps[0]["container-image-reference"],
@@ -83,6 +88,7 @@ class Fake:
         self.calls = []
         self.missing = set()
         self.staged = False
+        self.ref = SIGNED_REF
         self.remote = REMOTE_DIGEST
         self.journal = [jline("NetworkManager.service"), jline("NetworkManager.service"), jline(ident="kernel", msg="usb 1-1: error")]
         self.journal_err = ""
@@ -97,8 +103,13 @@ class Fake:
         if cmd in self.missing:
             return 127, "", f"{cmd}: nicht installiert"
         if cmd == "rpm-ostree":
-            return 0, deployments(self.staged), ""
+            return 0, deployments(self.staged, self.ref), ""
         if cmd == "skopeo":
+            target = argv[-1]
+            # wie das echte skopeo: nur docker://<registry>/<name>[:tag]
+            if not target.startswith("docker://") or "ostree-" in target or target.count("docker://") != 1:
+                return 1, "", (f'time="2026-09-27T01:38:20Z" level=fatal msg="Error parsing image name '
+                               f'\\"{target}\\": invalid reference format"')
             return 0, json.dumps({"Digest": self.remote, "Labels": {"org.opencontainers.image.version": "44.20260926"}}), ""
         if cmd == "journalctl":
             return 0, "\n".join(self.journal) + "\n", self.journal_err
@@ -216,7 +227,21 @@ def main():
     got = report.build_report()["summary"]
     check("Fehlgeschlagen: 2 Dienste, bluetooth.service (System) und syncthing.service (Nutzer)." in got,
           "fehlgeschlagene Dienste aus System und Sitzung", got)
+    # systemd-Maskierung (so in VM 112): lesbar in der Kurzfassung, genau in den Einzelheiten
+    fake.failed_system = ""
+    fake.failed_user = "app-nvidia\\x2dsettings\\x2dload@autostart.service loaded failed failed NVIDIA Settings\n"
+    r = report.build_report()
+    check("Fehlgeschlagen: 1 Dienst, app-nvidia-settings-load@autostart.service (Nutzer)." in r["summary"]
+          and "x2d" not in r["summary"]
+          and "Genaue Unit-Namen (für systemctl): app-nvidia\\x2dsettings\\x2dload@autostart.service" in r["text"],
+          "maskierte Unit-Namen: lesbar in der Kurzfassung, genauer Name in den Einzelheiten",
+          f"{r['summary']} | {r['text'][-300:]}")
     fake.failed_system = fake.failed_user = ""
+    # Obergrenze von journalctl -n: die Zahl ist dann eine Untergrenze
+    fake.journal = [jline("flut.service")] * report.JOURNAL_MAX_ENTRIES
+    got = report.build_report()["summary"]
+    check(f"Mindestens {report.JOURNAL_MAX_ENTRIES} Fehler im Journal" in got, "an der Obergrenze: „Mindestens 5000 Fehler“", got)
+    fake.journal = []
 
     # ---- 5. Image-Zustände
     fake.remote = BOOTED_DIGEST
@@ -230,6 +255,20 @@ def main():
     fake.staged = False
     out = tools.handle_os_updates({})
     check("Update verfügbar: ja" in out and "version=44.20260926" in out, "os_updates nutzt dieselbe Logik", out[:400])
+    for raw, want in ((SIGNED_REF, "ghcr.io/pottrauschen/hermes-os:latest"),
+                      (UNVERIFIED_REF, "ghcr.io/pottrauschen/hermes-os-nvidia:latest"),
+                      ("ostree-unverified-image:docker://ghcr.io/p/h:latest", "ghcr.io/p/h:latest"),
+                      ("ostree-remote-registry:fedora:quay.io/f/b:44", "quay.io/f/b:44"),
+                      ("ostree-remote-image:fedora:docker://quay.io/f/b:44", "quay.io/f/b:44")):
+        got_ref = tools._image_ref({"container-image-reference": raw})[0]
+        check(got_ref == want, f"Bildreferenz {raw.split(':', 1)[0]} wird zu {want}", got_ref)
+    fake.ref = UNVERIFIED_REF
+    got = report.build_report()["summary"]
+    target = [c for c in fake.calls if c[0] == "skopeo"][-1][-1]
+    check(got.startswith("Neues Image verfügbar (44.20260926).")
+          and target == "docker://ghcr.io/pottrauschen/hermes-os-nvidia:latest",
+          "ostree-unverified-registry (VM 112): skopeo bekommt docker://ghcr.io/…, Update-Stand bekannt", f"{target} {got}")
+    fake.ref = SIGNED_REF
 
     # ---- 6. Eingeschränktes Journal und fehlende Kommandos
     fake.journal = [jline("a.service")]

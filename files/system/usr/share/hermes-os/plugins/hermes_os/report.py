@@ -129,6 +129,16 @@ def image_part() -> Tuple[str, List[str]]:
     return sentence, details
 
 
+_UNIT_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})")
+
+
+def _unit_label(name: str) -> str:
+    """systemd-Maskierung für Menschen auflösen: app-nvidia\\x2dsettings… wird zu
+    app-nvidia-settings…. Nur für die Kurzfassung; Einzelheiten und gespeicherter
+    Stand behalten den genauen Namen, den systemctl und journalctl brauchen."""
+    return _UNIT_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), name)
+
+
 def _journal_source(entry: Dict[str, Any]) -> str:
     unit = str(entry.get("_SYSTEMD_UNIT") or "")
     user_unit = str(entry.get("_SYSTEMD_USER_UNIT") or "")
@@ -196,11 +206,14 @@ def journal_part(since: float, now: float, previous: Optional[Dict[str, int]]) -
     if not j["count"]:
         return f"Keine Fehler im Journal {when}{limited}.", [], sources
     n = j["count"]
-    sentence = f"{n} Fehler im Journal {when}"
+    # An der Obergrenze ist die Zahl nur eine Untergrenze: journalctl -n schneidet ab.
+    sentence = (f"Mindestens {JOURNAL_MAX_ENTRIES} Fehler im Journal {when}" if n >= JOURNAL_MAX_ENTRIES
+                else f"{n} Fehler im Journal {when}")
     new_sources = [s for s in sorted(sources, key=lambda s: (-sources[s], s)) if previous is not None and s not in previous]
     if new_sources:
         new_count = sum(sources[s] for s in new_sources)
-        shown = ", ".join(new_sources[:3]) + (f" und {len(new_sources) - 3} weitere" if len(new_sources) > 3 else "")
+        shown = ", ".join(_unit_label(s) for s in new_sources[:3]) \
+            + (f" und {len(new_sources) - 3} weitere" if len(new_sources) > 3 else "")
         sentence += f", davon {new_count} neu: {shown}"
     elif previous is not None:
         sentence += ", keine neue Quelle"
@@ -299,7 +312,10 @@ def services_part() -> Tuple[str, List[str]]:
         details.append(f"Systemdienste nicht lesbar: {e1}")
     if user is None:
         details.append(f"Nutzerdienste nicht lesbar: {e2}")
-    failed = [f"{u} (System)" for u in system or []] + [f"{u} (Nutzer)" for u in user or []]
+    failed = [f"{_unit_label(u)} (System)" for u in system or []] + [f"{_unit_label(u)} (Nutzer)" for u in user or []]
+    exact = [u for u in (system or []) + (user or []) if _unit_label(u) != u]
+    if exact:
+        details.append("Genaue Unit-Namen (für systemctl): " + ", ".join(exact))
     if failed:
         word = "Dienst" if len(failed) == 1 else "Dienste"
         return f"Fehlgeschlagen: {len(failed)} {word}, {_join(failed[:5])}" + (" und weitere" if len(failed) > 5 else "") + ".", details
