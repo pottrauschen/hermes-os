@@ -338,12 +338,16 @@ class GlobalShortcut:
             return False
         # Seit Plasma 6.7 speichert kglobalacceld ein belegtes Kürzel trotzdem, und die
         # zuerst angemeldete Aktion gewinnt still; deshalb nachfragen und es sagen.
+        # Nicht globalShortcutAvailable: das zählt die eigene, gerade angemeldete Aktion
+        # mit und meldet dann immer „belegt“ (in VM 112 so gesehen). actionList nennt
+        # den Besitzer der Taste; nur ein fremder ist eine Belegung.
         self.warning = ""
         try:
-            free = conn.call(self._service, KGA_PATH, KGA_IFACE, "globalShortcutAvailable", "(ai)s",
-                             ((active[:1],), self.component))
-            if free and free[0] is False:
-                self.warning = (f"{self.active_keys} ist schon vergeben; in den Systemeinstellungen unter "
+            owner = conn.call(self._service, KGA_PATH, KGA_IFACE, "actionList", "(ai)", ((active[:1],),))
+            names = [str(x) for x in (owner[0] if owner else [])]
+            if len(names) >= 2 and (names[0], names[1]) != (self.component, self.action):
+                by = names[2] if len(names) > 2 and names[2] else names[0]
+                self.warning = (f"{self.active_keys} ist schon vergeben ({by}); in den Systemeinstellungen unter "
                                 f"Tastenkürzel, {self.component_label}, ein anderes wählen")
         except (OSError, dp.DBusError, ValueError):
             pass

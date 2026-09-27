@@ -162,12 +162,13 @@ def test_notify(desktop):
 class FakeKGlobalAccel:
     """Antwortet wie kglobalacceld (KF6) auf dem privaten Bus und sendet Signale."""
 
-    def __init__(self, dp, conn, stored_keys=None, available=True):
+    def __init__(self, dp, conn, stored_keys=None, owner=None):
         self.dp = dp
         self.conn = conn
         self.registered, self.set_calls, self.inactive = [], [], []
         self.stored_keys = stored_keys
-        self.available = available
+        # fremder Besitzer der Taste [Komponente, Aktion, Anzeigename, Aktionsname] oder None
+        self.owner = owner
 
     def handle(self, msg):
         dp = self.dp
@@ -188,7 +189,12 @@ class FakeKGlobalAccel:
                 raise dp.DBusError("org.kde.kglobalaccel.NoSuchComponent", name)
             return "o", ("/component/" + "".join(c if c.isalnum() else "_" for c in name),)
         if msg.member == "globalShortcutAvailable" and msg.signature == "(ai)s":
-            return "b", (self.available,)
+            # wie kglobalacceld: belegt, sobald irgendeine Aktion die Taste hat, auch die eigene
+            return "b", (not (self.registered or self.owner),)
+        if msg.member == "actionList" and msg.signature == "(ai)":
+            if self.owner:
+                return "as", (list(self.owner),)
+            return "as", (list(self.registered[-1]) if self.registered else [],)
         if msg.member == "setInactive":
             self.inactive.append(list(msg.body[0]))
             return "", ()
@@ -240,7 +246,8 @@ def test_global_shortcut(desktop, dp):
         check(len(fake.set_calls) == 2 and fake.set_calls[0][1] == [[[0x10000020]]] and fake.set_calls[0][2] == 2
               and fake.set_calls[1][2] == 8, f"setShortcutKeys: erst SetPresent, dann IsDefault, Taste als a(ai): {fake.set_calls}")
         check(sc.component_path == "/component/hermes_os_voice" and sc.active_keys == "Meta+Space" and sc.warning == "",
-              f"Komponentenpfad und aktives Kürzel: {sc.component_path} {sc.active_keys!r}")
+              f"Komponentenpfad, aktives Kürzel, eigene Anmeldung ist keine Belegung: {sc.component_path} "
+              f"{sc.active_keys!r} {sc.warning!r}")
 
         def pump(timeout=2.0):
             deadline = time.monotonic() + timeout
@@ -275,12 +282,13 @@ def test_global_shortcut(desktop, dp):
 
         # Gespeicherte Belegung gewinnt, belegtes Kürzel wird gemeldet
         fake.stored_keys = [0x12000020]
-        fake.available = False
+        fake.owner = ["kwin", "Overview", "KWin", "Übersicht umschalten"]
         sc2 = desktop.GlobalShortcut(desktop.COMPONENT, "push-to-talk", desktop.COMPONENT_LABEL, "Sprechen", "Meta+Space",
                                      lambda: None, lambda: None, bus_address=address)
         ok2 = sc2.install()
         check(ok2 and sc2.active_keys == "Meta+Shift+Space", f"gespeichertes Kürzel aus kglobalshortcutsrc gewinnt: {sc2.active_keys}")
-        check("vergeben" in sc2.warning, f"belegtes Kürzel wird als Warnung gemeldet: {sc2.warning!r}")
+        check("vergeben (KWin)" in sc2.warning, f"von einer fremden Aktion belegtes Kürzel wird mit Besitzer gemeldet: {sc2.warning!r}")
+        fake.owner = None
         sc2.close()
         sc3 = desktop.GlobalShortcut("gibtsnicht", "x", "X", "x", "Meta+Space", lambda: None, lambda: None, bus_address=address)
         check(sc3.install() is False and "KGlobalAccel" in sc3.error, "Fehler von kglobalacceld landet in error")
