@@ -30,6 +30,11 @@ find "${SHARE}/plugins" "${SHARE}/skills" -type d -exec chmod 0755 {} +
 # der Agent mit kwriteconfig6 und localectl (Skill hermes-os-system).
 chmod 0644 /etc/locale.conf /etc/vconsole.conf /etc/X11/xorg.conf.d/00-keyboard.conf \
   /etc/xdg/kxkbrc /etc/xdg/plasma-localerc
+# Zeitzone: ohne /etc/localtime gilt UTC (so in VM 112, der Morgenbericht kam zur
+# UTC-Uhrzeit). Als Symlink wie von timedatectl gesetzt; ein lokal geänderter Wert
+# bleibt beim Update, weil /etc dreifach zusammengeführt wird.
+test -e /usr/share/zoneinfo/Europe/Berlin
+ln -sfn ../usr/share/zoneinfo/Europe/Berlin /etc/localtime
 
 # ---- Icons des Leisten-Symbols ----------------------------------------------
 # Liegen in hicolor, damit Plasma sie über den Namen findet (StatusNotifierItem

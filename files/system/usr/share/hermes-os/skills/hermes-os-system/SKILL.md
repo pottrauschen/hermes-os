@@ -79,6 +79,10 @@ von der Änderung nur so, sonst gilt sie erst nach neuer Anmeldung. `kdeglobals`
 `os_locale` erneut lesen und nur berichten, was sich dort geändert hat; die Sprache
 der Oberfläche wechselt erst mit der nächsten Anmeldung.
 
+**Zeitzone:** ab Werk `Europe/Berlin` (`/etc/localtime`). Lesen mit `timedatectl`
+(frei), ändern mit `sudo timedatectl set-timezone <Zone>` (fragt); gültige Namen
+liefert `timedatectl list-timezones`.
+
 **Nachschlagen in der Bibliothek** (frei): Der Nutzer trägt im Chat-Fenster Adressen,
 Dateien und Ordner ein, die du kennen sollst. `library_list` zeigt sie samt Stand des
 Spiegels. Reihenfolge: erst `library_search` mit Suchbegriffen, dann `library_fetch` mit

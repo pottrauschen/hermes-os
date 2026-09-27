@@ -318,6 +318,11 @@ if grep -q '^LANG=de_DE.UTF-8$' /etc/locale.conf && grep -q '^KEYMAP=de$' /etc/v
 else
   fail "german defaults incomplete (locale.conf, vconsole.conf, 00-keyboard.conf, /etc/xdg/kxkbrc, /etc/xdg/plasma-localerc)"
 fi
+if [ "$(readlink /etc/localtime 2>/dev/null)" = "../usr/share/zoneinfo/Europe/Berlin" ] && [ -e /etc/localtime ]; then
+  pass "time zone Europe/Berlin (/etc/localtime)"
+else
+  fail "/etc/localtime does not point at ../usr/share/zoneinfo/Europe/Berlin"
+fi
 if locale -a 2>/dev/null | grep -qiE '^de_DE(\.utf8)?$'; then
   pass "locale de_DE.UTF-8 available"
 else

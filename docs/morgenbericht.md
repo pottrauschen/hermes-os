@@ -91,7 +91,9 @@ Gateway (hermes-gateway.service, Cron-Ticker alle 60 s)
   verpasste Tage werden zu einem Lauf.
 - **Zeitzone:** Hermes rechnet Cron-Ausdrücke in `timezone` aus
   `~/.hermes/config.yaml`, sonst in der Zeitzone des Systems (`hermes_time.py`).
-  Die Vorlage setzt keine, also gilt die des Systems.
+  Die Vorlage setzt keine, also gilt die des Systems; ab Werk ist das
+  Europe/Berlin (`/etc/localtime`, `20-agent-layer.sh`). Vorher fehlte die Datei,
+  dann gilt UTC, und der Bericht kam in VM 112 zwei Stunden zu spät.
 
 ## Testen
 
