@@ -14,6 +14,9 @@ aufruft, nummerierte Skripte in `files/scripts/`, Systemdateien in `files/system
 ein Validierungs-Gate, Build-Tests, Signierung, ein eigener GitHub-Workflow nach dem
 Universal-Blue-Muster.
 
+**Bedienung:** [docs/handbuch.md](docs/handbuch.md). **Weiterentwickeln:**
+[docs/entwicklung.md](docs/entwicklung.md), von dort aus zu allen Einzelthemen.
+
 ## Was das System kann und was nicht
 
 | | Stand |

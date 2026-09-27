@@ -11,7 +11,9 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 |---|---|
 | `README.md` | Was das System kann, Aufbau, die Grenze, Bauen, erster Login, Status |
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
-| `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, Stolperfallen, Messwerte, Boot-Checkliste |
+| `docs/handbuch.md` | für Nutzer: erster Start, Chat-Fenster, Kürzel, Freigaben, Bibliothek, Morgenbericht, Updates und Rollback, ujust-Befehle, wenn etwas nicht geht |
+| `docs/entwicklung.md` | Einstieg für Entwickler: wer was tut (PC, CI, VM), Aufbau des Repos, Ablauf einer Änderung, was unter Windows läuft, Oberflächen offscreen prüfen, Testfassungen aus dem Home, Hermes-Bump, Stolperfallen am Windows-Arbeitsplatz |
+| `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, GPU-Passthrough, VM 112 von hier bedienen (`tests/vm-hilfen.sh`), Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage |
 | `docs/dashboard.md` | Dashboard: Node-Stufe und `15-dashboard.sh`, Fenster `hermes-os-dashboard` mit `dashboard_server.py`, Start und Stopp des Servers, Gate, Tests, Grenzen, Stolperfallen |
 | `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |

@@ -11,7 +11,7 @@ README und bleibt der Weg für Geräte.
 | Was | Wo | Eigenschaften |
 |---|---|---|
 | Bau-VM `ainux-build` | VM 110 auf `.40`, `<user>@192.168.1.36` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
-| Test-VM `hermes-test` | VM 112 auf `.40`, Adresse per DHCP | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB, virtio-Grafik, USB-Tablet; seit 2026-09-26 mit RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), bootet `hermes-os-nvidia` |
+| Test-VM `hermes-test` | VM 112 auf `.40`, `<user>@192.168.1.142` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`, seit 2026-09-27 das private Image darauf |
 | Zwischenablage für die Platte | `.40`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
 
 Die Bau-VM gehört dem Projekt ainux und wird mitbenutzt (Entscheidung
@@ -99,15 +99,39 @@ NVIDIA-Karten an `vfio-pci`, eigene IOMMU-Gruppen); die Schritte waren:
    Lizenz „Dual MIT/GPL", also die offenen Kernelmodule.
    `tests/boot-check.sh 44.20260922.1.20260926` meldete keine harten Fehler.
 
-Absichtlich **ohne `x-vga` und mit `vga: virtio`**: Die Proxmox-Konsole zeigt
-weiter den Desktop, Plasma läuft auf der virtio-Grafik, die 3060 ist eine
-reine Rechenkarte. Mit `vga: none` wäre die Konsole schwarz (Homelab-Cockpit).
+Zuerst lief die VM ohne `x-vga` und mit `vga: virtio`: Die Proxmox-Konsole
+zeigte den Desktop, die 3060 war reine Rechenkarte. Seit dem 2026-09-27 steht
+VM 112 auf `vga: none`: Plasma läuft auf der 3060, das Bild kommt über deren
+HDMI an den Bildschirm am KVM-Umschalter, Tastatur und Maus über den
+durchgereichten USB-Anschluss. Die Proxmox-Konsole bleibt damit schwarz, und
+`qm monitor … screendump` liefert nichts; bedient wird die Sitzung von hier
+aus wie im Abschnitt „VM 112 von hier bedienen“.
 
 Randbedingungen: Die 3060 steht auch in den Configs von VM 105 und 107
 (Render-VM); solange sie an 112 hängt, startet keine der beiden. Der
 Gast-RAM (8 GB) ist bei Passthrough fest gepinnt. Die Quadro P620 (`04:00`,
 Pascal) taugt nicht: `aurora-dx-nvidia-open` unterstützt erst Turing, und
 NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
+
+## VM 112 von hier bedienen
+
+Die VM hat keine Proxmox-Konsole mehr (`vga: none`). Vom Windows-PC aus geht
+trotzdem alles, was man an der Sitzung braucht; die Hilfen dafür liegen in
+`tests/vm-hilfen.sh`.
+
+| Was | Wie |
+|---|---|
+| Anmelden am Anmeldebildschirm | auf dem Host `.40` als root: `qm sendkey 112 shift`, dann das Passwort Taste für Taste, dann `ret`. Auf deutscher Belegung liegt `-` auf der US-Taste `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
+| Befehle in der Sitzung | `ssh <user>@192.168.1.142`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
+| Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@192.168.1.142:hos/s.png .` auf den PC |
+| Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"` |
+| Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Chat-Fenster, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
+| Leisten-Symbol zeigen | `/usr/libexec/hermes-os-tray --show` (reicht an die laufende Instanz weiter) |
+
+Wer an der VM sitzt, sieht, was diese Hilfen tun: Fenster öffnen sich, der
+Zeiger bewegt sich. Vorher Bescheid sagen. Für Bilder von Oberflächen, die
+niemanden stören sollen, gibt es die Offscreen-Tests
+(`docs/entwicklung.md`, „Oberflächen ohne Bildschirm prüfen“).
 
 ## Stolperfallen
 
@@ -143,12 +167,19 @@ NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
   disk, kvm, tss und plugdev nicht auf, dazu kommen zwei SELinux-Hinweise
   (lsblk gegen die userdb, chcon mit mac_admin). Nichts davon stammt aus der
   hermes-os-Schicht; `tests/boot-check.sh` filtert das Bekannte heraus.
-- **Screenshots ohne Anmeldung:** `echo "screendump /root/112.ppm" | qm monitor 112`
-  auf dem Host; `/root/ppm2png.py` dort wandelt das PPM nach PNG.
+- **Screenshots ohne Anmeldung** gingen nur mit `vga: virtio`:
+  `echo "screendump /root/112.ppm" | qm monitor 112` auf dem Host,
+  `/root/ppm2png.py` dort wandelt das PPM nach PNG. Mit `vga: none` bleibt
+  das Bild schwarz; dann Spectacle in der Sitzung (unten).
 - **Bildschirmfoto aus der Sitzung zeigt ein altes Bild**, wenn die Anzeige
   per DPMS aus ist: `spectacle --background` liefert dann den eingefrorenen
   Frame samt alter Uhr. Vorher `kscreen-doctor --dpms on` über
-  `systemd-run --user`, dann stimmt das Foto.
+  `systemd-run --user`, dann stimmt das Foto; `wake` in
+  `tests/vm-hilfen.sh` tut genau das.
+- **ydotool tippt US-Belegung.** `ydotool type` setzt auf deutscher Tastatur
+  y und z vertauscht und Sonderzeichen falsch; Text deshalb über die
+  Zwischenablage (`paste`). `wl-copy` ohne offene Ausgaben starten, sonst
+  hält es die SSH-Sitzung offen.
 - **Ohne grafische Anmeldung stirbt das Gateway mit der SSH-Sitzung.** Nach
   einem Neustart steht die VM am Anmeldebildschirm, kein Autologin; die
   Nutzer-Units starten erst mit der Plasma-Sitzung. `systemctl --user start
