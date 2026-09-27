@@ -590,15 +590,63 @@ def _load_config(path: str) -> Dict[str, Any]:
     return cfg
 
 
-def _save_config(path: str, cfg: Dict[str, Any]) -> None:
-    """Atomar (Temp-Datei, rename), Rechte 0600. Kommentare gehen wie bei
-    jedem YAML-Roundtrip verloren; Hermes' eigenes save_config macht das genauso."""
+_TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*)\s*:")
+
+
+def _replace_top_blocks(text: str, cfg: Dict[str, Any], keys: List[str]) -> str:
+    """Nur die Blöcke der obersten Ebene für keys neu schreiben, alles andere
+    Zeichen für Zeichen stehen lassen (Kommentare der Vorlage, Reihenfolge).
+    Ein Block reicht von `key:` bis vor die nächste Zeile ohne Einrückung;
+    Leer- und Kommentarzeilen an seinem Ende gehören schon zum Nächsten.
+    Fehlt ein Block, kommt er ans Ende; fehlt der Schlüssel in cfg, fällt er weg."""
+    import yaml
+    lines = text.splitlines(keepends=True)
+    for key in keys:
+        start = next((i for i, ln in enumerate(lines) if (m := _TOP_KEY.match(ln)) and m.group(1) == key), None)
+        new = [] if key not in cfg else yaml.safe_dump({key: cfg[key]}, allow_unicode=True, sort_keys=False,
+                                                       default_flow_style=False).splitlines(keepends=True)
+        if start is None:
+            if new:
+                if lines and not lines[-1].endswith("\n"):
+                    lines[-1] += "\n"
+                lines += (["\n"] if lines and lines[-1].strip() else []) + new
+            continue
+        end = start + 1
+        while end < len(lines) and (not lines[end].strip() or lines[end][0] in " \t#"):
+            end += 1
+        while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")):
+            end -= 1
+        lines[start:end] = new
+        # Entfernt: die Leerzeile davor nicht doppelt oder am Dateiende stehen lassen
+        if not new and start > 0 and not lines[start - 1].strip() and (start >= len(lines) or not lines[start].strip()):
+            del lines[start - 1]
+    return "".join(lines)
+
+
+def _save_config(path: str, cfg: Dict[str, Any], keys: Optional[List[str]] = None) -> None:
+    """Atomar (Temp-Datei, rename), Rechte 0600. Mit keys werden nur diese Blöcke
+    der obersten Ebene ersetzt und die Kommentare bleiben (in VM 112 verlor die
+    config.yaml sonst alle Erklärungen der Vorlage); liest das Ergebnis nicht
+    genau cfg zurück, gilt der volle YAML-Roundtrip wie bei Hermes' eigenem
+    save_config, dann ohne Kommentare."""
     import yaml
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    text = None
+    if keys and os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = _replace_top_blocks(f.read(), cfg, keys)
+            if yaml.safe_load(text) != cfg:
+                text = None
+        except Exception:
+            text = None
     fd, tmp = tempfile.mkstemp(prefix=".config.yaml.", dir=os.path.dirname(path) or ".")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+            if text is not None:
+                f.write(text)
+            else:
+                yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
     except BaseException:
@@ -653,7 +701,7 @@ def write_hermes_config(model: str, path: Optional[str] = None, base_url: str = 
         agent = {}
     agent["reasoning_effort"] = "none"
     cfg["agent"] = agent
-    _save_config(path, cfg)
+    _save_config(path, cfg, keys=["model", "agent"])
     return dict(block)
 
 
@@ -708,7 +756,7 @@ def restore_previous(path: Optional[str] = None) -> Optional[Dict[str, Any]]:
         cfg["agent"] = agent
     else:
         cfg.pop("agent", None)
-    _save_config(path, cfg)
+    _save_config(path, cfg, keys=["model", "agent"])
     os.unlink(mem)
     return dict(block) if isinstance(block, dict) and block else {}
 

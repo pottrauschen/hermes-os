@@ -239,6 +239,14 @@ def main():
         check(rest_before == rest_after and "smart_policy" in after.get("approvals", {}),
               "der Rest der config.yaml bleibt unverändert (auch mehrzeilige Werte)")
         check(stat.S_IMODE(os.stat(cfg_path).st_mode) == 0o600, "config.yaml hat 0600", oct(os.stat(cfg_path).st_mode))
+        if template:
+            tmpl_text = open(template, encoding="utf-8").read()
+            after_text = open(cfg_path, encoding="utf-8").read()
+            comments = [ln for ln in tmpl_text.splitlines() if ln.lstrip().startswith("#")]
+            check(comments and all(ln in after_text.splitlines() for ln in comments)
+                  and after_text.startswith(tmpl_text.rstrip("\n")),
+                  "Kommentare und Text der Vorlage bleiben, model und agent kommen ans Ende",
+                  f"{len(comments)} Kommentarzeilen, Anfang gleich: {after_text.startswith(tmpl_text.rstrip(chr(10)))}")
         check(lm.read_hermes_model()["default"] == "qwen3:14b" and lm.is_local(lm.read_hermes_model()),
               "read_hermes_model liest zurück, is_local erkennt den lokalen Endpunkt")
         text1 = open(cfg_path, encoding="utf-8").read()
@@ -300,6 +308,17 @@ def main():
         after = yaml.safe_load(open(cfg_path, encoding="utf-8"))
         check(back == {} and "model" not in after and "agent" not in after and after["terminal"]["backend"] == "local",
               "ohne vorherigen Anbieter: Block und agent-Eintrag werden wieder entfernt", str(after))
+        # Hin und zurück auf der Vorlage: danach steht wieder der Text von vorher
+        if template:
+            with open(template, encoding="utf-8") as src, open(cfg_path, "w", encoding="utf-8") as dst:
+                dst.write(src.read())
+            lm.remember_previous()
+            lm.write_hermes_config("qwen3.5:9b")
+            lm.restore_previous()
+            back_text = open(cfg_path, encoding="utf-8").read()
+            check(back_text.rstrip("\n") == open(template, encoding="utf-8").read().rstrip("\n"),
+                  "ein und aus auf der Vorlage: die Datei sieht danach aus wie vorher (Kommentare inklusive)",
+                  back_text[-300:])
         lm.write_hermes_config("qwen3:14b")                      # Stand für die folgenden Prüfungen
 
         # ---- 4. Endpunkt gegen den Nachbau ------------------------------------------
