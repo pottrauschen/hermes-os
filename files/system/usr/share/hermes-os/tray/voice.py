@@ -597,7 +597,8 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
             threading.Thread(target=work, name="voice-stop", daemon=True).start()
 
         def cancel_recording(self):
-            threading.Thread(target=self._recorder.cancel, name="voice-cancel", daemon=True).start()
+            self._cancel_thread = threading.Thread(target=self._recorder.cancel, name="voice-cancel", daemon=True)
+            self._cancel_thread.start()
 
         def transcribe(self, path):
             def work():
@@ -688,6 +689,13 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
             """Beim Beenden: Aufnahme abbrechen, Helfer beenden, Kürzel bei KGlobalAccel
             freigeben (kglobalacceld beobachtet seine Anmelder nicht)."""
             self._ptt.cancel()
+            # Den Rekorder synchron beenden: der Abbruch-Thread ist ein Daemon, der
+            # Prozess läuft in einer eigenen Sitzung und würde das Symbol sonst
+            # überleben und weiter aufnehmen.
+            thread = getattr(self, "_cancel_thread", None)
+            if thread is not None:
+                thread.join(3)
+            self._recorder.cancel()
             self._worker.stop()
             if self.shortcut is not None:
                 self.shortcut.close()
