@@ -20,6 +20,7 @@ import importlib.util
 import json
 import os
 import sqlite3
+import stat
 import sys
 import tempfile
 import threading
@@ -125,6 +126,9 @@ def main():
         Path(docs, "tief", "notiz.txt").write_text("Notiz: Drucker einrichten mit CUPS.\n", encoding="utf-8")
         Path(docs, "bin.dat").write_bytes(b"\x00\x01" * 10)
         Path(docs, ".versteckt.md").write_text("geheim", encoding="utf-8")
+        # Ein Verweis, der aus dem Ordner hinauszeigt, darf nicht im Index landen
+        Path(tmp, "privat.md").write_text("# Privat\n\nKontonummer 12345678, bitte nicht spiegeln.\n", encoding="utf-8")
+        os.symlink(Path(tmp, "privat.md"), Path(docs, "verweis.md"))
         single = Path(tmp, "einzel.txt")
         single.write_text("Einzelne Datei über Tastaturkürzel.\n", encoding="utf-8")
         e_url, _ = lib.add_entry(base + "/", "Handbuch", "Testseite")
@@ -212,12 +216,21 @@ def main():
 
         # Ordner und Datei
         sd = lib.mirror_entry(e_dir, delay=0)
-        check(sd["status"] == "done" and sd["pages"] == 2 and sd["error_count"] == 0,
-              "Ordner: zwei Textdateien indiziert, Binär- und versteckte Datei übergangen", str(sd))
+        check(sd["status"] == "done" and sd["pages"] == 2 and sd["error_count"] == 1 and "Verweis" in sd["errors"][0],
+              "Ordner: zwei Textdateien indiziert, Binär- und versteckte Datei übergangen, Verweis nach draußen gemeldet", str(sd))
+        hits_p, _ = lib.search_index("Kontonummer")
+        check(not hits_p, "Text hinter dem Verweis nach draußen ist nicht im Index", str(hits_p))
+        idx = lib.index_path()
+        check(stat.S_IMODE(idx.stat().st_mode) == 0o600 and stat.S_IMODE(idx.parent.stat().st_mode) == 0o700,
+              "Index 0600 im Ordner 0700",
+              f"{oct(stat.S_IMODE(idx.stat().st_mode))} {oct(stat.S_IMODE(idx.parent.stat().st_mode))}")
+        for side in (idx.with_name(idx.name + "-wal"), idx.with_name(idx.name + "-shm")):
+            if side.exists():
+                check(stat.S_IMODE(side.stat().st_mode) == 0o600, f"{side.name} 0600", oct(stat.S_IMODE(side.stat().st_mode)))
         sf = lib.mirror_entry(e_file, delay=0)
         check(sf["status"] == "done" and sf["pages"] == 1, "Datei indiziert", str(sf))
         sd2 = lib.mirror_entry(e_dir, max_pages=1, delay=0)
-        check(sd2["pages"] == 1 and sd2["error_count"] == 1 and "mehr als 1" in sd2["errors"][0],
+        check(sd2["pages"] == 1 and any("mehr als 1" in e for e in sd2["errors"]),
               "Ordner mit Limit meldet, was außen vor bleibt", str(sd2))
         lib.mirror_entry(e_dir, delay=0)
         bad = lib.mirror_entry({"id": "kaputt", "kind": "file", "source": str(Path(tmp, "fehlt.txt")), "title": "x"}, delay=0)
