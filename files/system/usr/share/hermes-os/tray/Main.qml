@@ -18,7 +18,7 @@ import org.kde.kirigami as Kirigami
 
 Kirigami.ApplicationWindow {
     id: root
-    title: "Hermes"
+    title: "Hermes-Kontor"
     width: Kirigami.Units.gridUnit * 30
     height: Kirigami.Units.gridUnit * 36
     minimumWidth: Kirigami.Units.gridUnit * 20

@@ -9,7 +9,7 @@ etwa:
 > 2 Flatpak-Updates verfügbar.
 > [Im Chat besprechen]
 
-Der Knopf öffnet das Chat-Fenster des Leisten-Symbols mit dem ganzen Bericht als
+Der Knopf öffnet das Kontor des Leisten-Symbols mit dem ganzen Bericht als
 Kontext. Ein Update stößt der Bericht nie selbst an; wer im Chat „spiel das
 Update ein" schreibt, bekommt die normale Freigabe aus der Grenze (README).
 

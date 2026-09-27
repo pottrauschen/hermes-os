@@ -1,4 +1,4 @@
-"""Bibliothek: Wissensquellen, die der Nutzer im Chat-Fenster einträgt, und die
+"""Bibliothek: Wissensquellen, die der Nutzer im Kontor einträgt, und die
 Werkzeuge, mit denen der Agent sie liest.
 
 Stufe eins (docs/bibliothek.md): Adressen, Dateien und Ordner mit Titel und
@@ -93,7 +93,7 @@ MCP_CATALOG = (
      "description": "Fragen zu öffentlichen GitHub-Projekten, beantwortet aus deren Quellcode. Ohne Konto."},
 )
 MCP_BLOCK_COMMENT = ("# ---- Doku-Server (MCP) -------------------------------------------------------\n"
-                     "# Schalter auf der Seite „Bibliothek“ im Chat-Fenster (docs/bibliothek.md).\n"
+                     "# Schalter auf der Seite „Bibliothek“ im Kontor (docs/bibliothek.md).\n"
                      "# Das Gateway übernimmt Änderungen hier von selbst innerhalb etwa einer Minute.\n")
 
 
@@ -1289,7 +1289,7 @@ LIBRARY_MIRROR_SCHEMA = _schema(
     "Verweisen auf demselben Host bis zu einer Tiefe und einem Seitenlimit (höflich, mit Pausen, "
     "robots.txt wird beachtet), eine Datei oder ein Ordner wird indiziert. Läuft synchron und kann "
     "bei vielen Seiten einige Minuten dauern; sag dem Nutzer vorher, was du spiegelst. Ein zweiter "
-    "Lauf erneuert den Spiegel. Der Nutzer kann dasselbe im Chat-Fenster unter „Bibliothek“ mit "
+    "Lauf erneuert den Spiegel. Der Nutzer kann dasselbe im Kontor unter „Bibliothek“ mit "
     "dem Knopf „Spiegeln“ tun.",
     {
         "entry_id": {"type": "string", "description": "Kennung des Eintrags aus library_list"},
@@ -1315,7 +1315,7 @@ def _mirrors_safe() -> Dict[str, Dict[str, Any]]:
 def handle_library_list(args: Dict[str, Any], **_kw) -> str:
     entries = load_entries()
     if not entries:
-        return ("Die Bibliothek ist leer. Der Nutzer kann im Chat-Fenster unter „Bibliothek“ Adressen, "
+        return ("Die Bibliothek ist leer. Der Nutzer kann im Kontor unter „Bibliothek“ Adressen, "
                 "Dateien und Ordner eintragen.")
     mirrors = _mirrors_safe()
     lines = [f"{len(entries)} Einträge (library_search sucht in den Spiegeln, library_fetch liest mit der Kennung, "
@@ -1386,7 +1386,7 @@ def handle_library_search(args: Dict[str, Any], **_kw) -> str:
     mirrors = _mirrors_safe()
     if not mirrors:
         return ("Noch kein Spiegel im Index: library_search findet nur, was gespiegelt ist. library_mirror mit "
-                "der Kennung eines Eintrags legt einen an (oder der Nutzer im Chat-Fenster mit „Spiegeln“); "
+                "der Kennung eines Eintrags legt einen an (oder der Nutzer im Kontor mit „Spiegeln“); "
                 "bis dahin library_fetch und den Verweisen folgen.")
     try:
         hits, mode = search_index(query, entry_id, limit)
@@ -1436,7 +1436,7 @@ def prompt_section(_info: Any = None) -> str:
     lines = ["## Bibliothek des Nutzers"]
     if not entries:
         lines.append("Noch leer. Erwähnt der Nutzer Handbücher, Dokumentation oder eigene Unterlagen, sag ihm, "
-                     "dass er sie im Chat-Fenster unter „Bibliothek“ als Adresse, Datei oder Ordner eintragen "
+                     "dass er sie im Kontor unter „Bibliothek“ als Adresse, Datei oder Ordner eintragen "
                      "kann; danach liest du sie mit library_fetch und suchst darin mit library_search, sobald "
                      "ein Spiegel da ist.")
         return "\n".join(lines)

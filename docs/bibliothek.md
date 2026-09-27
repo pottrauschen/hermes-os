@@ -1,6 +1,6 @@
 # Bibliothek: Wissensquellen für den Agenten
 
-Stand: 2026-09-26, Stufe zwei. Der Nutzer trägt im Chat-Fenster Adressen,
+Stand: 2026-09-26, Stufe zwei. Der Nutzer trägt im Kontor Adressen,
 Dateien und Ordner ein, die Hermes kennen soll; der Agent liest sie bei Bedarf
 und nennt die Quelle. Gedacht für Handbücher wie docs.kde.org und eigene
 Unterlagen. Stufe eins (2026-09-26) war die einfache Form: Ablage, Seite,
@@ -12,7 +12,7 @@ Die Ablage `bibliothek.json` blieb dabei unverändert.
 
 ## Was es tut
 
-- **Seite „Bibliothek" im Chat-Fenster**, erreichbar über den Knopf im Kopf
+- **Seite „Bibliothek" im Kontor**, erreichbar über den Knopf im Kopf
   und den Menüpunkt am Symbol: Eintrag mit Adresse oder Pfad, Titel und Notiz,
   Datei- und Ordnerdialog, ein Feld zum Ablegen (Dateien und Ordner aus dem
   Dateimanager, Adressen aus dem Browser), ein Suchfeld mit Trefferliste, je
@@ -99,7 +99,7 @@ Die Ablage `bibliothek.json` blieb dabei unverändert.
   Neustart nötig**, anders als im Plan: das Gateway beobachtet `config.yaml`
   und verbindet oder trennt Server innerhalb etwa einer Minute
   (`gateway/run_profile_reconcile.py`, Doku `mcp.md`, „Reloading"); der
-  API-Server, an dem das Chat-Fenster hängt, nimmt alle eingeschalteten Server
+  API-Server, an dem das Kontor hängt, nimmt alle eingeschalteten Server
   mit, solange `platform_toolsets.api_server` nichts anderes sagt. Ein
   laufendes Gespräch sieht die neuen Werkzeuge ab dem nächsten neuen Gespräch.
   Die Werkzeuge heißen `mcp__context7__<tool>` und `mcp__deepwiki__<tool>`.

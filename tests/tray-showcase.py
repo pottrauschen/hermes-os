@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # =============================================================================
-# hermes-os -- Schaubilder des Chat-Fensters für Design-Änderungen
+# hermes-os -- Schaubilder des Kontors für Design-Änderungen
 # =============================================================================
 # Rendert tray/Main.qml offscreen mit einem echt wirkenden Gespräch (lange
 # Antwort mit Markdown, Werkzeugzeilen, Bildschirmfoto, Freigabe-Pille) in
@@ -28,7 +28,7 @@ from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
 
 ANSWER = (
-    "Das ist das **Chat-Fenster von hermes-os**, über das wir gerade reden.\n\n"
+    "Das ist das **Kontor von hermes-os**, über das wir gerade reden.\n\n"
     "**Was auffällt:**\n\n"
     "- Oben links steht der Zustand: *Hermes ist bereit*.\n"
     "- In der Mitte läuft der Verlauf mit deinem Bildschirmfoto.\n"
@@ -89,11 +89,11 @@ def main():
     m.append("user", "Was sehe ich hier? Beschreibe kurz, was auf diesem Bildschirmausschnitt zu sehen ist.",
              images=[url], when="18:37")
     m.append("assistant", "Das ist das Dashboard von Hermes: Sitzungen, Modelle, Cron-Jobs und Logs "
-                          "an einem Ort. Auffällig ist nur, dass es dasselbe Symbol trägt wie das Chat-Fenster.",
+                          "an einem Ort. Auffällig ist nur, dass es dasselbe Symbol trägt wie das Kontor.",
              when="18:37")
     m.append("info", "Freigabe: Einmal erlaubt", when="18:38")
     m.append("user", "genau - den hast du vergessen - oder?", when="18:38")
-    m.append("assistant", "Ja. Das Chat-Fenster hätte ganz oben auf der Liste stehen sollen.", when="18:38")
+    m.append("assistant", "Ja. Das Kontor hätte ganz oben auf der Liste stehen sollen.", when="18:38")
 
     for name, (w, h) in (("breit", (1180, 780)), ("schmal", (560, 780))):
         root.setWidth(w)

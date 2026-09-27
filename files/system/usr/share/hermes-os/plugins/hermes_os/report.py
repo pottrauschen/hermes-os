@@ -14,7 +14,7 @@ desktop_notify mit report=true zustellt.
 Wunsch mit dem Knopf „Im Chat besprechen". Wie bei den Freigaben des
 Leisten-Symbols wartet notify-send auf die Wahl; die Wartezeit läuft in einer
 eigenen transienten User-Unit, nicht im Gateway. Der Knopf ruft
-``hermes-os-tray --discuss <datei>``, das Chat-Fenster öffnet sich mit dem
+``hermes-os-tray --discuss <datei>``, das Kontor öffnet sich mit dem
 Bericht als Kontext. Ein Update stößt der Bericht nie selbst an; das geht
 nur im Chat über die normale Freigabe.
 

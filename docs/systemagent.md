@@ -1,8 +1,9 @@
 # Systemagent: das Leisten-Symbol
 
 Stand: 2026-09-26. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
-ein Fenster, das dauernd offen steht: ein Symbol in der Systemleiste, ein
-Chat-Fenster mit Sprechblasen und Bildern, Freigaben als Benachrichtigung.
+ein Fenster, das dauernd offen steht: ein Symbol in der Systemleiste, das
+Kontor (das Chat-Fenster, Titel „Hermes-Kontor“) mit Sprechblasen und
+Bildern, Freigaben als Benachrichtigung.
 Gebaut, durch Gate und Tests gelaufen, das Fenster offscreen in der Test-VM
 gerendert und der Bildweg gegen das echte Gateway geprüft; als Symbol in der
 Plasma-Sitzung noch nicht gebootet.
@@ -65,7 +66,7 @@ Plasma-Sitzung noch nicht gebootet.
   schaltet die Aufnahme ein und aus; während Hermes zuhört oder spricht, zeigt
   das Symbol einen eigenen Zustand (rot mit Mikrofon, blau mit Lautsprecher).
   Details in [sehen-hoeren.md](sehen-hoeren.md).
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Was
+- **Menü am Symbol**: Kontor öffnen, neues Gespräch, Bibliothek, Protokoll, Was
   sehe ich hier?, Mit Hermes sprechen, Dashboard öffnen, Hermes einrichten,
   Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" startet das
   Fenster `/usr/libexec/hermes-os-dashboard` ([dashboard.md](dashboard.md)) und

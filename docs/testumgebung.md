@@ -125,7 +125,7 @@ trotzdem alles, was man an der Sitzung braucht; die Hilfen dafür liegen in
 | Befehle in der Sitzung | `ssh <user>@192.168.1.142`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
 | Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@192.168.1.142:hos/s.png .` auf den PC |
 | Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"` |
-| Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Chat-Fenster, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
+| Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Kontor, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
 | Leisten-Symbol zeigen | `/usr/libexec/hermes-os-tray --show` (reicht an die laufende Instanz weiter) |
 
 Wer an der VM sitzt, sieht, was diese Hilfen tun: Fenster öffnen sich, der

@@ -1,7 +1,7 @@
 """hermes-os -- KRunner-Runner „Hermes fragen“ im Leisten-Symbol.
 
 Alt+Leertaste, dann `hermes <Frage>` oder kurz `h: <Frage>`: KRunner zeigt
-„Hermes fragen: <Frage>“. Enter öffnet das Chat-Fenster und schickt die Frage
+„Hermes fragen: <Frage>“. Enter öffnet das Kontor und schickt die Frage
 ab; die Aktion „Nur nachschlagen“ fragt Hermes in einem eigenen Gespräch und
 liefert die Antwort als Benachrichtigung.
 
@@ -89,7 +89,7 @@ def build_matches(query: str) -> List[Tuple[str, str, str, int, float, Dict[str,
     if question is None:
         return []
     props: Dict[str, Any] = {
-        "subtext": "Enter: im Chat-Fenster fragen",
+        "subtext": "Enter: im Kontor fragen",
         "category": "Hermes",
         "actions": [ACTION_LOOKUP],
     }
@@ -105,7 +105,7 @@ def question_from_match_id(match_id: str) -> Optional[str]:
 
 
 class Runner:
-    """Antwortet auf org.kde.krunner1. `ask(question)` schickt ins Chat-Fenster,
+    """Antwortet auf org.kde.krunner1. `ask(question)` schickt ins Kontor,
     `lookup(question)` fragt still nach, `activation(token)` nimmt das
     XDG-Aktivierungs-Token entgegen, bevor Run kommt."""
 
@@ -265,7 +265,7 @@ def lookup_answer(client, question: str, session_id: Optional[str] = None,
             client.stop(run_id)
         except Exception:
             pass
-        return False, "Keine Antwort in der Zeit. Im Chat-Fenster weiterfragen."
+        return False, "Keine Antwort in der Zeit. Im Kontor weiterfragen."
     if not state["done"]:
         return False, state["error"] or "Verbindung abgebrochen, bevor Hermes fertig war."
     text = state["text"]
@@ -329,7 +329,7 @@ def install(backend, show_window: Callable[[], None], window, make_client: Calla
             QMetaObject.invokeMethod(window, "typeInput", Q_ARG("QVariant", question))
         except Exception:
             pass
-        notify("Hermes ist nicht bereit", "Die Frage aus KRunner steht im Eingabefeld des Chat-Fensters.",
+        notify("Hermes ist nicht bereit", "Die Frage aus KRunner steht im Eingabefeld des Kontors.",
                "dialog-information")
 
     pending = PendingAsk(can_send, backend.send, give_up)

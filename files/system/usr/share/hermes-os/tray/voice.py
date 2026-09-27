@@ -4,7 +4,7 @@ Meta+Leertaste gedrückt halten nimmt auf, loslassen stoppt; kurz antippen
 schaltet die Aufnahme ein, der nächste Druck aus. Die Aufnahme geht als WAV an
 den Sprachhelfer in der Hermes-Venv (tray/voice_worker.py: faster-whisper mit
 Modell und Sprache aus ~/.hermes/config.yaml), der erkannte Text geht wie eine
-getippte Frage ins Chat-Fenster (backend.send), und die Antwort wird mit Piper
+getippte Frage ins Kontor (backend.send), und die Antwort wird mit Piper
 vorgelesen (Stimme aus tts.piper). Während Aufnahme und Sprechen zeigt das
 Leisten-Symbol einen eigenen Zustand; drückt man das Kürzel, während Hermes
 spricht, verstummt er und hört zu.

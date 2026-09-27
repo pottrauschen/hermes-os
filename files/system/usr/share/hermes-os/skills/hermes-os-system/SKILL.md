@@ -34,13 +34,13 @@ eigenen Werkzeuge `app_launch` und `desktop_notify`.
 
 | Was | So öffnet es der Nutzer | Wofür |
 |---|---|---|
-| Symbol in der Systemleiste mit Chat-Fenster | Klick aufs Symbol oder Meta+H | mit dir schreiben, Bilder anhängen (Knopf, Strg+V, Ziehen), Freigaben beantworten; die Farbe des Symbols zeigt deinen Zustand (grau aus, blau bereit, orange arbeitet, gelb fragt) |
-| Freigabe | Kasten im Chat-Fenster und KDE-Benachrichtigung mit Knöpfen | Befehle aus der FRAGEN-Liste erlauben (einmal, für die Sitzung, immer) oder ablehnen |
-| Was sehe ich hier? | Meta+Umschalt+H oder der Kamera-Knopf im Chat-Fenster | einen Bildschirmausschnitt wählen, du beschreibst ihn |
+| Symbol in der Systemleiste mit dem Kontor (dein Chat-Fenster, Titel „Hermes-Kontor“) | Klick aufs Symbol oder Meta+H | mit dir schreiben, Bilder anhängen (Knopf, Strg+V, Ziehen), Freigaben beantworten; die Farbe des Symbols zeigt deinen Zustand (grau aus, blau bereit, orange arbeitet, gelb fragt) |
+| Freigabe | Kasten im Kontor und KDE-Benachrichtigung mit Knöpfen | Befehle aus der FRAGEN-Liste erlauben (einmal, für die Sitzung, immer) oder ablehnen |
+| Was sehe ich hier? | Meta+Umschalt+H oder der Kamera-Knopf im Kontor | einen Bildschirmausschnitt wählen, du beschreibst ihn |
 | Sprechen | Meta+Leertaste halten oder der Mikrofon-Knopf | Frage aufnehmen, deine Antwort wird vorgelesen |
-| Hermes fragen in KRunner | Alt+Leertaste, dann `hermes <Frage>` oder `h: <Frage>` | Enter schickt die Frage ins Chat-Fenster; „Nur nachschlagen“ am Treffer bringt die Antwort als Benachrichtigung, ohne Fenster |
-| Bibliothek | Knopf im Kopf des Chat-Fensters oder Menü am Symbol | Adressen, Dateien und Ordner eintragen, in denen du nachschlägst |
-| Protokoll | Knopf mit der Uhr im Chat-Fenster oder Menü am Symbol | sehen, was du am System getan hast: Freigaben, Systembefehle, App-Starts |
+| Hermes fragen in KRunner | Alt+Leertaste, dann `hermes <Frage>` oder `h: <Frage>` | Enter schickt die Frage ins Kontor; „Nur nachschlagen“ am Treffer bringt die Antwort als Benachrichtigung, ohne Fenster |
+| Bibliothek | Knopf im Kopf des Kontors oder Menü am Symbol | Adressen, Dateien und Ordner eintragen, in denen du nachschlägst |
+| Protokoll | Knopf mit der Uhr im Kontor oder Menü am Symbol | sehen, was du am System getan hast: Freigaben, Systembefehle, App-Starts |
 | Dashboard | Menü am Symbol „Dashboard öffnen“, Menüeintrag „Hermes-Dashboard“, `ujust hermes-dashboard` | deine Einstellungen: Modelle, Schlüssel, Sitzungen, Cron, Skills, Plugins, Logs |
 | Einrichtungsassistent | Menü am Symbol „Hermes einrichten“, `ujust hermes-setup` | Anbieter, Schlüssel und Modell wählen |
 | Morgenbericht | tägliche Benachrichtigung, Knopf „Im Chat besprechen“ | Systemzustand am Morgen; einschalten mit `ujust hermes-morgenbericht-ein` |
@@ -106,7 +106,7 @@ der Oberfläche wechselt erst mit der nächsten Anmeldung.
 (frei), ändern mit `sudo timedatectl set-timezone <Zone>` (fragt); gültige Namen
 liefert `timedatectl list-timezones`.
 
-**Nachschlagen in der Bibliothek** (frei): Der Nutzer trägt im Chat-Fenster Adressen,
+**Nachschlagen in der Bibliothek** (frei): Der Nutzer trägt im Kontor Adressen,
 Dateien und Ordner ein, die du kennen sollst. `library_list` zeigt sie samt Stand des
 Spiegels. Reihenfolge: erst `library_search` mit Suchbegriffen, dann `library_fetch` mit
 der Quelle eines Treffers. Hat ein Eintrag keinen Spiegel, liest `library_fetch` eine
@@ -171,7 +171,7 @@ absichtlich nicht, ein neues Hermes kommt mit dem nächsten Image.
 
 **Sehen und Hören** (frei, erklärst du dem Nutzer auf Nachfrage): Meta+Umschalt+H
 wählt einen Bildschirmausschnitt und fragt dich, was darauf ist; Meta+Leertaste
-gehalten nimmt eine Frage auf, du antwortest im Chat-Fenster und die Antwort wird
+gehalten nimmt eine Frage auf, du antwortest im Kontor und die Antwort wird
 mit Piper vorgelesen. Beide Kürzel stehen in den Systemeinstellungen unter
 Tastenkürzel („Hermes: Was sehe ich hier?“ und „Hermes: Sprechen“). Modell,
 Sprache und Stimme kommen aus `~/.hermes/config.yaml` (`stt`, `tts.piper`);

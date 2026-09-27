@@ -1,7 +1,7 @@
 # KRunner: Hermes fragen
 
 Alt+Leertaste öffnet KRunner. Wer dort `hermes <Frage>` tippt, kurz `h: <Frage>`,
-bekommt oben den Treffer „Hermes fragen: <Frage>“. Enter öffnet das Chat-Fenster
+bekommt oben den Treffer „Hermes fragen: <Frage>“. Enter öffnet das Kontor
 des Leisten-Symbols und schickt die Frage sofort ab. Die Aktion „Nur
 nachschlagen“ am Treffer (Knopf rechts im Treffer) fragt Hermes, ohne
 das Fenster zu öffnen, und bringt die Antwort als Benachrichtigung.

@@ -11,17 +11,17 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 |---|---|
 | `README.md` | Was das System kann, Aufbau, die Grenze, Bauen, erster Login, Status |
 | `CLAUDE.md` | diese Datei: Arbeitsregeln und Doc-Map |
-| `docs/handbuch.md` | für Nutzer: erster Start, Chat-Fenster, Kürzel, Freigaben, Bibliothek, Morgenbericht, Updates und Rollback, ujust-Befehle, wenn etwas nicht geht |
+| `docs/handbuch.md` | für Nutzer: erster Start, Kontor, Kürzel, Freigaben, Bibliothek, Morgenbericht, Updates und Rollback, ujust-Befehle, wenn etwas nicht geht |
 | `docs/entwicklung.md` | Einstieg für Entwickler: wer was tut (PC, CI, VM), Aufbau des Repos, Ablauf einer Änderung, was unter Windows läuft, Oberflächen offscreen prüfen, Testfassungen aus dem Home, Hermes-Bump, Stolperfallen am Windows-Arbeitsplatz |
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, GPU-Passthrough, VM 112 von hier bedienen (`tests/vm-hilfen.sh`), Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage |
 | `docs/dashboard.md` | Dashboard: Node-Stufe und `15-dashboard.sh`, Fenster `hermes-os-dashboard` mit `dashboard_server.py`, Start und Stopp des Servers, Gate, Tests, Grenzen, Stolperfallen |
-| `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
+| `docs/systemagent.md` | Leisten-Symbol: Zustände, Kontor, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/morgenbericht.md` | Morgenbericht: täglicher Cron-Job ohne Modell, `os_report` und `desktop_notify`, Knopf „Im Chat besprechen", ujust-Rezepte, Stolperfallen |
-| `docs/bibliothek.md` | Bibliothek: Wissensquellen im Chat-Fenster, Ablage, Werkzeuge `library_list`, `library_fetch`, `library_search`, `library_mirror`, Spiegel und Index mit FTS5, Doku-Server-Schalter (MCP), Grenzen, Stolperfallen |
+| `docs/bibliothek.md` | Bibliothek: Wissensquellen im Kontor, Ablage, Werkzeuge `library_list`, `library_fetch`, `library_search`, `library_mirror`, Spiegel und Index mit FTS5, Doku-Server-Schalter (MCP), Grenzen, Stolperfallen |
 | `docs/lokales-modell.md` | Lokales Modell, optional: Ollama nicht im Image, Nachladen ins Home mit Prüfsumme, Nutzerdienst, Anbindung an Hermes (custom, 64k Kontext), Modellwahl für 12 GB, Rezepte, Karte im Assistenten, Test in VM 112 |
 | `docs/grenze.md` | Die Grenze: Hook-Vertrag laut Hermes-Upstream, was Hermes selbst fängt, was der Hook fängt, Allowlist, Restlücken |
-| `docs/protokoll.md` | Protokoll: Seite im Chat-Fenster, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
+| `docs/protokoll.md` | Protokoll: Seite im Kontor, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
 | `docs/krunner.md` | KRunner-Runner „Hermes fragen“: `hermes <Frage>` und `h: <Frage>`, D-Bus-Anbindung im Leisten-Symbol, Nur nachschlagen, Test, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
 | `docs/sehen-hoeren.md` | Sehen und Hören: „Was sehe ich hier?“ (Meta+Umschalt+H, Bildschirmausschnitt an Hermes) und Push-to-Talk (Meta+Leertaste, faster-whisper und Piper aus der Hermes-Venv), Kürzel, Tests, Stolperfallen |

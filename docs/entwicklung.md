@@ -46,7 +46,7 @@ Die Teile von hermes-os und ihre Doku:
 | Teil | Programm, Dateien | Doku |
 |---|---|---|
 | Einrichtungsassistent | `usr/libexec/hermes-os-setup`, `usr/share/hermes-os/setup/` | [einrichtung.md](einrichtung.md) |
-| Leisten-Symbol und Chat-Fenster | `usr/libexec/hermes-os-tray`, `usr/share/hermes-os/tray/` | [systemagent.md](systemagent.md) |
+| Leisten-Symbol und Kontor | `usr/libexec/hermes-os-tray`, `usr/share/hermes-os/tray/` | [systemagent.md](systemagent.md) |
 | KRunner „Hermes fragen“ | im Leisten-Symbol (`tray/runner.py`, `dbus_peer.py`) | [krunner.md](krunner.md) |
 | Sehen und Hören | `tray/screenshot.py`, `voice.py`, `voice_worker.py` | [sehen-hoeren.md](sehen-hoeren.md) |
 | Dashboard-Fenster | `usr/libexec/hermes-os-dashboard`, `usr/share/hermes-os/dashboard/` | [dashboard.md](dashboard.md) |
@@ -88,7 +88,7 @@ es.
 
 ## Oberflächen ohne Bildschirm prüfen
 
-Chat-Fenster, Assistent und Dashboard sind QML mit Kirigami. Die Render-Tests
+Kontor, Assistent und Dashboard sind QML mit Kirigami. Die Render-Tests
 zeichnen sie offscreen mit Attrappen statt des echten Backends, jede
 QML-Warnung ist ein Fehler. Sie brauchen PySide6 und Kirigami, laufen also in
 der VM, ohne die Sitzung dort zu stören:

@@ -1,6 +1,6 @@
 # Protokoll: was Hermes am System getan hat
 
-Die Seite „Protokoll" im Chat-Fenster beantwortet ohne Terminal: Was hat
+Die Seite „Protokoll" im Kontor beantwortet ohne Terminal: Was hat
 Hermes heute am System getan? Sie zeigt jede Freigabe-Anfrage mit
 Entscheidung, jeden Terminal-Befehl mit Systemwirkung samt Ergebnis und jeden
 App-Start über `app_launch`. Damit ersetzt sie den Punkt „unabhängiges
@@ -10,7 +10,7 @@ Audit-Log" aus Phase 4 in der Form, die ohne eigenen Dienst auskommt; siehe
 ## Was es tut
 
 - **Seite „Protokoll"**, erreichbar über den Knopf mit der Uhr im Kopf des
-  Chat-Fensters und den Menüpunkt am Symbol. Je Zeile: Zeit (mit Datum, wenn
+  Kontors und den Menüpunkt am Symbol. Je Zeile: Zeit (mit Datum, wenn
   nicht von heute), Gruppe, Befehl, Entscheidung mit Entscheider und das
   Ergebnis mit Exit-Code; die gekürzte Ausgabe klappt auf. Das Symbol links
   zeigt das Ergebnis: ausgeführt, mit Fehler beendet, nicht ausgeführt,

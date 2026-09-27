@@ -14,7 +14,7 @@
 #   prep            ydotool-Daemon starten, Zeigerbeschleunigung für ihn flach stellen
 #   click X Y       Linksklick an Bildschirmkoordinaten (braucht prep)
 #   paste TEXT      Text über die Zwischenablage einfügen (ydotool type kennt nur US-Belegung)
-#   frage TEXT      Frage über den Runner des Leisten-Symbols ins Chat-Fenster
+#   frage TEXT      Frage über den Runner des Leisten-Symbols ins Kontor
 #   frage_still T   dasselbe ohne Fenster, Antwort als Benachrichtigung
 # Beschreibung und Stolperfallen: docs/testumgebung.md, „VM 112 von hier bedienen“.
 # =============================================================================

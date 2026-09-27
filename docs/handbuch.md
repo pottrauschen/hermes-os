@@ -28,7 +28,8 @@ Die Farbe des Symbols sagt, was Hermes gerade tut:
 
 ## Mit Hermes reden
 
-**Chat-Fenster:** Klick auf das Symbol oder **Meta+H**. Frage eintippen,
+**Kontor:** So heißt das Chat-Fenster, in der Titelleiste und im Startmenü
+„Hermes-Kontor“. Klick auf das Symbol oder **Meta+H**. Frage eintippen,
 Enter schickt ab, Umschalt+Enter macht eine neue Zeile. Escape oder
 Schließen versteckt das Fenster nur, Hermes bleibt da.
 
@@ -44,7 +45,7 @@ Schließen versteckt das Fenster nur, Hermes bleibt da.
 
 | Kürzel | Was passiert |
 |---|---|
-| Meta+H | Chat-Fenster auf und zu |
+| Meta+H | Kontor auf und zu |
 | Meta+Umschalt+H | Bildschirmausschnitt wählen, Hermes sagt, was darauf zu sehen ist |
 | Meta+Leertaste halten | Frage sprechen; die Antwort wird vorgelesen |
 | Alt+Leertaste, dann `h: deine Frage` | Hermes aus KRunner fragen; Enter öffnet den Chat, „Nur nachschlagen“ antwortet als Benachrichtigung |
@@ -58,7 +59,7 @@ Apps aus Flathub installieren und nachsehen, wie es dem System geht.
 
 **Er fragt vorher**, wenn etwas das System selbst verändert: Updates,
 Systemdienste, Dateien unter `/etc` oder `/usr`, Firewall, Nutzer, Befehle
-mit `sudo`. Dann erscheint im Chat-Fenster ein Kasten, und zusätzlich eine
+mit `sudo`. Dann erscheint im Kontor ein Kasten, und zusätzlich eine
 Benachrichtigung mit denselben Knöpfen:
 
 - **Einmal erlauben**: nur dieses eine Mal
@@ -112,7 +113,7 @@ zeigt sie mit kurzer Erklärung.
 | Befehl | Wofür |
 |---|---|
 | `ujust hermes-setup` | Anbieter, Schlüssel und Modell wählen |
-| `ujust hermes-tray` | Chat-Fenster öffnen |
+| `ujust hermes-tray` | Kontor öffnen |
 | `ujust hermes-dashboard` | Dashboard öffnen |
 | `ujust hermes-doctor` | Hermes prüft sich selbst |
 | `ujust hermes-gateway-status` | Läuft der Hintergrunddienst? Letzte Meldungen |
@@ -125,11 +126,11 @@ zeigt sie mit kurzer Erklärung.
 
 | Was du siehst | Was hilft |
 |---|---|
-| Symbol bleibt grau, „Gateway läuft nicht“ | Im Chat-Fenster auf „Gateway starten“, oder `ujust hermes-gateway-enable` |
+| Symbol bleibt grau, „Gateway läuft nicht“ | Im Kontor auf „Gateway starten“, oder `ujust hermes-gateway-enable` |
 | „noch nicht eingerichtet“ | „Hermes einrichten“ im Menü oder im Fenster |
 | Hermes antwortet mit einem Fehler zum Anbieter | Schlüssel und Guthaben beim Anbieter prüfen, dann `ujust hermes-setup` |
 | Sprechen geht nicht | Mikrofon in den Systemeinstellungen prüfen; das Symbol sagt, wenn keines da ist |
 | Nach einem Update geht etwas nicht mehr | `sudo bootc rollback`, neu starten, und Bescheid geben |
-| Unklar, was Hermes getan hat | Protokoll im Chat-Fenster |
+| Unklar, was Hermes getan hat | Protokoll im Kontor |
 
 `ujust hermes-doctor` sammelt die wichtigsten Prüfungen auf einen Blick.

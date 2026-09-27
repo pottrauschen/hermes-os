@@ -14,7 +14,7 @@ MAX_BYTES eine Vorgängerdatei audit.jsonl.1. Es schreiben zwei Seiten:
 
 Gelesen wird tolerant: kaputte Zeilen fallen weg, Ereignisse mit derselben
 Aufruf-Kennung (tool_call_id) werden zu einer Zeile zusammengeführt. Die Seite
-„Protokoll“ im Chat-Fenster und der Export bauen darauf auf.
+„Protokoll“ im Kontor und der Export bauen darauf auf.
 
 Das Modul hängt wie library.py nicht am Rest des Plugins und braucht kein
 Hermes und kein Qt: das Leisten-Symbol lädt es über seinen Dateipfad,

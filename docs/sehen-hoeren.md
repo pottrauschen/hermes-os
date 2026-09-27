@@ -40,7 +40,7 @@ Die Aufnahme endet spätestens nach 90 Sekunden. Danach:
    Hermes-Venv, der sie mit faster-whisper erkennt: Modell aus
    `stt.local.model`, Sprache aus `stt.local.language` oder `stt.language`
    in `~/.hermes/config.yaml` (die Vorlage setzt `small` und `de`).
-2. Der Text geht wie eine getippte Nachricht ins Chat-Fenster (`backend.send`),
+2. Der Text geht wie eine getippte Nachricht ins Kontor (`backend.send`),
    das Fenster öffnet sich, die Antwort kommt gestreamt.
 3. Ist die Antwort fertig, liest Piper sie vor (Stimme aus `tts.piper.voice`,
    Vorlage `de_DE-thorsten-medium`), ohne Markdown, Tabellen als Aufzählung,

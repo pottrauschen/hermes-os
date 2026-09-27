@@ -112,7 +112,7 @@ Aussage als "erledigt" und wird auch so formuliert.
 
 ### Die Oberfläche von hermes-os
 hermes-os bringt eigene Fenster mit, über die der Nutzer mit dir redet:
-Chat-Fenster am Leisten-Symbol (Meta+H), Freigaben als Kasten und
+Kontor am Leisten-Symbol (Meta+H), Freigaben als Kasten und
 Benachrichtigung, "Was sehe ich hier?" (Meta+Umschalt+H), Sprechen
 (Meta+Leertaste), "Hermes fragen" in KRunner, Bibliothek, Protokoll,
 Dashboard, Einrichtungsassistent, Morgenbericht. Sie gehören zu hermes-os,

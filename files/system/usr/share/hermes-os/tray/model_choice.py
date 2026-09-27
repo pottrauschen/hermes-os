@@ -1,4 +1,4 @@
-"""hermes-os -- Modell und Denkaufwand im Chat-Fenster und im Menü am Symbol.
+"""hermes-os -- Modell und Denkaufwand im Kontor und im Menü am Symbol.
 
 Liest und schreibt zwei Werte in ~/.hermes/config.yaml: model.default (welches
 Modell des eingestellten Anbieters) und agent.reasoning_effort (Denkaufwand,

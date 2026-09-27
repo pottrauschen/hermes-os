@@ -1665,7 +1665,7 @@ def main():
 
     tray = QSystemTrayIcon(icon_for(backend.state))
     menu = QMenu()
-    act_open = menu.addAction("Hermes öffnen")
+    act_open = menu.addAction("Kontor öffnen")
     act_open.triggered.connect(toggle_window)
     act_new = menu.addAction("Neues Gespräch")
     act_new.triggered.connect(backend.newConversation)
