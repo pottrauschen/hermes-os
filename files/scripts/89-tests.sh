@@ -22,6 +22,18 @@ for cmd in ujust just distrobox podman konsole; do
   if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else echo "  WARN: $cmd not found"; fi
 done
 
+echo "=== Commands that Sehen und Hören use (docs/sehen-hoeren.md) ==="
+# pw-record und pw-play (Aufnahme und Vorlesen für Push-to-Talk) und pactl
+# (Mikrofon-Prüfung) installiert 20-agent-layer.sh ausdrücklich: hart.
+for cmd in pw-record pw-play pactl; do
+  if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else check_fail "$cmd not found"; fi
+done
+# spectacle (Auswahlrahmen für „Was sehe ich hier?") und die Ersatzwerkzeuge
+# kommen aus dem Basis-Image: weich; ohne sie sagt das Leisten-Symbol, was fehlt.
+for cmd in spectacle parecord paplay; do
+  if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else echo "  WARN: $cmd not found"; fi
+done
+
 echo "=== Base image identity ==="
 # VARIANT_ID wird erst in 91-image-info.sh gesetzt, also hier nicht prüfen.
 if grep -qiE 'aurora' /usr/lib/os-release; then check_pass "Aurora base"; else echo "  WARN: os-release does not mention Aurora: $(grep -E '^(NAME|ID|VARIANT_ID)=' /usr/lib/os-release | tr '\n' ' ')"; fi

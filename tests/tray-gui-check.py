@@ -8,8 +8,9 @@
 # entfernen, Streaming mit Bildern in den Blasen, Freigabe mit Knöpfen,
 # Schlüssel fehlt, Bibliothek (Einträge, Ablegen, Spiegeln mit Fortschritt, Suche
 # mit Trefferliste, Notiz ändern, Schalter der Doku-Server), Protokoll mit Filtern
-# und Export. Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding
-# oder ein umbenanntes Kirigami-Element schon im Image-Build auffällt.
+# und Export, Sprachzustand und Bildschirmausschnitt (Stubs für `voice` und
+# `look`). Jede QML-Warnung ist ein Fehler, damit ein kaputtes Binding oder ein
+# umbenanntes Kirigami-Element schon im Image-Build auffällt.
 #
 # Aufruf:
 #   tests/tray-gui-check.py [--qml-dir DIR] [--out DIR]
@@ -523,6 +524,78 @@ class StubBackend(QObject):
         self.calls.append(("show",))
 
 
+class StubVoice(QObject):
+    """Dieselbe Schnittstelle wie VoiceBackend in tray/voice.py, ohne Mikrofon."""
+    stateChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._state = "idle"
+        self.calls = []
+
+    def set_state(self, state):
+        self._state = state
+        self.stateChanged.emit()
+
+    @Property(str, notify=stateChanged)
+    def state(self):
+        return self._state
+
+    @Property(str, notify=stateChanged)
+    def stateText(self):
+        return {"recording": "Hermes hört zu …", "transcribing": "Hermes versteht …",
+                "asking": "Hermes denkt nach …", "speaking": "Hermes spricht …"}.get(self._state, "")
+
+    @Property(str, notify=stateChanged)
+    def iconName(self):
+        return {"recording": "hermes-os-tray-listening", "speaking": "hermes-os-tray-speaking"}.get(self._state, "")
+
+    @Property(bool, constant=True)
+    def available(self):
+        return True
+
+    @Property(str, constant=True)
+    def unavailableReason(self):
+        return ""
+
+    @Property(str, notify=stateChanged)
+    def shortcutText(self):
+        return "Meta+Space"
+
+    @Slot()
+    def toggle(self):
+        self.calls.append(("toggle",))
+
+    @Slot()
+    def cancel(self):
+        self.calls.append(("cancel",))
+
+
+class StubLook(QObject):
+    """Dieselbe Schnittstelle wie LookBackend in tray/screenshot.py, ohne Spectacle."""
+    busyChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    @Property(bool, constant=True)
+    def available(self):
+        return True
+
+    @Property(bool, notify=busyChanged)
+    def busy(self):
+        return False
+
+    @Property(str, constant=True)
+    def shortcutText(self):
+        return "Meta+Shift+H"
+
+    @Slot()
+    def capture(self):
+        self.calls.append(("capture",))
+
+
 def make_pictures(folder):
     """Zwei kleine PNGs als Anhänge und Bilder im Verlauf."""
     paths = []
@@ -559,8 +632,12 @@ def main():
     QQuickStyle.setStyle("org.kde.desktop")
     app = QGuiApplication(sys.argv)
     backend = StubBackend()
+    voice = StubVoice()
+    look = StubLook()
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
+    engine.rootContext().setContextProperty("voice", voice)
+    engine.rootContext().setContextProperty("look", look)
     engine.load(main_qml)
     if not engine.rootObjects():
         print("FEHL  Main.qml lädt nicht")
@@ -910,6 +987,46 @@ def main():
     step("Protokoll: Menü öffnet die Seite, Bibliothek löst sie ab, zurück zum Chat meldet ab",
          via_menu and switched and ("auditactive", False) in backend.calls and not root.auditOpen()
          and not root.libraryOpen(), f"menu={via_menu} switched={switched}")
+
+    # 11. Sehen und Hören: Knöpfe rufen look.capture und voice.toggle, der Zustand
+    #     von Push-to-Talk steht im Kopf und macht den Mikrofon-Knopf zum Stopp
+    backend.set_state("ready", configured=True)
+    settle()
+    look_btn, voice_btn, indicator = child("lookButton"), child("voiceButton"), child("voiceIndicator")
+    look_clicked = root.clickNamed("lookButton")
+    voice_clicked = root.clickNamed("voiceButton")
+    settle(100)
+    step("Sehen und Hören: Knöpfe sichtbar, Klick ruft look.capture und voice.toggle",
+         look_btn is not None and look_btn.property("visible") and look_btn.property("enabled")
+         and voice_btn is not None and voice_btn.property("enabled") and look_clicked and voice_clicked
+         and ("capture",) in look.calls and ("toggle",) in voice.calls
+         and indicator is not None and not indicator.property("visible"),
+         f"look={look.calls} voice={voice.calls}")
+    state_label = child("stateLabel")
+    voice.set_state("recording")
+    settle(300)
+    shot("voice-recording")
+    step("Hört zu: Kopf zeigt den Sprachzustand, Mikrofon-Symbol sichtbar, Knopf wird zu Stopp",
+         state_label is not None and state_label.property("text") == "Hermes hört zu …"
+         and indicator is not None and indicator.property("visible")
+         and voice_btn is not None and voice_btn.property("text") == "Aufnahme beenden" and voice_btn.property("enabled"),
+         f"label={state_label and state_label.property('text')!r} btn={voice_btn and voice_btn.property('text')!r}")
+    voice.set_state("transcribing")
+    settle(200)
+    step("Versteht: Knopf aus, Symbol weg, Kopf sagt es",
+         voice_btn is not None and not voice_btn.property("enabled") and not indicator.property("visible")
+         and state_label.property("text") == "Hermes versteht …",
+         f"enabled={voice_btn and voice_btn.property('enabled')} label={state_label.property('text')!r}")
+    voice.set_state("speaking")
+    settle(200)
+    shot("voice-speaking")
+    speaking_ok = (voice_btn.property("enabled") and voice_btn.property("text") == "Vorlesen abbrechen"
+                   and indicator.property("visible"))
+    voice.set_state("idle")
+    settle(200)
+    step("Spricht: Knopf bricht das Vorlesen ab; danach wieder der Zustand des Gateways",
+         speaking_ok and state_label.property("text") == backend.stateText and not indicator.property("visible"),
+         f"speaking={speaking_ok} label={state_label.property('text')!r}")
 
     root.close()
     print("ERGEBNIS: " + ("ok" if fail == 0 else "Fehler, siehe FEHL"))
