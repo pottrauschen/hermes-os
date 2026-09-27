@@ -44,6 +44,22 @@ MIN_KEY_LENGTH = 16          # wie Hermes' has_usable_secret(min_length=16)
 STREAM_IDLE_TIMEOUT = 60     # Hermes schickt alle 10 s ": keepalive"
 APPROVAL_CHOICES = ("once", "session", "always", "deny")
 
+# Für Freigaben aus einer Plugin-Regel schickt Hermes als Befehl nur einen
+# Platzhalter wie „<terminal> (plugin approval rule)“; den Befehl selbst nennt die
+# Meldung des hermes-os-Hooks zwischen Backticks (boundary.directive_for).
+_PLUGIN_RULE_PLACEHOLDER = re.compile(r"^<[\w.-]+> \(plugin approval rule\)$")
+
+
+def approval_command(command: str, description: str) -> str:
+    """Was die Freigabe-Karte als Befehl zeigt: den Befehl aus der Meldung, wenn
+    Hermes nur den Platzhalter einer Plugin-Regel liefert, sonst command."""
+    command = str(command or "")
+    if _PLUGIN_RULE_PLACEHOLDER.match(command.strip()):
+        m = re.search(r"`([^`]+)`", str(description or ""))
+        if m:
+            return m.group(1)
+    return command
+
 
 class GatewayError(Exception):
     """HTTP-Fehler des API-Servers mit Status und Hermes-Fehlercode."""

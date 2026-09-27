@@ -1302,10 +1302,11 @@ def main():
                 self._model.append("tool", f"{tool} fertig ({mark})", "error" if failed else "completed")
             elif name == "approval.request":
                 choices = [c for c in (event.get("choices") or ["once", "deny"]) if c in hc.APPROVAL_CHOICES]
+                description = str(event.get("description") or "")
                 self._approval = {
                     "request_id": str(event.get("request_id") or ""),
-                    "command": str(event.get("command") or ""),
-                    "description": str(event.get("description") or ""),
+                    "command": hc.approval_command(event.get("command"), description),
+                    "description": description,
                     "choices": choices,
                     "labels": [CHOICE_LABEL[c] for c in choices],
                 }
@@ -1385,14 +1386,23 @@ def main():
                 self._set_state("busy" if self._busy else "ready")
             if self._notify_proc is not None:
                 proc, self._notify_proc = self._notify_proc, None
+                note_id = getattr(proc, "notify_id", "")
+                if note_id.isdigit():
+                    # Im Fenster oder vom Gateway beantwortet: sonst bliebe die Benachrichtigung
+                    # stehen, denn notify-send zu beenden schließt sie nicht.
+                    QProcess.startDetached("gdbus", ["call", "--session", "--dest", "org.freedesktop.Notifications",
+                                                     "--object-path", "/org/freedesktop/Notifications",
+                                                     "--method", "org.freedesktop.Notifications.CloseNotification",
+                                                     note_id])
                 proc.kill()
 
         def _notify_approval(self):
-            """KDE-Benachrichtigung mit Knöpfen; notify-send wartet und schreibt die Wahl auf stdout."""
+            """KDE-Benachrichtigung mit Knöpfen; notify-send nennt zuerst die ID (-p, damit
+            _clear_approval sie schließen kann), wartet dann und schreibt die Wahl auf stdout."""
             if shutil.which("notify-send") is None or not self._approval:
                 return
             a = self._approval
-            args = ["-a", "hermes-os", "-i", "hermes-os-tray-asking", "-u", "critical",
+            args = ["-p", "-a", "hermes-os", "-i", "hermes-os-tray-asking", "-u", "critical",
                     "-t", str(approval_timeout_seconds() * 1000)]
             for c in a["choices"]:
                 args += ["-A", f"{c}={CHOICE_LABEL[c]}"]
@@ -1402,14 +1412,22 @@ def main():
             proc = QProcess(self)
             proc.setProgram("notify-send")
             proc.setArguments(args + ["Hermes fragt nach einer Freigabe", body])
+            proc.notify_id = ""
+
+            def read_id():
+                if not proc.notify_id and proc.canReadLine():
+                    proc.notify_id = bytes(proc.readLine()).decode("utf-8", "replace").strip()
 
             def finished(code, status):
-                out = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace").strip()
+                read_id()
+                lines = bytes(proc.readAllStandardOutput()).decode("utf-8", "replace").strip().splitlines()
+                choice = lines[-1].strip() if lines else ""
                 if self._notify_proc is proc:
                     self._notify_proc = None
-                if out in hc.APPROVAL_CHOICES and self._approval:
-                    self.approve(out)
+                if choice in hc.APPROVAL_CHOICES and self._approval:
+                    self.approve(choice)
 
+            proc.readyReadStandardOutput.connect(read_id)
             proc.finished.connect(finished)
             self._notify_proc = proc
             proc.start()

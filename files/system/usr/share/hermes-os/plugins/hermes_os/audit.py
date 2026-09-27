@@ -457,7 +457,9 @@ def record_flagged(hit: Optional[Dict[str, str]], args: Any, **kw: Any) -> None:
     try:
         if not hit or not isinstance(args, dict):
             return
-        command = str(args.get("command") or "")
+        # terminal: command (unverändert, er ist auch Schlüssel für den Abgleich mit Hermes);
+        # process_manage write/submit: data, der Text für die Hintergrund-Shell
+        command = str(args.get("command") or "") or str(args.get("data") or "").strip()
         _remember(_flagged, _key(str(kw.get("tool_call_id") or ""), command),
                   {"command": command, "group": str(hit.get("group") or "")})
     except Exception:

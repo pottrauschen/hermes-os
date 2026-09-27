@@ -118,6 +118,19 @@ def main():
          len(rows) == 2 and len(two) == 1 and two[0]["decision"] == "deny" and two[0]["status"] == "denied"
          and two[0]["decider"] == "Nutzer im Leisten-Symbol", str([(r["command"], r["decision"]) for r in rows]))
 
+    # 1c. Hintergrund-Shell (process_manage submit): der Befehl steht in data, nicht in
+    #     command; ohne ihn blieb die Zeile im Protokoll leer (VM 112)
+    audit.record_flagged({"group": "services"}, {"action": "submit", "session_id": "proc_1",
+                                                 "data": "sudo systemctl restart avahi-daemon\n"}, tool_call_id="call-1c")
+    pm = dict(base, command="<process_manage> (plugin approval rule)", tool_call_id="call-1c",
+              description="hermes-os: `sudo systemctl restart avahi-daemon` steuert Systemdienste (services). Freigabe nötig.")
+    ctx.hooks["pre_approval_request"](**pm)
+    ctx.hooks["post_approval_response"](**pm, choice="deny")
+    rows = audit.load_rows()
+    step("process_manage: Befehl aus data im Protokoll, nicht leer",
+         any(r["command"] == "sudo systemctl restart avahi-daemon" and r["decision"] == "deny" for r in rows),
+         str([(r["command"], r["decision"]) for r in rows]))
+
     # 2. Ablehnung, 3. Guardian, 4. Zeitüberschreitung (Hermes' eigener Detektor, ohne Plugin-Treffer)
     for call, choice, extra in (("call-2", "deny", {}), ("call-3", "smart_deny", {"decided_by": "aux_llm"}),
                                 ("call-4", "timeout", {})):

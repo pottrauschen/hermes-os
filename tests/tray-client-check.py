@@ -276,6 +276,15 @@ def main():
         cleaned, paths = hc.split_media_tags("Fertig, der Screenshot: MEDIA:/tmp/hermes/shot.png\n\nSonst nichts.")
         check(paths == ["/tmp/hermes/shot.png"] and cleaned == "Fertig, der Screenshot:\n\nSonst nichts.",
               "split_media_tags löst den Tag aus der Antwort und behält den Text", f"{cleaned!r} {paths}")
+        # Freigabe aus einer Plugin-Regel: Hermes schickt nur einen Platzhalter (VM 112)
+        desc = "hermes-os: `sudo systemctl restart cups` steuert Systemdienste (services). Freigabe nötig."
+        check(hc.approval_command("<terminal> (plugin approval rule)", desc) == "sudo systemctl restart cups"
+              and hc.approval_command("<process_manage> (plugin approval rule)", desc) == "sudo systemctl restart cups",
+              "approval_command: Befehl aus der Meldung statt des Platzhalters (terminal, process_manage)")
+        check(hc.approval_command("rm -rf /tmp/x", "recursive delete") == "rm -rf /tmp/x"
+              and hc.approval_command("<terminal> (plugin approval rule)", "ohne Backticks") == "<terminal> (plugin approval rule)"
+              and hc.approval_command(None, None) == "",
+              "approval_command: echter Befehl bleibt, ohne Backticks bleibt der Platzhalter, None wird leer")
     finally:
         server.shutdown()
         server.server_close()
