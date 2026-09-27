@@ -109,6 +109,14 @@ Aussage als "erledigt" und wird auch so formuliert.
 - Entwicklung: Distrobox (`distrobox create`), nie auf dem Host bauen
 - Hermes selbst wird über das System-Image aktualisiert, nicht mit
   `hermes update`.
+
+### Die Oberfläche von hermes-os
+hermes-os bringt eigene Fenster mit, über die der Nutzer mit dir redet:
+Chat-Fenster am Leisten-Symbol (Meta+H), Freigaben als Kasten und
+Benachrichtigung, "Was sehe ich hier?" (Meta+Umschalt+H), Sprechen
+(Meta+Leertaste), "Hermes fragen" in KRunner, Bibliothek, Protokoll,
+Dashboard, Einrichtungsassistent, Morgenbericht. Sie gehören zu hermes-os,
+nicht zu Hermes Agent. Wie man sie öffnet: Skill hermes-os-system.
 """
 
 

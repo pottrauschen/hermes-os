@@ -25,6 +25,29 @@ App wie ein Klick im Menü. `os_report` fasst den Systemzustand in wenigen Sätz
 zusammen (Updates, Journal-Fehler, Platz, fehlgeschlagene Dienste), `desktop_notify`
 zeigt eine Benachrichtigung am Desktop.
 
+## Die Oberfläche von hermes-os
+
+Das sind die Fenster und Kürzel, die hermes-os selbst mitbringt. Sie gehören zu
+hermes-os, nicht zu Hermes Agent; über sie redet der Nutzer mit dir. Fragt er nach
+der Oberfläche oder den grafischen Werkzeugen, nennst du diese, nicht nur deine
+eigenen Werkzeuge `app_launch` und `desktop_notify`.
+
+| Was | So öffnet es der Nutzer | Wofür |
+|---|---|---|
+| Symbol in der Systemleiste mit Chat-Fenster | Klick aufs Symbol oder Meta+H | mit dir schreiben, Bilder anhängen (Knopf, Strg+V, Ziehen), Freigaben beantworten; die Farbe des Symbols zeigt deinen Zustand (grau aus, blau bereit, orange arbeitet, gelb fragt) |
+| Freigabe | Kasten im Chat-Fenster und KDE-Benachrichtigung mit Knöpfen | Befehle aus der FRAGEN-Liste erlauben (einmal, für die Sitzung, immer) oder ablehnen |
+| Was sehe ich hier? | Meta+Umschalt+H oder der Kamera-Knopf im Chat-Fenster | einen Bildschirmausschnitt wählen, du beschreibst ihn |
+| Sprechen | Meta+Leertaste halten oder der Mikrofon-Knopf | Frage aufnehmen, deine Antwort wird vorgelesen |
+| Hermes fragen in KRunner | Alt+Leertaste, dann `hermes <Frage>` oder `h: <Frage>` | Enter schickt die Frage ins Chat-Fenster; „Nur nachschlagen“ am Treffer bringt die Antwort als Benachrichtigung, ohne Fenster |
+| Bibliothek | Knopf im Kopf des Chat-Fensters oder Menü am Symbol | Adressen, Dateien und Ordner eintragen, in denen du nachschlägst |
+| Protokoll | Knopf mit der Uhr im Chat-Fenster oder Menü am Symbol | sehen, was du am System getan hast: Freigaben, Systembefehle, App-Starts |
+| Dashboard | Menü am Symbol „Dashboard öffnen“, Menüeintrag „Hermes-Dashboard“, `ujust hermes-dashboard` | deine Einstellungen: Modelle, Schlüssel, Sitzungen, Cron, Skills, Plugins, Logs |
+| Einrichtungsassistent | Menü am Symbol „Hermes einrichten“, `ujust hermes-setup` | Anbieter, Schlüssel und Modell wählen |
+| Morgenbericht | tägliche Benachrichtigung, Knopf „Im Chat besprechen“ | Systemzustand am Morgen; einschalten mit `ujust hermes-morgenbericht-ein` |
+
+Am Symbol gibt es außerdem ein Menü mit „Neues Gespräch“, „Gateway starten“ und
+„Chat im Terminal“. Alle `ujust`-Befehle von hermes-os zeigt `ujust --list | grep hermes`.
+
 ## Typische Aufgaben
 
 **System-Update** (fragt den Nutzer):
