@@ -453,12 +453,17 @@ def main():
         attachmentsChanged = Signal()
         libraryChanged = Signal()
         showLibraryRequested = Signal()
+        libraryMirrorChanged = Signal()     # Stand der Spiegel je Eintrag
+        librarySearchChanged = Signal()     # Treffer der Suche auf der Seite
+        libraryMcpChanged = Signal()        # Schalter der Doku-Server
         auditChanged = Signal()
         showAuditRequested = Signal()
         # Ergebnisse aus Arbeitsthreads, immer über die Ereignisschleife
         _healthDone = Signal(dict)
         _historyDone = Signal(dict)
         _runEvent = Signal(str, dict)
+        _mirrorEvent = Signal(str, dict)
+        _searchDone = Signal(str, list, str)
 
         def __init__(self):
             super().__init__()
@@ -468,6 +473,15 @@ def main():
             self._version = ""
             self._attachments = []      # {"path", "url", "name"} je Bild für die nächste Nachricht
             self._library = lib.load_entries() if lib is not None else []
+            self._mirrors = {}              # Kennung -> Stand (docs/bibliothek.md, Stufe zwei)
+            self._mirror_jobs = {}          # Kennung -> threading.Event zum Abbrechen
+            self._remove_after_mirror = set()   # Entfernen gewünscht, während der Spiegel lief
+            self._search_query = ""
+            self._search_hits = []
+            self._search_note = ""
+            self._searching = False
+            self._mcp = []
+            self._mcp_message = ""
             prune_cache()
             self._model = MessageModel()
             self._audit_model = AuditModel()
@@ -498,6 +512,8 @@ def main():
             self._healthDone.connect(self._on_health, queued)
             self._historyDone.connect(self._on_history, queued)
             self._runEvent.connect(self._on_run_event, queued)
+            self._mirrorEvent.connect(self._on_mirror_event, queued)
+            self._searchDone.connect(self._on_search_done, queued)
             self._timer = QTimer(self)
             self._timer.setInterval(HEALTH_INTERVAL_MS)
             self._timer.timeout.connect(self.poll)
@@ -676,10 +692,219 @@ def main():
         @Slot()
         def libraryReload(self):
             """Datei neu lesen, etwa beim Öffnen der Seite; der Agent oder ein zweites
-            Fenster könnten sie geändert haben."""
+            Fenster könnten sie geändert haben. Dazu den Stand der Spiegel aus dem
+            Index und die Schalter der Doku-Server aus config.yaml."""
             if lib is not None:
                 self._library = lib.load_entries()
+                try:
+                    stored = lib.mirror_status_all()
+                except Exception as exc:  # noqa: BLE001 — kaputter Index sperrt die Seite nicht
+                    print(f"hermes-os-tray: Index nicht lesbar: {exc}", file=sys.stderr)
+                    stored = {}
+                for entry_id, status in stored.items():
+                    if entry_id not in self._mirror_jobs:     # laufende Spiegel melden sich selbst
+                        row = self._mirror_row(status)
+                        if row["running"]:
+                            # Läuft im Gateway (library_mirror) oder blieb nach einem Abbruch des
+                            # Symbols stehen: hier gibt es nichts abzubrechen, Spiegeln bleibt möglich
+                            row["running"] = False
+                            row["text"] += " (nicht aus diesem Fenster gestartet)"
+                        self._mirrors[entry_id] = row
+                for entry_id in list(self._mirrors):
+                    if entry_id not in stored and entry_id not in self._mirror_jobs:
+                        del self._mirrors[entry_id]
+                self._mcp = lib.mcp_catalog()
             self.libraryChanged.emit()
+            self.libraryMirrorChanged.emit()
+            self.libraryMcpChanged.emit()
+
+        def _mirror_row(self, status):
+            """Stand eines Spiegels, wie die Seite ihn zeigt."""
+            row = {"status": status.get("status", ""), "pages": int(status.get("pages") or 0),
+                   "running": status.get("status") == "running", "errorCount": int(status.get("error_count") or 0),
+                   "current": str(status.get("current") or ""), "text": lib.describe_mirror(status)}
+            if row["running"] and row["current"]:
+                row["text"] += " " + row["current"]
+            return row
+
+        @Property("QVariantMap", notify=libraryMirrorChanged)
+        def libraryMirror(self):
+            return {k: dict(v) for k, v in self._mirrors.items()}
+
+        @Property(bool, notify=libraryMirrorChanged)
+        def libraryMirrorRunning(self):
+            return bool(self._mirror_jobs)
+
+        @Slot(str)
+        def libraryMirrorStart(self, entry_id):
+            """Spiegel im Arbeitsthread anlegen oder erneuern; der Fortschritt kommt
+            über _mirrorEvent zurück in die Ereignisschleife."""
+            if lib is None or entry_id in self._mirror_jobs:
+                return
+            entry = next((e for e in self._library if e["id"] == entry_id), None)
+            if entry is None:
+                return
+            cancel = threading.Event()
+            self._mirror_jobs[entry_id] = cancel
+            self._mirrors[entry_id] = self._mirror_row({"status": "running", "pages": 0})
+            self.libraryMirrorChanged.emit()
+
+            def work():
+                try:
+                    lib.mirror_entry(entry, depth=lib.MIRROR_DEPTH, max_pages=lib.MIRROR_PAGES,
+                                     progress=lambda st: self._mirrorEvent.emit(entry_id, dict(st)),
+                                     cancel=cancel.is_set)
+                except Exception as exc:  # noqa: BLE001 — der Fehler gehört auf die Seite
+                    self._mirrorEvent.emit(entry_id, {"entry_id": entry_id, "status": "error", "pages": 0,
+                                                      "error_count": 1, "errors": [str(exc)], "finished": time.time()})
+
+            threading.Thread(target=work, name=f"hermes-mirror-{entry_id}", daemon=True).start()
+
+        @Slot(str)
+        def libraryMirrorCancel(self, entry_id):
+            cancel = self._mirror_jobs.get(entry_id)
+            if cancel is not None:
+                cancel.set()
+
+        def _on_mirror_event(self, entry_id, status):
+            self._mirrors[entry_id] = self._mirror_row(status)
+            if status.get("status") != "running":
+                self._mirror_jobs.pop(entry_id, None)
+                entry = next((e for e in self._library if e["id"] == entry_id), None)
+                title = entry["title"] if entry else entry_id
+                self._model.append("info", f"Bibliothek: {title}, {lib.describe_mirror(status)}")
+                if entry_id in self._remove_after_mirror:
+                    self._remove_after_mirror.discard(entry_id)
+                    self._mirrors.pop(entry_id, None)
+                    lib.remove_entry(entry_id)
+                    self.libraryReload()
+            self.libraryMirrorChanged.emit()
+
+        @Property("QVariantList", notify=librarySearchChanged)
+        def librarySearchHits(self):
+            return [dict(h) for h in self._search_hits]
+
+        @Property(str, notify=librarySearchChanged)
+        def librarySearchNote(self):
+            return self._search_note
+
+        @Property(bool, notify=librarySearchChanged)
+        def librarySearching(self):
+            return self._searching
+
+        @Slot(str)
+        def librarySearch(self, query):
+            """Volltextsuche im Index, im Arbeitsthread; leer räumt die Treffer weg."""
+            query = (query or "").strip()
+            self._search_query = query
+            if not query or lib is None:
+                self._search_hits, self._search_note, self._searching = [], "", False
+                self.librarySearchChanged.emit()
+                return
+            self._searching = True
+            self.librarySearchChanged.emit()
+            has_mirror = bool(self._mirrors)     # im GUI-Thread lesen, nicht im Arbeitsthread
+
+            def work():
+                try:
+                    if not has_mirror:
+                        self._searchDone.emit(query, [], "Noch kein Spiegel: erst einen Eintrag spiegeln, dann suchen.")
+                        return
+                    hits, mode = lib.search_index(query, "", lib.SEARCH_LIMIT_MAX)
+                    if not hits:
+                        note = f"Keine Treffer für „{query}“."
+                    else:
+                        note = (f"{len(hits)} Treffer" if len(hits) > 1 else "1 Treffer") + f" für „{query}“"
+                        note += " (LIKE-Suche, kein FTS5)." if mode == "like" else "."
+                    self._searchDone.emit(query, hits, note)
+                except Exception as exc:  # noqa: BLE001
+                    self._searchDone.emit(query, [], f"Suche fehlgeschlagen: {exc}")
+
+            threading.Thread(target=work, name="hermes-library-search", daemon=True).start()
+
+        def _on_search_done(self, query, hits, note):
+            if query != self._search_query:
+                return      # eine neuere Suche läuft schon
+            titles = {e["id"]: e["title"] for e in self._library}
+            self._search_hits = [{"title": h.get("title") or h.get("source", ""), "source": h.get("source", ""),
+                                  "entryId": h.get("entry_id", ""), "entryTitle": titles.get(h.get("entry_id"), h.get("entry_id", "")),
+                                  "snippet": h.get("snippet", "")} for h in hits]
+            self._search_note = note
+            self._searching = False
+            self.librarySearchChanged.emit()
+
+        @Slot(str, str, str, result=str)
+        def libraryUpdate(self, entry_id, title, note):
+            """Titel und Notiz ändern; leerer Text heißt Erfolg, sonst der Fehler fürs Fenster."""
+            if lib is None:
+                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+            _entry, err = lib.update_entry(entry_id, title=title, note=note)
+            self.libraryReload()
+            return err
+
+        @Slot(list, str, result=str)
+        def libraryDrop(self, urls, text):
+            """Ins Fenster gezogen: Dateien und Ordner aus dem Dateimanager, Adressen aus
+            dem Browser (als Adresse oder als Text). Liefert die Meldung für die Seite."""
+            if lib is None:
+                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+            sources = []
+            for value in urls or []:
+                path = local_path(value)
+                if path:
+                    sources.append(path)
+                    continue
+                raw = value.toString() if isinstance(value, QUrl) else str(value or "")
+                if lib.is_url(raw):
+                    sources.append(raw.strip())
+            if not sources:
+                for line in (text or "").splitlines():
+                    if lib.is_url(line):
+                        sources.append(line.strip())
+                        break
+            if not sources:
+                return "Nichts Verwertbares abgelegt: Dateien, Ordner oder eine http(s)-Adresse."
+            added, errors = [], []
+            for source in sources:
+                entry, err = lib.add_entry(source)
+                if err:
+                    errors.append(err)
+                else:
+                    added.append(entry["title"])
+            self.libraryReload()
+            parts = []
+            if added:
+                parts.append(("Eingetragen: " if len(added) > 1 else "Eingetragen, gilt ab dem nächsten Gespräch: ") + ", ".join(added))
+                self._model.append("info", "Bibliothek: " + ", ".join(added) + " eingetragen, gilt ab dem nächsten Gespräch.")
+            parts += errors
+            return " ".join(parts)
+
+        @Slot(str)
+        def libraryOpenSource(self, source):
+            """Treffer der Suche im Browser oder Programm öffnen."""
+            if not source:
+                return
+            QDesktopServices.openUrl(QUrl(source) if lib is not None and lib.is_url(source) else QUrl.fromLocalFile(source))
+
+        @Property("QVariantList", notify=libraryMcpChanged)
+        def libraryMcp(self):
+            return [dict(item) for item in self._mcp]
+
+        @Property(str, notify=libraryMcpChanged)
+        def libraryMcpMessage(self):
+            return self._mcp_message
+
+        @Slot(str, bool, result=str)
+        def libraryMcpSet(self, server_id, enabled):
+            """Doku-Server in ~/.hermes/config.yaml ein- oder austragen. Das Gateway
+            gleicht die Datei von selbst ab; ein Neustart ist nicht nötig."""
+            if lib is None:
+                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+            _changed, message = lib.mcp_set(server_id, bool(enabled))
+            self._mcp_message = message
+            self._mcp = lib.mcp_catalog()
+            self.libraryMcpChanged.emit()
+            return message
 
         @Slot(str, str, str, result=str)
         def libraryAdd(self, source, title, note):
@@ -695,7 +920,15 @@ def main():
 
         @Slot(str)
         def libraryRemove(self, entry_id):
-            if lib is not None and lib.remove_entry(entry_id):
+            if lib is None:
+                return
+            if entry_id in self._mirror_jobs:
+                # Läuft noch ein Spiegel: abbrechen, entfernen erst, wenn der
+                # Arbeitsthread fertig ist, sonst schreibt er den Eintrag zurück.
+                self._remove_after_mirror.add(entry_id)
+                self._mirror_jobs[entry_id].set()
+                return
+            if lib.remove_entry(entry_id):
                 self.libraryReload()
 
         @Slot(result=str)

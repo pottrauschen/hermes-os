@@ -42,6 +42,8 @@ _TOOLS = (
 _LIBRARY_TOOLS = (
     ("library_list",  library.LIBRARY_LIST_SCHEMA,  library.handle_library_list,  "📚"),
     ("library_fetch", library.LIBRARY_FETCH_SCHEMA, library.handle_library_fetch, "📖"),
+    ("library_search", library.LIBRARY_SEARCH_SCHEMA, library.handle_library_search, "🔍"),
+    ("library_mirror", library.LIBRARY_MIRROR_SCHEMA, library.handle_library_mirror, "🪞"),
 )
 # Morgenbericht (report.py): Zusammenfassung und Desktop-Benachrichtigung
 _REPORT_TOOLS = (

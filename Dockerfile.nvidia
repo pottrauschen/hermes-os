@@ -13,6 +13,45 @@
 # prüft das.
 # =============================================================================
 
+# Hermes-Release, das ins Image gebacken wird. Ein Bump ist ein Commit hier,
+# kein `hermes update` auf dem Rechner (das ist auf dem read-only /usr
+# absichtlich nicht möglich). Global deklariert, weil zwei Stufen dasselbe
+# Release brauchen: die Node-Stufe für das Dashboard-Frontend und die
+# Aurora-Stufe für die Venv. Jede Stufe holt sich den Wert mit einem
+# leeren `ARG HERMES_REF`.
+#
+# Die Tags v2026.x.y liegen auf der Release-Linie 0.21.x (Python 3.11-3.13).
+# main ist bereits bei Python 3.14 und einem anderen Build-System; wer main
+# pinnen will, muss HERMES_PYTHON mit anheben und 10-hermes.sh prüfen.
+ARG HERMES_REF="v2026.9.24"
+ARG HERMES_REPO="https://github.com/NousResearch/hermes-agent.git"
+
+# Dashboard-Frontend (hermes dashboard): eine eigene Node-Stufe, damit Node
+# und npm nie ins Image kommen. Hermes pinnt seine Toolchain auf Node 26
+# (.nvmrc; engines erlaubt ^22.22, ^24.11, >=26). Der Build klont dasselbe
+# Release wie 10-hermes.sh, installiert nur den Workspace `web` (samt
+# apps/shared als file:-Abhängigkeit) und schreibt nach hermes_cli/web_dist.
+# Nur dieser Ordner wandert weiter: über die ctx-Stufe nach /ctx/web_dist,
+# von wo 15-dashboard.sh ihn in die Venv-Installation legt.
+# Diese Zeile ist in Dockerfile und Dockerfile.nvidia identisch; die
+# Signaturprüfung und der Versions-Grep der CI lesen nur die Aurora-Zeile
+# (`^FROM ghcr.io/ublue-os/`, letzte Fundstelle).
+FROM docker.io/library/node:26-bookworm-slim AS webbuild
+ARG HERMES_REF
+ARG HERMES_REPO
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN --mount=type=cache,dst=/root/.npm \
+    git clone --depth 1 --branch "${HERMES_REF}" "${HERMES_REPO}" /src \
+    && npm ci --workspace web --no-audit --no-fund --fetch-retries=5 \
+    && npm run build --workspace web \
+    && test -f /src/hermes_cli/web_dist/index.html \
+    && printf 'ref=%s\ncommit=%s\nnode=%s\nnpm=%s\n' \
+         "${HERMES_REF}" "$(git rev-parse HEAD)" "$(node --version)" "$(npm --version)" \
+         > /src/hermes_cli/web_dist/.hermes-os-web
+
 # Build-Kontext getrennt vom Image: Skripte und Systemdateien werden nur
 # eingebunden, nicht ins Image kopiert.
 FROM scratch AS ctx
@@ -22,6 +61,8 @@ COPY *.pub /keys/
 # Tests aus dem Repo, die das Validierungs-Gate im Build ausführt (Render-Test
 # des Einrichtungsassistenten); bleiben im Kontext, landen nicht im Image.
 COPY tests /tests/
+# Gebautes Dashboard-Frontend aus der Node-Stufe (siehe oben).
+COPY --from=webbuild /src/hermes_cli/web_dist /web_dist/
 
 FROM ghcr.io/ublue-os/aurora-dx-nvidia-open:stable
 
@@ -31,16 +72,10 @@ ARG VARIANT=""
 # Version des Images: die CI setzt <Aurora-Version>.<Datum>, lokal bleibt es
 # ein Platzhalter. Ohne eigenen Wert erbt das Label die Aurora-Version.
 ARG IMAGE_VERSION="0.1"
-# Hermes-Release, das ins Image gebacken wird. Ein Bump ist ein Commit hier,
-# kein `hermes update` auf dem Rechner (das ist auf dem read-only /usr
-# absichtlich nicht möglich).
-#
-# Die Tags v2026.x.y liegen auf der Release-Linie 0.21.x (Python 3.11-3.13).
-# main ist bereits bei Python 3.14 und einem anderen Build-System; wer main
-# pinnen will, muss HERMES_PYTHON mit anheben und 10-hermes.sh prüfen.
-ARG HERMES_REF="v2026.9.24"
+# Hermes-Release und Quelle: Werte aus den globalen ARGs am Dateianfang.
+ARG HERMES_REF
+ARG HERMES_REPO
 ARG HERMES_PYTHON="3.13"
-ARG HERMES_REPO="https://github.com/NousResearch/hermes-agent.git"
 
 ENV VARIANT=${VARIANT}
 ENV IMAGE_NAME=${IMAGE_NAME}

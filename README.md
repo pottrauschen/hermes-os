@@ -28,9 +28,10 @@ Universal-Blue-Muster.
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
 | Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
-| Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert | Bibliothek, Stufe eins, Seite im Chat-Fenster, siehe [docs/bibliothek.md](docs/bibliothek.md) |
+| Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert; Spiegel je Eintrag mit Volltextsuche (SQLite FTS5), Doku-Server context7 und deepwiki als Schalter | Bibliothek, Stufe zwei, Seite im Chat-Fenster mit Ablegen, Suche und Spiegeln, siehe [docs/bibliothek.md](docs/bibliothek.md) |
 | Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, Test in der VM offen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
 | Apps per Sprache starten | `app_launch`, fertig |
+| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; offscreen gegen das echte Hermes geprüft, Plasma-Sitzung in VM 112 offen, siehe [docs/dashboard.md](docs/dashboard.md) |
 | Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
 | Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Chat-Fenster, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
 
@@ -43,6 +44,7 @@ Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
   + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage, ujust-Rezepte
   + Einrichtung                 /usr/libexec/hermes-os-setup (Kirigami, PySide6 aus Aurora) + setup/hermes_bridge.py in der Venv
   + Leisten-Symbol              /usr/libexec/hermes-os-tray (Kirigami, PySide6) + tray/hermes_client.py, spricht mit dem API-Server des Gateways (127.0.0.1:8642)
+  + Dashboard                   /usr/libexec/hermes-os-dashboard (QtWebEngine, PySide6) zeigt `hermes dashboard` (127.0.0.1:9119); Frontend aus der Node-Stufe unter hermes_cli/web_dist
   + Dienst                      hermes-gateway.service (User-Unit, an graphical-session gebunden)
   + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill, legt den API-Schlüssel an, öffnet den Assistenten
 Nutzerdaten                     ~/.hermes: Config, Sessions, Memory, Checkpoints, lazy-packages
@@ -175,10 +177,12 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
   [docs/testumgebung.md](docs/testumgebung.md): Image, Hermes, Plugin, Skill, Rezepte
   und First-Login greifen. Offen bleibt der Boot auf echter Hardware per `bootc switch`.
 - **Oberfläche:** Der Assistent für den ersten Login und das Leisten-Symbol sind gebaut;
-  das Symbol lief bisher nur durch Gate und Tests, nicht in der VM. Als nächster Schritt
-  soll Hermes' eigenes Web-Dashboard (`hermes dashboard`) ins Image: Frontend in CI mit
-  Node bauen, im Image als Fenster über QtWebEngine öffnen, erreichbar aus dem
-  Leisten-Symbol. Siehe [docs/einrichtung.md](docs/einrichtung.md).
+  das Symbol lief bisher nur durch Gate und Tests, nicht in der VM. Hermes' eigenes
+  Web-Dashboard (`hermes dashboard`) ist im Image: das Frontend baut eine Node-Stufe im
+  Dockerfile, ein QtWebEngine-Fenster zeigt es, erreichbar aus Menü, Leisten-Symbol,
+  Assistent und `ujust hermes-dashboard`. Fenster und Server sind offscreen gegen das
+  echte Hermes geprüft, das Gate wiederholt das im Build; in der Plasma-Sitzung von
+  VM 112 ist das Fenster noch nicht gelaufen. Siehe [docs/dashboard.md](docs/dashboard.md).
 - **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
   Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
   kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).
@@ -187,8 +191,10 @@ Fedora-Paketschicht. Braucht uv ab 0.10.
 - ujust: Auroras `/usr/bin/ujust` ruft just mit `/usr/share/ublue-os/just/00-entry.just`
   auf (aus dem Aurora-common-Image), und die importiert eine feste Liste plus optional
   `60-custom.just`. Unsere Rezepte landen deshalb genau dort.
-- Die Hermes-TUI wird nicht gebaut (braucht Node im Build). CLI, Gateway und Sprache
-  brauchen sie nicht.
+- Das Dashboard-Frontend wird in einer eigenen Node-Stufe gebaut, Node kommt nicht ins
+  Image. Die Hermes-TUI wird weiterhin nicht gebaut: CLI, Gateway, Sprache und das
+  Leisten-Symbol brauchen sie nicht; der Chat-Tab im Dashboard, der sie als Kindprozess
+  startet, bleibt damit leer. Chat läuft über das Leisten-Symbol.
 - Phase 3 (Desktop-Steuerung) wird ein eigenes Plugin mit eigener Gefahrenstufe.
 
 ## Lizenz

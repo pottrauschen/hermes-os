@@ -36,16 +36,18 @@ Plasma-Sitzung noch nicht gebootet.
   kann, ohne das Fenster zu öffnen. Ohne Antwort läuft der Befehl nach
   `approvals.timeout` (Vorgabe 5 Minuten) nicht.
 - **Bibliothek**: Der Knopf im Kopf und der Menüpunkt am Symbol öffnen eine
-  Seite, auf der Adressen, Dateien und Ordner eingetragen werden, die Hermes
-  bei Bedarf liest; Details in [bibliothek.md](bibliothek.md).
+  Seite, auf der Adressen, Dateien und Ordner eingetragen werden (auch per
+  Ablegen), die Hermes bei Bedarf liest; dazu Spiegeln mit Fortschritt, eine
+  Suche in den Spiegeln und die Schalter der Doku-Server; Details in
+  [bibliothek.md](bibliothek.md).
 - **Protokoll**: Der Knopf mit der Uhr im Kopf und der Menüpunkt am Symbol
   öffnen eine Seite mit allem, was Hermes am System getan hat: Freigaben mit
   Entscheidung, Systembefehle mit Ergebnis, App-Starts; Details in
   [protokoll.md](protokoll.md). Ein Klick auf eine Freigabe landet dort auch.
-- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Hermes
-  einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard öffnen" erscheint,
-  sobald Teil 2 aus [einrichtung.md](einrichtung.md) das Startskript
-  `/usr/libexec/hermes-os-dashboard` liefert.
+- **Menü am Symbol**: Hermes öffnen, neues Gespräch, Bibliothek, Protokoll, Dashboard
+  öffnen, Hermes einrichten, Gateway starten, Chat im Terminal, Beenden. „Dashboard
+  öffnen" startet das Fenster `/usr/libexec/hermes-os-dashboard`
+  ([dashboard.md](dashboard.md)) und erscheint nur, wenn es ausführbar ist.
 - **Autostart** bei jeder Plasma-Sitzung. Beim allerersten Login sagt das
   Symbol „nicht eingerichtet" und bietet den Assistenten an; nach dem
   Speichern schaltet das First-Login-Skript das Gateway ein, und das Symbol
@@ -251,7 +253,7 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   `/usr/share/plasma/systemsettings/externalmodules/*.desktop`
   (`X-KDE-System-Settings-Parent-Category`).
 - Mikrofon: Aufnahme, Transkription über die Brücke mit dem lokalen Whisper.
-- Dashboard-Knopf, sobald Teil 2 gebaut ist.
+- Dashboard-Knopf auch im Fensterkopf; heute nur im Menü am Symbol.
 - Bilder aus Hermes' Antwort schon beim Streamen zeigen (heute erst mit dem
   Abschlussereignis) und Videos oder PDFs aus MEDIA-Tags zum Öffnen anbieten.
 - Hübschere Icons; das Symbol im Fensterkopf trägt inzwischen einen
