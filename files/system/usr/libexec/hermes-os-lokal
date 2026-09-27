@@ -138,7 +138,9 @@ def check(lm, model):
     if not model:
         fail("kein Modell angegeben (hermes-os-lokal pruefen MODELL)")
     ep = lm.check_endpoint(lm.HERMES_BASE_URL, model)
-    emit(dict(ep, step="check", model=model))
+    # ok im JSON heißt: bereit für Hermes, also auch der Werkzeugaufruf; sonst
+    # zeigt der Assistent weder Erfolg noch Fehler.
+    emit(dict(ep, ok=bool(ep["tools"]), step="check", model=model))
     if not ep["reachable"]:
         emit(None, f"Endpunkt {lm.HERMES_BASE_URL}: {ep['error']}")
         return 1
