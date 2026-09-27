@@ -42,6 +42,7 @@ lint:
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
 		files/system/usr/share/hermes-os/dashboard/dashboard_server.py files/system/usr/libexec/hermes-os-dashboard \
+		files/system/usr/libexec/hermes-os-lokal files/system/usr/share/hermes-os/local/local_model.py \
 		tests/*.py
 	python3 files/system/usr/share/hermes-os/tray/hermes_client.py
 	python3 tests/tray-client-check.py --tray-dir files/system/usr/share/hermes-os/tray
@@ -54,6 +55,7 @@ lint:
 	python3 tests/dashboard-check.py --dashboard-dir files/system/usr/share/hermes-os/dashboard \
 		--launcher files/system/usr/libexec/hermes-os-dashboard \
 		--desktop-file files/system/usr/share/applications/hermes-os-dashboard.desktop
+	python3 tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }

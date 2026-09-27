@@ -111,3 +111,19 @@ hermes-morgenbericht-aus:
     else
         echo "Es war kein Morgenbericht eingerichtet."
     fi
+
+# Lokales Modell einschalten: Ollama als Nutzerdienst, Modell laden (Vorgabe passend zur GPU), prüfen, Hermes umstellen
+hermes-lokal-ein modell="":
+    /usr/libexec/hermes-os-lokal ein {{ quote(modell) }}
+
+# Lokales Modell ausschalten: Ollama stoppen, Hermes zurück auf den vorherigen Anbieter
+hermes-lokal-aus:
+    /usr/libexec/hermes-os-lokal aus
+
+# Anderes lokales Modell laden, prüfen und in Hermes eintragen (ohne Angabe: Vorgabe für diesen Rechner)
+hermes-lokal-modell modell="":
+    /usr/libexec/hermes-os-lokal modell {{ quote(modell) }}
+
+# Lokales Modell: GPU, Dienst, geladene Modelle, was Hermes gerade nutzt
+hermes-lokal-status:
+    /usr/libexec/hermes-os-lokal status

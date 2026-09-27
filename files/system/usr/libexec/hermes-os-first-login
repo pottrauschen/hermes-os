@@ -53,7 +53,20 @@ link "${SHARE}/skills/hermes-os-system" "${HERMES_HOME}/skills/hermes-os-system"
 # 4. Gateway einschalten, wenn ein Provider eingerichtet ist.
 #    reenable statt enable: ältere Installationen hatten die Unit noch an
 #    default.target hängen; reenable räumt den alten Symlink weg.
-if [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ]; then
+#    Ein lokales Modell (ujust hermes-lokal-ein, Karte im Assistenten) braucht
+#    keinen Schlüssel und legt keine .env an; dann zählt der Anbieter in
+#    config.yaml. Der Schlüssel für den API-Server kommt trotzdem in .env.
+provider_configured() {
+  [ -f "${HERMES_HOME}/.env" ] || [ -f "${HERMES_HOME}/auth.json" ] && return 0
+  [ -f "${HERMES_HOME}/config.yaml" ] || return 1
+  /usr/bin/python3 - "${HERMES_HOME}/config.yaml" <<'PY' 2>/dev/null
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+m = cfg.get("model")
+sys.exit(0 if isinstance(m, dict) and m.get("provider") and m.get("default") else 1)
+PY
+}
+if provider_configured; then
   # 4a. API-Server des Gateways freischalten. Hermes startet ihn, sobald
   #     API_SERVER_KEY (mindestens 16 Zeichen) in .env steht; er lauscht nur
   #     auf 127.0.0.1:8642. Der Schlüssel ist ein Zufallswert je Nutzer und
