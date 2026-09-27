@@ -727,6 +727,43 @@ Kirigami.ApplicationWindow {
                     onContentHeightChanged: if (followTail) Qt.callLater(messageList.positionViewAtEnd)
                     add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
 
+                    // Drei pulsierende Punkte am Ende, solange Hermes arbeitet und gerade nichts
+                    // schreibt: gleich nach dem Senden und zwischen zwei Werkzeugschritten
+                    footer: Item {
+                        width: ListView.view ? ListView.view.width - ListView.view.leftMargin - ListView.view.rightMargin : 0
+                        implicitHeight: typing.visible ? typing.implicitHeight + Kirigami.Units.largeSpacing : 0
+                        height: implicitHeight
+                        Row {
+                            id: typing
+                            objectName: "typingDots"
+                            visible: backend.waiting
+                            x: Math.round((parent.width - Math.min(parent.width, root.readingWidth)) / 2)
+                            y: Kirigami.Units.largeSpacing
+                            spacing: Kirigami.Units.smallSpacing
+                            topPadding: Kirigami.Units.smallSpacing
+                            bottomPadding: Kirigami.Units.smallSpacing
+                            Repeater {
+                                model: 3
+                                Rectangle {
+                                    required property int index
+                                    width: Kirigami.Units.smallSpacing * 2
+                                    height: width
+                                    radius: width / 2
+                                    color: Kirigami.Theme.textColor
+                                    opacity: 0.3
+                                    SequentialAnimation on opacity {
+                                        running: typing.visible
+                                        loops: Animation.Infinite
+                                        PauseAnimation { duration: index * 160 }
+                                        NumberAnimation { to: 1; duration: 320 }
+                                        NumberAnimation { to: 0.3; duration: 320 }
+                                        PauseAnimation { duration: (2 - index) * 160 }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     delegate: Item {
                         id: row
                         required property int index
@@ -753,12 +790,6 @@ Kirigami.ApplicationWindow {
                         implicitHeight: topGap + (isBubble ? bubbleWrap.implicitHeight
                                       : (role === "tool" ? toolRow.implicitHeight : infoPill.implicitHeight))
 
-                        // Uhrzeit dezent: als Hinweis, wenn der Zeiger über der Nachricht steht
-                        HoverHandler { id: rowHover }
-                        Controls.ToolTip.text: row.time
-                        Controls.ToolTip.visible: rowHover.hovered && row.time.length > 0 && row.isBubble
-                        Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
-
                         // Nutzer rechts in einer Blase in Akzentfarbe, Hermes links als ruhiger
                         // Text ohne Kasten, Fehler in einem roten Kasten
                         Item {
@@ -769,6 +800,7 @@ Kirigami.ApplicationWindow {
                             implicitHeight: (imageFlow.visible ? imageFlow.height : 0)
                                             + (imageFlow.visible && bubble.visible ? 2 : 0)
                                             + (bubble.visible ? bubble.height : 0)
+                                            + (timeLabel.visible ? timeLabel.implicitHeight : 0)
 
                             // Bilder als kleine Vorschau über der Nachricht, nicht in der Blase;
                             // ein Klick öffnet sie groß im Bildbetrachter
@@ -806,7 +838,7 @@ Kirigami.ApplicationWindow {
                                 readonly property int padX: plain ? 0 : Kirigami.Units.largeSpacing
                                 readonly property int padY: plain ? Kirigami.Units.smallSpacing
                                                                   : Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing / 2
-                                visible: row.text.length > 0 || typing.visible
+                                visible: row.text.length > 0
                                 width: plain ? row.column
                                      : Math.min(row.maxBubble, Math.ceil(measure.implicitWidth) + padX * 2)
                                 height: content.implicitHeight + padY * 2
@@ -831,33 +863,6 @@ Kirigami.ApplicationWindow {
                                     anchors.rightMargin: bubble.padX
                                     anchors.topMargin: bubble.padY
                                     spacing: Kirigami.Units.smallSpacing
-                                    // Drei pulsierende Punkte, solange Hermes noch nichts geschrieben hat
-                                    Row {
-                                        id: typing
-                                        visible: row.role === "assistant" && row.text.length === 0
-                                                 && row.imageList.length === 0 && backend.busy
-                                        spacing: Kirigami.Units.smallSpacing
-                                        topPadding: Kirigami.Units.smallSpacing
-                                        Repeater {
-                                            model: 3
-                                            Rectangle {
-                                                required property int index
-                                                width: Kirigami.Units.smallSpacing * 2
-                                                height: width
-                                                radius: width / 2
-                                                color: Kirigami.Theme.textColor
-                                                opacity: 0.3
-                                                SequentialAnimation on opacity {
-                                                    running: typing.visible
-                                                    loops: Animation.Infinite
-                                                    PauseAnimation { duration: index * 160 }
-                                                    NumberAnimation { to: 1; duration: 320 }
-                                                    NumberAnimation { to: 0.3; duration: 320 }
-                                                    PauseAnimation { duration: (2 - index) * 160 }
-                                                }
-                                            }
-                                        }
-                                    }
                                     Kirigami.SelectableLabel {
                                         id: label
                                         width: parent.width
@@ -869,6 +874,19 @@ Kirigami.ApplicationWindow {
                                         onLinkActivated: link => Qt.openUrlExternally(link)
                                     }
                                 }
+                            }
+                            // Uhrzeit klein und blass unter der Nachricht, auf der Seite ihres Absenders
+                            Controls.Label {
+                                id: timeLabel
+                                objectName: "messageTime"
+                                visible: row.time.length > 0 && (bubble.visible || imageFlow.visible)
+                                text: row.time
+                                font: Kirigami.Theme.smallFont
+                                opacity: 0.5
+                                topPadding: 2
+                                x: row.mine ? row.colX + row.column - width : row.colX + bubble.padX
+                                y: bubble.visible ? bubble.y + bubble.height
+                                                  : imageFlow.height
                             }
                         }
 

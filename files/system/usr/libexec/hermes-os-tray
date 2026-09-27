@@ -500,6 +500,7 @@ def main():
         stateChanged = Signal()
         approvalChanged = Signal()
         busyChanged = Signal()
+        waitingChanged = Signal()           # tippende Punkte am Ende des Verlaufs
         versionChanged = Signal()
         showRequested = Signal()
         hideRequested = Signal()
@@ -525,6 +526,7 @@ def main():
             super().__init__()
             self._state = "off"
             self._busy = False
+            self._waiting = False
             self._approval = {}
             self._version = ""
             self._attachments = []      # {"path", "url", "name"} je Bild für die nächste Nachricht
@@ -617,6 +619,13 @@ def main():
         @Property(bool, notify=busyChanged)
         def busy(self):
             return self._busy
+
+        @Property(bool, notify=waitingChanged)
+        def waiting(self):
+            """Hermes arbeitet, aber am Ende des Verlaufs bewegt sich nichts: vor dem ersten
+            Textstück und zwischen Werkzeugschritten. Ein laufendes Werkzeug hat seinen
+            eigenen Kreis, eine offene Freigabe ihre Karte."""
+            return self._waiting
 
         @Property(bool, notify=approvalChanged)
         def approvalPending(self):
@@ -1206,11 +1215,21 @@ def main():
             if state != self._state:
                 self._state = state
                 self.stateChanged.emit()
+            self._update_waiting()
 
         def _set_busy(self, value):
             if value != self._busy:
                 self._busy = value
                 self.busyChanged.emit()
+            self._update_waiting()
+
+        def _update_waiting(self):
+            row = self._assistant_row
+            streaming = row >= 0 and row == self._model.rowCount() - 1 and bool(self._model.text(row))
+            waiting = self._busy and self._state == "busy" and not self._open_tools and not streaming
+            if waiting != self._waiting:
+                self._waiting = waiting
+                self.waitingChanged.emit()
 
         # ---- Lebenszeichen ---------------------------------------------------------
         @Slot()
@@ -1414,6 +1433,8 @@ def main():
                 preview = str(event.get("preview") or "").strip().splitlines()
                 row = self._model.append("tool", f"{tool}: {preview[0][:160]}" if preview else tool, "started")
                 self._open_tools.append((tool, row))
+                # Text nach dem Werkzeug kommt in eine neue Blase unter den Kärtchen, nicht in die darüber
+                self._assistant_row = -1
             elif name == "tool.completed":
                 # Eine Zeile je Aufruf: die Startzeile desselben Werkzeugs bekommt Dauer
                 # oder Fehler angehängt, statt dass eine zweite Zeile dazukommt
@@ -1460,6 +1481,7 @@ def main():
                 if self._busy:
                     self._finish()
                     self.answerFinished.emit("")
+            self._update_waiting()
 
         def _finish(self):
             self._clear_approval()

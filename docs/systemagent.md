@@ -21,10 +21,14 @@ Plasma-Sitzung noch nicht gebootet.
   (gut 70 Zeichen), im breiten Fenster mittig. Eigene Nachrichten stehen
   rechts in einer Blase in gedämpfter Akzentfarbe, Antworten von Hermes links
   als Text ohne Kasten, Fehler in einem roten Kasten; Bilder erscheinen als
-  kleine Karte über der Nachricht. Die Uhrzeit zeigt sich beim Drüberfahren.
-  Antworten kommen gestreamt, vorher pulsieren drei Punkte. Jeder
+  kleine Karte über der Nachricht. Die Uhrzeit steht klein und blass unter
+  jeder Nachricht, bei älteren Tagen mit Datum. Antworten kommen gestreamt.
+  Solange Hermes arbeitet und gerade nichts schreibt, pulsieren am Ende des
+  Verlaufs drei Punkte: gleich nach dem Senden und zwischen zwei
+  Werkzeugschritten (Eigenschaft `waiting` des Backends). Jeder
   Werkzeugaufruf ist ein Kärtchen („✓ os_status · 0,3 s“), das beim Start
-  erscheint und am Ende Dauer oder Fehler bekommt; Hinweise des Systems
+  erscheint und am Ende Dauer oder Fehler bekommt; Text danach beginnt eine
+  neue Blase unter den Kärtchen. Hinweise des Systems
   („Freigabe: Einmal erlaubt“) stehen zwischen zwei feinen Linien. Vor jeder
   neuen Frage ist mehr Luft als zwischen den Teilen einer Antwort. Text lässt
   sich markieren und kopieren, Markdown wird gerendert. Enter sendet,

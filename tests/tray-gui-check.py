@@ -137,6 +137,7 @@ class StubBackend(QObject):
     stateChanged = Signal()
     approvalChanged = Signal()
     busyChanged = Signal()
+    waitingChanged = Signal()
     versionChanged = Signal()
     showRequested = Signal()
     hideRequested = Signal()
@@ -154,6 +155,7 @@ class StubBackend(QObject):
         super().__init__()
         self._state = "off"
         self._busy = False
+        self._waiting = False
         self._approval = {}
         self._configured = False
         self._attachments = []
@@ -432,6 +434,10 @@ class StubBackend(QObject):
         self._busy = value
         self.busyChanged.emit()
 
+    def set_waiting(self, value):
+        self._waiting = value
+        self.waitingChanged.emit()
+
     def set_approval(self, approval):
         self._approval = dict(approval or {})
         self.approvalChanged.emit()
@@ -452,6 +458,10 @@ class StubBackend(QObject):
     @Property(bool, notify=busyChanged)
     def busy(self):
         return self._busy
+
+    @Property(bool, notify=waitingChanged)
+    def waiting(self):
+        return self._waiting
 
     @Property(bool, notify=approvalChanged)
     def approvalPending(self):
@@ -833,8 +843,14 @@ def main():
     row = backend._model.append("assistant", "", when="14:02")
     backend.set_busy(True)
     backend.set_state("busy")
+    backend.set_waiting(True)
     settle()
     shot("typing")
+    dots = root.findNamed("typingDots", None)
+    step("Tippende Punkte am Ende, solange Hermes noch nichts schreibt; Uhrzeit unter der Frage",
+         dots is not None and dots.property("visible") and count("messageTime") >= 1,
+         f"dots={dots and dots.property('visible')} times={count('messageTime')}")
+    backend.set_waiting(False)
     busy_stop = send_btn is not None and send_btn.property("text") == "Stopp" and send_btn.property("enabled")
     # Wie hermes-os-tray: eine Zeile je Werkzeugaufruf, am Ende mit Dauer abgeschlossen
     tool_row = backend._model.append("tool", "os_status", "started")
