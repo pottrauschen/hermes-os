@@ -17,10 +17,12 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `docs/systemagent.md` | Leisten-Symbol: Zustände, Chat-Fenster, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
 | `docs/morgenbericht.md` | Morgenbericht: täglicher Cron-Job ohne Modell, `os_report` und `desktop_notify`, Knopf „Im Chat besprechen", ujust-Rezepte, Stolperfallen |
 | `docs/bibliothek.md` | Bibliothek: Wissensquellen im Chat-Fenster, Ablage, Werkzeuge `library_list`, `library_fetch`, `library_search`, `library_mirror`, Spiegel und Index mit FTS5, Doku-Server-Schalter (MCP), Grenzen, Stolperfallen |
+| `docs/lokales-modell.md` | Lokales Modell: Ollama im Image als Nutzerdienst, Anbindung an Hermes (custom, 64k Kontext), Modellwahl für 12 GB, Rezepte, Karte im Assistenten, Test in VM 112 |
 | `docs/grenze.md` | Die Grenze: Hook-Vertrag laut Hermes-Upstream, was Hermes selbst fängt, was der Hook fängt, Allowlist, Restlücken |
 | `docs/protokoll.md` | Protokoll: Seite im Chat-Fenster, was Hermes am System getan hat; Ablage `audit.jsonl`, Hooks, Entscheider, Grenzen |
 | `docs/krunner.md` | KRunner-Runner „Hermes fragen“: `hermes <Frage>` und `h: <Frage>`, D-Bus-Anbindung im Leisten-Symbol, Nur nachschlagen, Test, Stolperfallen |
 | `docs/phase3-desktop.md` | Phase 3, Desktop-Steuerung auf Basis von agent-cu |
+| `docs/sehen-hoeren.md` | Sehen und Hören: „Was sehe ich hier?“ (Meta+Umschalt+H, Bildschirmausschnitt an Hermes) und Push-to-Talk (Meta+Leertaste, faster-whisper und Piper aus der Hermes-Venv), Kürzel, Tests, Stolperfallen |
 | `files/system/usr/share/hermes-os/skills/hermes-os-system/SKILL.md` | Skill für den Agenten, wird ins Image kopiert; keine Projekt-Doku, Ausnahme in `.doku-check-ignore` |
 
 ## Arbeitsregeln

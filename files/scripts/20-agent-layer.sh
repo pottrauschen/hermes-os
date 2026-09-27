@@ -11,11 +11,12 @@ SHARE=/usr/share/hermes-os
 
 # ---- Rechte ------------------------------------------------------------------
 chmod 0755 /usr/libexec/hermes-os-first-login /usr/libexec/hermes-os-setup /usr/libexec/hermes-os-tray \
-  /usr/libexec/hermes-os-morgenbericht /usr/libexec/hermes-os-dashboard
-chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* "${SHARE}/dashboard/"* \
+  /usr/libexec/hermes-os-morgenbericht /usr/libexec/hermes-os-dashboard /usr/libexec/hermes-os-lokal
+chmod 0644 "${SHARE}/config.yaml.default" "${SHARE}/setup/"* "${SHARE}/tray/"* "${SHARE}/dashboard/"* "${SHARE}/local/"* \
   /usr/share/applications/hermes-os-setup.desktop /usr/share/applications/hermes-os-tray.desktop \
   /usr/share/applications/hermes-os-dashboard.desktop \
   /usr/share/kglobalaccel/hermes-os-tray.desktop /etc/xdg/autostart/hermes-os-tray.desktop \
+  /usr/share/applications/hermes-os-sehen.desktop /usr/share/kglobalaccel/hermes-os-sehen.desktop \
   /usr/share/krunner/dbusplugins/hermes-os.desktop \
   /usr/share/icons/hicolor/scalable/apps/hermes-os.svg /usr/share/icons/hicolor/scalable/status/hermes-os-tray-*.svg
 find "${SHARE}/plugins" "${SHARE}/skills" -type f -exec chmod 0644 {} +
@@ -59,6 +60,11 @@ chmod 0644 "${JUST_DIR}/60-custom.just"
 # ffmpeg-free: Audio-Konvertierung für STT/TTS (Aurora bringt meist ffmpeg
 #              mit; das Paket ist dann ein No-op).
 dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
+# pipewire-utils (pw-record, pw-play) und pulseaudio-utils (parecord, paplay,
+# pactl): Aufnahme und Vorlesen für Push-to-Talk und die Mikrofon-Prüfung
+# (docs/sehen-hoeren.md). Aurora bringt die Quellpakete mit; ob die
+# Unterpakete im Image sind, ist nicht zugesagt, deshalb ausdrücklich.
+dnf install -y pipewire-utils pulseaudio-utils
 
 # ---- systemd: User-Unit ist vorhanden, aber standardmäßig aus ---------------
 # Das Gateway (Messaging, Cron, Sprachnachrichten auf Plattformen) startet
@@ -67,6 +73,8 @@ dnf install -y libnotify ffmpeg-free || dnf install -y libnotify
 # User-Manager preset-all ausführt. Das First-Login-Skript schaltet die Unit
 # ein, sobald ein Provider konfiguriert ist.
 chmod 0644 /usr/lib/systemd/user/hermes-gateway.service /usr/lib/environment.d/60-hermes-os.conf
+# Dasselbe für ollama.service (lokales Modell, 30-ollama.sh legt das Binary ab).
+chmod 0644 /usr/lib/systemd/user/ollama.service
 
 # ---- Sicherheitsnetz: Hermes darf sich nicht selbst aktualisieren -----------
 # Der Code liegt read-only unter /usr. `hermes update` würde scheitern; ein

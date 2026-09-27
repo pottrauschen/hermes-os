@@ -106,12 +106,44 @@ Der Job ist ein Skript ohne Modell im Gateway (`hermes cron list` zeigt ihn als
 ohne `record` aufrufen. Kommt er über den Knopf mit dem Bericht als Kontext und will
 etwa das Update einspielen, gilt die normale Grenze: `ujust update` fragt.
 
+**Lokales Modell statt Cloud** (frei, aber nur auf Wunsch des Nutzers): Ollama liegt im
+Image und läuft als Nutzerdienst (`ollama.service`, `systemctl --user`) nur auf
+127.0.0.1:11434; die Modelle liegen unter `~/.local/share/ollama`. Auf der
+NVIDIA-Variante rechnet es auf der GPU, sonst auf der CPU (langsam). Erst den Stand
+lesen, dann schalten:
+```
+ujust hermes-lokal-status              # GPU, Dienst, geladene Modelle, was Hermes nutzt
+ujust hermes-lokal-ein                 # Dienst an, Vorgabe-Modell laden, prüfen, Hermes umstellen
+ujust hermes-lokal-ein qwen3.5:4b      # mit eigenem Modell (Ollama-Tag, muss Werkzeuge können)
+ujust hermes-lokal-modell gemma4:12b   # anderes Modell laden, prüfen, eintragen
+ujust hermes-lokal-aus                 # Dienst aus, Hermes zurück auf den vorherigen Anbieter
+```
+Das Umschalten ändert dein eigenes Modell und damit deine Antworten ab dem nächsten
+Gespräch; das Gateway startet dabei neu. Deshalb: nur ausführen, wenn der Nutzer es
+ausdrücklich will, vorher sagen, welches Modell kommt und dass die Antworten langsamer
+und einfacher werden können, danach `ujust hermes-lokal-status` zeigen. Der Download
+eines Modells (3 bis 8 GB) braucht Netz und Zeit. Kein `sudo`, keine Systemdienste:
+alles läuft im Nutzerkontext. Schlägt die Prüfung „Werkzeugaufruf" fehl, ein anderes
+Modell aus dem Vorschlag nehmen, nicht ohne Werkzeuge weiterarbeiten. Der Dienst
+bedient 64k Kontext (Untergrenze von Hermes); `config.yaml` bekommt dazu
+`model.context_length`, `model.ollama_num_ctx` und `agent.reasoning_effort: none`,
+nicht von Hand ändern.
+
 **Hermes selbst**: Konfiguration in `~/.hermes/config.yaml`. Checkpoints sind an:
 vor write_file/patch und vor erkennbar destruktiven Shell-Befehlen (rm, mv, cp,
 sed -i, `>`, git reset) wird der betroffene Projektordner gesichert, `/rollback` im
 Chat holt ihn zurück. Nicht erfasst: /etc, Flatpak, bootc und andere Systemänderungen.
 Der Code liegt read-only in `/usr/lib/hermes-agent`. `hermes update` funktioniert hier
 absichtlich nicht, ein neues Hermes kommt mit dem nächsten Image.
+
+**Sehen und Hören** (frei, erklärst du dem Nutzer auf Nachfrage): Meta+Umschalt+H
+wählt einen Bildschirmausschnitt und fragt dich, was darauf ist; Meta+Leertaste
+gehalten nimmt eine Frage auf, du antwortest im Chat-Fenster und die Antwort wird
+mit Piper vorgelesen. Beide Kürzel stehen in den Systemeinstellungen unter
+Tastenkürzel („Hermes: Was sehe ich hier?“ und „Hermes: Sprechen“). Modell,
+Sprache und Stimme kommen aus `~/.hermes/config.yaml` (`stt`, `tts.piper`);
+ohne Mikrofon sagt das Leisten-Symbol es. Bei einer vorgelesenen Antwort hilft
+es, kurz zu antworten, die Sprachausgabe endet nach 1500 Zeichen.
 
 ## Was du nicht tust
 

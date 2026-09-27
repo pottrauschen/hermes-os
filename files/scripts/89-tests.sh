@@ -13,12 +13,24 @@ check_fail() { echo "  FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 
 echo "=== Commands the hermes_os plugin and launcher call (hard) ==="
 for cmd in bootc rpm-ostree skopeo systemctl systemd-run journalctl flatpak nmcli lsblk lscpu lspci \
-           free df uname gio notify-send uv; do
+           free df uname gio notify-send uv ollama; do
   if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else check_fail "$cmd not found"; fi
 done
 
 echo "=== Commands the docs and ujust recipes mention (soft) ==="
 for cmd in ujust just distrobox podman konsole; do
+  if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else echo "  WARN: $cmd not found"; fi
+done
+
+echo "=== Commands that Sehen und Hören use (docs/sehen-hoeren.md) ==="
+# pw-record und pw-play (Aufnahme und Vorlesen für Push-to-Talk) und pactl
+# (Mikrofon-Prüfung) installiert 20-agent-layer.sh ausdrücklich: hart.
+for cmd in pw-record pw-play pactl; do
+  if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else check_fail "$cmd not found"; fi
+done
+# spectacle (Auswahlrahmen für „Was sehe ich hier?") und die Ersatzwerkzeuge
+# kommen aus dem Basis-Image: weich; ohne sie sagt das Leisten-Symbol, was fehlt.
+for cmd in spectacle parecord paplay; do
   if command -v "$cmd" >/dev/null 2>&1; then check_pass "$cmd"; else echo "  WARN: $cmd not found"; fi
 done
 
@@ -47,6 +59,11 @@ echo "=== Size sanity ==="
 SIZE_MB=$(du -sm /usr/lib/hermes-agent | cut -f1)
 echo "  /usr/lib/hermes-agent: ${SIZE_MB} MB"
 if [ "${SIZE_MB}" -gt 4000 ]; then check_fail "hermes tree larger than 4 GB, check extras"; else check_pass "hermes tree size ok"; fi
+# Ollama ohne cuda_v12 (30-ollama.sh): CPU-Backends, cuda_v13 (0,85 GB), Vulkan.
+OLLAMA_MB=$(du -sm /usr/lib/ollama 2>/dev/null | cut -f1 || echo 0)
+echo "  /usr/lib/ollama: ${OLLAMA_MB} MB"
+if [ "${OLLAMA_MB}" -gt 1500 ]; then check_fail "ollama tree larger than 1.5 GB (cuda_v12 left in?)"; else check_pass "ollama tree size ok"; fi
+if [ -d /usr/lib/ollama/cuda_v12 ]; then check_fail "/usr/lib/ollama/cuda_v12 present (30-ollama.sh should drop it)"; else check_pass "no cuda_v12 in image"; fi
 
 if [ "${FAILURES}" -ne 0 ]; then
   echo "=== ${FAILURES} test(s) FAILED ==="

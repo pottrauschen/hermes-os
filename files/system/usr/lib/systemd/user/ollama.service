@@ -1,0 +1,49 @@
+[Unit]
+Description=hermes-os -- Ollama, lokales Sprachmodell für Hermes (nur 127.0.0.1)
+Documentation=https://github.com/ollama/ollama/blob/main/docs/faq.md
+# Nutzerdienst, kein Systemdienst: der Agent darf ihn ohne Rückfrage
+# schalten (systemctl --user), Modelle liegen im Home. Standardmäßig aus;
+# `ujust hermes-lokal-ein` oder der Einrichtungsassistent schalten ihn ein.
+After=graphical-session.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ollama serve
+# Nur lokal erreichbar; Hermes spricht http://127.0.0.1:11434/v1.
+Environment=OLLAMA_HOST=127.0.0.1:11434
+# Ohne Cloud: keine Anmeldung bei ollama.com, keine Cloud-Modelle, keine
+# Weiterleitung. Modelle kommen weiter aus der Bibliothek (Download).
+Environment=OLLAMA_NO_CLOUD=1
+# Modelle im Home des Nutzers, nicht unter /usr (read-only) und nicht in
+# ~/.ollama (Ollamas Vorgabe, versteckt). Ein Image-Update lässt sie in Ruhe.
+Environment=OLLAMA_MODELS=%h/.local/share/ollama/models
+# Kontextfenster für alle Modelle. Hermes 0.21.x verweigert den Start mit
+# Werkzeugen unter 64.000 Token; Ollamas Vorgabe (4k) ist dafür viel zu klein,
+# und der OpenAI-kompatible Endpunkt nimmt num_ctx nicht je Anfrage an, deshalb
+# hier. 64k passt mit Qwen3.5 9B (hybrid, kleiner KV-Cache) auf 12 GB; dichte
+# 14B-Modelle nicht mehr (docs/lokales-modell.md). Derselbe Wert steht als
+# model.context_length in der config.yaml von Hermes (local_model.py).
+Environment=OLLAMA_CONTEXT_LENGTH=65536
+# Modell nach Gebrauch im Speicher halten, damit der nächste Werkzeugschritt
+# nicht wieder lädt; nach einer Stunde Ruhe gibt Ollama den Speicher frei
+# (Hermes' Anleitung nimmt 24h für Bots; hier teilt sich die Karte den
+# Rechner mit Desktop und Whisper).
+Environment=OLLAMA_KEEP_ALIVE=1h
+# Flash Attention und komprimierter KV-Cache: spart bei 16k Kontext rund die
+# Hälfte des Cache-Speichers, Qualitätsverlust bei q8_0 nicht messbar.
+Environment=OLLAMA_FLASH_ATTENTION=1
+Environment=OLLAMA_KV_CACHE_TYPE=q8_0
+# Backends sucht Ollama beim Start selbst unter /usr/lib/ollama: CUDA 13
+# über den NVIDIA-Treiber (NVIDIA-Image), Vulkan über Mesa (AMD, Intel) oder
+# den NVIDIA-Treiber als Ausweich, sonst CPU. Keine ROCm-Bibliotheken im
+# Image; AMD läuft über Vulkan.
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
