@@ -60,6 +60,20 @@ Sekunden) meldet „Hermes hat nichts gehört“. Ohne Gateway sagt die Meldung,
 was verstanden wurde. Nichts davon stürzt ab; der Zustand geht zurück auf
 `idle`.
 
+## Was den Rechner verlässt
+
+Ausschnitt und erkannter Text gehen wie jede Chat-Nachricht an den
+eingerichteten Modellanbieter; wer das nicht will, richtet ein lokales
+Modell ein ([lokales-modell.md](lokales-modell.md)). Audio bleibt lokal:
+Erkennung (faster-whisper) und Sprachausgabe (Piper) laufen in der
+Hermes-Venv, keine Aufnahme geht ins Netz. Beim ersten Gebrauch lädt der
+Helfer das Whisper-Modell von Hugging Face nach `~/.cache/huggingface/hub`
+und die Stimme nach `~/.hermes/cache/piper-voices`, ohne eigene Prüfsumme.
+Einen Freigabedialog gibt es nicht: Aufnahme und Ausschnitt sind an eine
+Handlung des Nutzers gebunden (Taste halten, Auswahlrahmen), das Signal ist
+das rote Symbol mit Mikrofon. Das passt zur Grenze im README: eine
+Systemgrenze, keine Datengrenze.
+
 ## Aufbau
 
 | Datei | Aufgabe |
@@ -119,7 +133,7 @@ schreibt eine Warnung ins Journal.
 Ohne Qt, ohne Audio, überall mit Python 3.9 oder neuer:
 
 ```sh
-python3 tests/sehen-hoeren-check.py      # läuft auch in make lint und im Gate (80-validate.sh, 7l)
+python3 tests/sehen-hoeren-check.py      # läuft auch in make lint und im Gate (80-validate.sh, 7n)
 ```
 
 Prüft die Desktop-Datei (beide Kopien identisch, Kürzel, Exec,
