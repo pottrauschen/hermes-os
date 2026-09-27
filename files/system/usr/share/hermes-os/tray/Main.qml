@@ -6,7 +6,10 @@
 // tool, info, error), text, meta, images (Liste von URLs) und time;
 // backend.attachments sind die Bilder, die mit der nächsten Nachricht gehen
 // (Dateidialog, Strg+V, ins Fenster gezogen); backend.auditModel sind die
-// Zeilen der Seite Protokoll (docs/protokoll.md).
+// Zeilen der Seite Protokoll (docs/protokoll.md). `voice` (tray/voice.py) trägt
+// den Zustand von Push-to-Talk (idle, recording, transcribing, asking,
+// speaking), `look` (tray/screenshot.py) holt einen Bildschirmausschnitt als
+// Anhang; beides steht in docs/sehen-hoeren.md.
 // Das Fenster wird von Python gezeigt und versteckt; Schließen versteckt nur.
 import QtQuick
 import QtQuick.Layouts
@@ -295,10 +298,29 @@ Kirigami.ApplicationWindow {
                     Controls.Label {
                         objectName: "stateLabel"
                         Layout.fillWidth: true
-                        text: backend.stateText
+                        // Während Hermes zuhört, versteht oder spricht, steht das hier
+                        text: voice.state !== "idle" ? voice.stateText : backend.stateText
                         elide: Text.ElideRight
                         font: Kirigami.Theme.smallFont
                         opacity: 0.7
+                    }
+                }
+                // Sprachzustand: Mikrofon pulsiert beim Zuhören, Lautsprecher beim Sprechen
+                Kirigami.Icon {
+                    id: voiceIndicator
+                    objectName: "voiceIndicator"
+                    visible: voice.state === "recording" || voice.state === "speaking"
+                    source: voice.state === "recording" ? "audio-input-microphone" : "audio-volume-high"
+                    color: voice.state === "recording" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.highlightColor
+                    isMask: true
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                    SequentialAnimation on opacity {
+                        running: voice.state === "recording"
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 0.3; duration: 500 }
+                        NumberAnimation { to: 1; duration: 500 }
+                        onRunningChanged: if (!running) voiceIndicator.opacity = 1
                     }
                 }
                 Controls.BusyIndicator {
@@ -485,13 +507,32 @@ Kirigami.ApplicationWindow {
                             onClicked: backend.attachFromDialog()
                         }
                         Controls.ToolButton {
-                            icon.name: "audio-input-microphone"
-                            enabled: false
-                            text: "Sprache kommt in der nächsten Stufe"
+                            objectName: "lookButton"
+                            icon.name: "camera-photo"
                             display: Controls.AbstractButton.IconOnly
-                            Controls.ToolTip.text: text
+                            text: "Bildschirmausschnitt anhängen"
+                            visible: look.available
+                            enabled: backend.state === "ready" && !backend.busy && !look.busy
+                            Controls.ToolTip.text: "Bildschirmausschnitt wählen und dazu fragen (" + look.shortcutText + " fragt sofort)"
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: look.capture()
+                        }
+                        Controls.ToolButton {
+                            objectName: "voiceButton"
+                            icon.name: voice.state === "recording" || voice.state === "speaking"
+                                       ? "media-playback-stop" : "audio-input-microphone"
+                            display: Controls.AbstractButton.IconOnly
+                            text: voice.state === "recording" ? "Aufnahme beenden"
+                                : (voice.state === "speaking" ? "Vorlesen abbrechen" : "Mit Hermes sprechen")
+                            enabled: voice.available && (voice.state === "idle" || voice.state === "recording"
+                                     || voice.state === "speaking")
+                            Controls.ToolTip.text: voice.available
+                                ? text + (voice.shortcutText !== "" ? " (" + voice.shortcutText + " halten oder antippen)" : "")
+                                : voice.unavailableReason
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            onClicked: voice.toggle()
                         }
                         Controls.Label {
                             Layout.fillWidth: true
@@ -795,7 +836,8 @@ Kirigami.ApplicationWindow {
                         wrapMode: Text.WordWrap
                         opacity: 0.7
                         text: "Ich kenne dieses System: Image, Dienste, Apps und Hardware. Frag mich etwas, "
-                            + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein."
+                            + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein. "
+                            + "Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit mir."
                     }
                     Repeater {
                         model: root.suggestions

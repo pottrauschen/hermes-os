@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes: Was sehe ich hier?
+Name[en]=Hermes: What am I looking at?
+GenericName=Bildschirmausschnitt fragen
+GenericName[en]=Ask about a screen region
+Comment=Bildschirmausschnitt wählen und Hermes fragen, was darauf zu sehen ist
+Comment[en]=Select a screen region and ask Hermes what it shows
+Exec=/usr/libexec/hermes-os-tray --look
+Icon=hermes-os
+Terminal=false
+Categories=System;Utility;
+Keywords=hermes;screenshot;bildschirm;sehen;ausschnitt;erklären;
+StartupNotify=false
+X-KDE-Shortcuts=Meta+Shift+H
