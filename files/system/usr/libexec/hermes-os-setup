@@ -258,8 +258,11 @@ def main():
                 self._proc = None
                 self._set_busy(False)
                 result = lines[-1] if lines else {"ok": False, "error": (err.strip() or "keine Antwort")[-400:]}
-                if code != 0 and result.get("ok", True) and not result.get("error"):
-                    result = dict(result, ok=False, error=(err.strip() or f"Helfer endete mit Code {code}")[-400:])
+                if code != 0 and result.get("ok", True):
+                    # Jeder Fehler-Exit des Helfers ist ein gescheiterter Schritt, auch wenn
+                    # das JSON ok sagt; die Meldung des Helfers bleibt erhalten.
+                    result = dict(result, ok=False,
+                                  error=(result.get("error") or err.strip() or f"Helfer endete mit Code {code}")[-400:])
                 on_result(result)
 
             proc.readyReadStandardOutput.connect(read)
