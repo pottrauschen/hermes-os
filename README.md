@@ -23,9 +23,8 @@ Universal-Blue-Muster.
 | Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
 | Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Chat-Fenster per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, gebaut, Fenster in der VM offscreen geprüft, siehe [docs/systemagent.md](docs/systemagent.md) |
 | Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Chat-Fenster mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, Test ohne Plasma, siehe [docs/krunner.md](docs/krunner.md) |
-| Sprache am Desktop: lokale Erkennung (faster-whisper) und Ausgabe (piper) | im Terminal: `hermes`, dann `/voice on` (Push-to-Talk) |
 | Ohne Cloud: lokales Modell auf der eigenen GPU (Ollama im Image, Nutzerdienst, Vorgabe `qwen3.5:9b` für 12 GB) | Karte im Assistenten, `ujust hermes-lokal-ein`, siehe [docs/lokales-modell.md](docs/lokales-modell.md); Lauf auf der GPU noch nicht in VM 112 geprüft |
-| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen | Leisten-Symbol, gebaut, Tests ohne Hardware grün, Test in VM 112 offen, siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md) |
+| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen; Erkennung (faster-whisper) und Ausgabe (piper) laufen lokal | Leisten-Symbol, gebaut, Tests ohne Hardware grün, Test in VM 112 offen, siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md); im Terminal: `hermes`, dann `/voice on` |
 | Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
 | Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
 | Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
