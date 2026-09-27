@@ -495,11 +495,20 @@ Kirigami.ApplicationWindow {
                 text: "Im Terminal: hermes für den Chat, /voice on für Push-to-Talk, ujust hermes-doctor für die Diagnose."
                 opacity: 0.7
             }
-            Controls.Button {
+            RowLayout {
                 visible: savePage.done
-                text: "Chat im Terminal öffnen"
-                icon.name: "utilities-terminal"
-                onClicked: { backend.openChat(); root.close() }
+                spacing: Kirigami.Units.smallSpacing
+                Controls.Button {
+                    visible: backend.dashboardAvailable
+                    text: "Dashboard öffnen"
+                    icon.name: "preferences-system"
+                    onClicked: { backend.openDashboard(); root.close() }
+                }
+                Controls.Button {
+                    text: "Chat im Terminal öffnen"
+                    icon.name: "utilities-terminal"
+                    onClicked: { backend.openChat(); root.close() }
+                }
             }
         }
         footer: WizardFooter {

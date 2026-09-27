@@ -60,6 +60,12 @@ if grep -q 'HERMES_LAZY_INSTALL_TARGET' /usr/bin/hermes \
 else
   fail "HERMES_LAZY_INSTALL_TARGET missing in launcher or environment.d"
 fi
+if grep -q 'HERMES_WEB_DIST' /usr/bin/hermes \
+   && grep -q '^HERMES_WEB_DIST=/usr/lib/hermes-agent/hermes_cli/web_dist$' /usr/lib/environment.d/60-hermes-os.conf; then
+  pass "HERMES_WEB_DIST set in launcher and environment.d"
+else
+  fail "HERMES_WEB_DIST missing in launcher or environment.d"
+fi
 
 # 4d. Ein Installer für Nachinstallationen ist im Image (uv-Venv hat kein pip)
 if /usr/bin/uv --version >/dev/null 2>&1; then
@@ -437,6 +443,128 @@ if [ -f /ctx/tests/runner-check.py ]; then
   fi
 else
   echo "  WARN: /ctx/tests/runner-check.py not in build context, runner check skipped"
+fi
+
+# 7l. Dashboard: gebautes Frontend aus der Node-Stufe, Stempel passt zum
+#     Release, Fenster mit QtWebEngine, Menüeintrag, Rezept. Dann die Logik
+#     des Fensters gegen Attrappen (tests/dashboard-check.py) und schließlich
+#     das echte `hermes dashboard` aus der Venv: über dashboard_server.py
+#     starten (ohne User-Manager direkt), /api/health und die ausgelieferte
+#     index.html mit Sitzungs-Token prüfen, beenden.
+WEB_DIST=/usr/lib/hermes-agent/hermes_cli/web_dist
+for f in "${WEB_DIST}/index.html" "${WEB_DIST}/.hermes-os-web" \
+         /usr/libexec/hermes-os-dashboard \
+         /usr/share/hermes-os/dashboard/dashboard_server.py \
+         /usr/share/applications/hermes-os-dashboard.desktop; do
+  if [ -e "$f" ]; then pass "$f"; else fail "$f missing"; fi
+done
+if [ -n "$(find "${WEB_DIST}/assets" -name '*.js' -print -quit 2>/dev/null)" ]; then
+  pass "web_dist has assets ($(find "${WEB_DIST}" -type f | wc -l) files, $(du -sm "${WEB_DIST}" | cut -f1) MB)"
+else
+  fail "web_dist/assets has no .js bundle"
+fi
+WEB_REF="$(sed -n 's/^ref=//p' "${WEB_DIST}/.hermes-os-web" 2>/dev/null || true)"
+VENV_REF="$(sed -n 's/^ref=//p' /usr/lib/hermes-agent/.hermes-os-release 2>/dev/null || true)"
+if [ -n "${WEB_REF}" ] && [ "${WEB_REF}" = "${VENV_REF}" ]; then
+  pass "web_dist built from ${WEB_REF} (node $(sed -n 's/^node=//p' "${WEB_DIST}/.hermes-os-web"))"
+else
+  fail "web_dist stamp ref '${WEB_REF}' does not match venv ref '${VENV_REF}'"
+fi
+if grep -qE '^\s*hermes-dashboard\b' <<< "${JUST_OUT}"; then
+  pass "ujust lists hermes-dashboard"
+else
+  fail "ujust does not list hermes-dashboard"
+fi
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  if desktop-file-validate /usr/share/applications/hermes-os-dashboard.desktop; then
+    pass "desktop-file-validate hermes-os-dashboard.desktop"
+  else
+    fail "desktop-file-validate hermes-os-dashboard.desktop"
+  fi
+fi
+if [ -x /usr/libexec/hermes-os-dashboard ]; then
+  if /usr/libexec/hermes-os-dashboard --check; then
+    pass "hermes-os-dashboard --check (PySide6 QtWebEngine, module, web_dist)"
+  else
+    fail "hermes-os-dashboard --check failed"
+  fi
+fi
+if [ -f /ctx/tests/dashboard-check.py ]; then
+  if /usr/bin/python3 /ctx/tests/dashboard-check.py --dashboard-dir /usr/share/hermes-os/dashboard \
+       --launcher /usr/libexec/hermes-os-dashboard \
+       --desktop-file /usr/share/applications/hermes-os-dashboard.desktop \
+       --just-file /usr/share/hermes-os/hermes-os.just; then
+    pass "dashboard start/stop logic works against fakes"
+  else
+    fail "dashboard check failed (see above)"
+  fi
+else
+  echo "  WARN: /ctx/tests/dashboard-check.py not in build context, dashboard logic check skipped"
+fi
+# Echtes Dashboard aus der Venv: Port 9119 wie im Betrieb, HERMES_HOME des Gates.
+# Der Marker deckt danach auf, ob der Server etwas unter /usr/lib/hermes-agent
+# geschrieben hat (im Build noch beschreibbar, im Image dann Ballast).
+touch "${HERMES_HOME}/dashboard-marker"
+if HOME="${HERMES_HOME}" /usr/bin/python3 - <<'PY'
+import sys, urllib.request
+sys.path.insert(0, "/usr/share/hermes-os/dashboard")
+import dashboard_server as ds
+s = ds.Server(port=9119, use_systemd=False)
+r = s.ensure(timeout=90)
+try:
+    if not r.ok:
+        print("start failed:", r.message); print("\n".join(r.log)); sys.exit(1)
+    if not r.started:
+        print("a dashboard was already running in the build container?"); sys.exit(1)
+    h = ds.health(9119)
+    assert h and h.get("ok") is True, h
+    html = urllib.request.urlopen(r.url + "/", timeout=10).read().decode("utf-8", "replace")
+    assert "__HERMES_SESSION_TOKEN__" in html, html[:400]
+    assert 'id="root"' in html, html[:400]
+    js = [ln for ln in html.splitlines() if "/assets/index-" in ln and "src=" in ln]
+    assert js, "index.html references no /assets/index-*.js"
+    asset = js[0].split('src="', 1)[1].split('"', 1)[0]
+    code = urllib.request.urlopen(r.url + asset, timeout=10).getcode()
+    assert code == 200, (asset, code)
+    print("dashboard serves index.html with session token and", asset, "| version", h.get("version"))
+finally:
+    s.stop(timeout=20)
+    if s.alive():
+        print("dashboard did not stop"); sys.exit(1)
+PY
+then
+  pass "real hermes dashboard starts from the venv, serves the built frontend, stops"
+else
+  fail "real hermes dashboard check failed (see above)"
+fi
+STRAY="$(find /usr/lib/hermes-agent -newer "${HERMES_HOME}/dashboard-marker" -print 2>/dev/null | head -20)"
+if [ -z "${STRAY}" ]; then
+  pass "dashboard run left nothing under /usr/lib/hermes-agent"
+else
+  fail "dashboard run wrote into /usr/lib/hermes-agent:"
+  echo "${STRAY}" | sed 's/^/    /'
+fi
+# Das Fenster selbst, offscreen mit QtWebEngine gegen das echte Dashboard:
+# Warteseite, geladene Seite mit Hermes' Titel, Fehlerseite nach Serverende,
+# Neustart über „Erneut versuchen", Stopp beim Beenden. Exit 3 heißt, Chromium
+# läuft im Build-Container nicht (Sandbox, /dev/shm); das ist kein Fehler des
+# Fensters und bleibt ein WARN, alles andere ist ein FAIL.
+if [ -f /ctx/tests/dashboard-gui-check.py ]; then
+  mkdir -p /tmp/hermes-validate-xdg
+  set +e
+  HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
+    /usr/bin/python3 /ctx/tests/dashboard-gui-check.py --launcher /usr/libexec/hermes-os-dashboard \
+      --dashboard-dir /usr/share/hermes-os/dashboard --timeout 120
+  GUI_RC=$?
+  set -e
+  case "${GUI_RC}" in
+    0) pass "dashboard window drives start, load, error page, retry and quit offscreen" ;;
+    3) echo "  WARN: QtWebEngine not usable in the build container, window check skipped (see above)" ;;
+    *) fail "dashboard window check failed (exit ${GUI_RC}, see above)" ;;
+  esac
+  rm -rf /tmp/hermes-validate-xdg
+else
+  echo "  WARN: /ctx/tests/dashboard-gui-check.py not in build context, window check skipped"
 fi
 
 # 8. Kein Git-Checkout im Image (sonst versucht hermes update einen pull)
