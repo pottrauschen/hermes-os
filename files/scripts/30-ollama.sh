@@ -63,7 +63,9 @@ chmod -R u=rwX,go=rX /usr/lib/ollama
 
 # Backends, die Ollama zur Laufzeit vorfindet; das Gate und os_status lesen
 # den Stempel.
-BACKENDS="$(cd /usr/lib/ollama && ls -d cuda_v* vulkan rocm* 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+# Kein `ls` mit Globs: ein Backend, das fehlt (rocm* im Standardarchiv), ließe
+# ls scheitern und mit set -e und pipefail den ganzen Bau abbrechen.
+BACKENDS="$(cd /usr/lib/ollama && for d in cuda_v* vulkan rocm*; do if [ -d "$d" ]; then printf '%s ' "$d"; fi; done | sed 's/ $//')"
 cat > /usr/lib/ollama/.hermes-os-release <<STAMP
 version=${OLLAMA_PIN}
 asset=${OLLAMA_ASSET}
