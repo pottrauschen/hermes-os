@@ -45,7 +45,7 @@ Auth-Gate mit Login-Seite greift nur bei einem Bind auf eine andere Adresse.
 | `HERMES_WEB_DIST` für Launcher und Units | `files/scripts/10-hermes.sh`, `files/system/usr/lib/environment.d/60-hermes-os.conf` |
 | Test gegen Attrappen | `tests/dashboard-check.py` |
 | Fenster offscreen gegen den echten Server | `tests/dashboard-gui-check.py` |
-| Gate | `files/scripts/80-validate.sh`, Abschnitt 7h |
+| Gate | `files/scripts/80-validate.sh`, Abschnitt 7l |
 
 Im Image: `/usr/lib/hermes-agent/hermes_cli/web_dist` (Frontend mit Stempel
 `.hermes-os-web`), `/usr/libexec/hermes-os-dashboard`,
@@ -159,7 +159,7 @@ Schritte grün, die Seite zeigt Hermes' Seitenleiste (Chat, Sessions, Files,
 Models, Logs, Cron, Skills, Plugins, MCP, Channels, Webhooks, Pairing,
 Profiles, Config, Keys).
 
-Das Gate (`80-validate.sh`, 7h) prüft im Image-Build außerdem: `web_dist`
+Das Gate (`80-validate.sh`, 7l) prüft im Image-Build außerdem: `web_dist`
 mit Stempel aus demselben Release wie die Venv, `hermes-os-dashboard
 --check` (PySide6-WebEngine, Modul, Frontend), `desktop-file-validate`,
 `ujust --list`, startet das echte `hermes dashboard` aus der Venv

@@ -111,10 +111,16 @@ def main():
     def page_state():
         return win.view.url().toString(), win.view.title()
 
-    # 1. Start: Warteseite, dann die echte Seite mit Hermes' Titel
+    # 1. Start: Warteseite, dann die echte Seite mit Hermes' Titel. Die Warteseite
+    #    kann schon wieder weg sein, wenn der Server schnell antwortet; deshalb
+    #    zählt der Verlauf der Adressen, nicht der Stand nach einer Pause.
+    urls = []
+    win.view.urlChanged.connect(lambda u: urls.append(u.toString()))
     win.start_server()
+    first = page_state()[0]
     pump(0.5)
-    check(page_state()[0].startswith("hermes-os://waiting"), f"waiting page shown first: {page_state()}")
+    check(first.startswith("hermes-os://waiting") or any(u.startswith("hermes-os://waiting") for u in urls),
+          f"waiting page shown first: {first!r}, Verlauf {urls}")
     loaded = wait_until(lambda: page_state()[0].startswith("http://127.0.0.1") and "Hermes" in page_state()[1]
                         and not win.starting, args.timeout)
     if crashed:
