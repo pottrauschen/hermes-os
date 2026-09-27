@@ -782,13 +782,15 @@ def main():
     picked = first is not None
     if picked:
         QMetaObject.invokeMethod(first, "clicked")
-    settle(200)
+    settle(600)
+    # opened springt mit close() um, visible erst nach der Ausblend-Animation
+    closed = popup is not None and not popup.property("opened")
     step("Modellwahl: Knopf zeigt Modell und Denkaufwand, Auswahl mit Modellen und Stufen, Klick ruft setModel",
          model_btn is not None and model_btn.property("visible") and btn_text.startswith("Sonnet 5 · Vorgabe")
          and opened and options == 2 and efforts == 4 and ("refreshModels",) in backend.calls
          and checked == "modelOption:Sonnet 5|effortOption:Vorgabe"
-         and picked and any(c[0] == "setModel" for c in backend.calls),
-         f"text={btn_text!r} opened={opened} options={options} efforts={efforts} checked={checked!r} "
+         and picked and closed and any(c[0] == "setModel" for c in backend.calls),
+         f"text={btn_text!r} opened={opened} closed={closed} options={options} efforts={efforts} checked={checked!r} "
          f"calls={backend.calls[-4:]}")
     if popup is not None and popup.property("visible"):
         QMetaObject.invokeMethod(popup, "close")

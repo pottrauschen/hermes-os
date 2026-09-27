@@ -580,7 +580,11 @@ Kirigami.ApplicationWindow {
                                             Layout.fillWidth: true
                                             text: modelData.label
                                             checked: modelData.checked
-                                            onClicked: { backend.setModel(modelData.id); choicePopup.close() }
+                                            // Erst schließen, dann umstellen, und zwar nach diesem Handler:
+                                            // setModel meldet modelChanged, die Liste baut sich neu auf und
+                                            // räumt diesen Eintrag ab; danach fände er choicePopup nicht mehr
+                                            // (in VM 112: ReferenceError, das Popup blieb offen)
+                                            onClicked: { choicePopup.close(); Qt.callLater(backend.setModel, modelData.id) }
                                         }
                                     }
                                     // Cloud-Anbieter: nur das aktuelle Modell, gewechselt wird im Assistenten
@@ -612,7 +616,7 @@ Kirigami.ApplicationWindow {
                                             Layout.fillWidth: true
                                             text: modelData.label
                                             checked: modelData.checked
-                                            onClicked: { backend.setEffort(modelData.value); choicePopup.close() }
+                                            onClicked: { choicePopup.close(); Qt.callLater(backend.setEffort, modelData.value) }
                                         }
                                     }
                                 }
