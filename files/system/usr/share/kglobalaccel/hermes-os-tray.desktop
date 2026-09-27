@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Hermes
+Name=Hermes-Kontor
+Name[en]=Hermes Kontor
 GenericName=Systemagent
 GenericName[en]=System agent
 Comment=Mit Hermes sprechen: Fragen, Aufgaben, Freigaben
@@ -9,6 +10,6 @@ Exec=/usr/libexec/hermes-os-tray --show
 Icon=hermes-os
 Terminal=false
 Categories=System;Utility;
-Keywords=hermes;agent;ki;ai;chat;
+Keywords=hermes;kontor;agent;ki;ai;chat;
 StartupNotify=false
 X-KDE-Shortcuts=Meta+H

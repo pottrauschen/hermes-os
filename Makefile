@@ -61,6 +61,8 @@ lint:
 		--desktop-file files/system/usr/share/applications/hermes-os-dashboard.desktop
 	python3 tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 	python3 tests/sehen-hoeren-check.py --tray-dir files/system/usr/share/hermes-os/tray
+	@# Kürzel-Kopien für kglobalaccel müssen den Einträgen im Menü gleichen (80-validate.sh prüft das im Build)
+	@for d in hermes-os-tray hermes-os-sehen; do \n		diff <(sed 's/$$//' files/system/usr/share/applications/$$d.desktop) \n		     <(sed 's/$$//' files/system/usr/share/kglobalaccel/$$d.desktop) >/dev/null \n			|| { echo "$$d.desktop: kglobalaccel copy differs from applications"; exit 1; }; \n	done; echo "kglobalaccel copies match the menu entries"
 	@diff <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile) <(grep -vE '^FROM ghcr.io/ublue-os/' Dockerfile.nvidia) \
 		&& echo "Dockerfile.nvidia differs only in the base FROM line" \
 		|| { echo "Dockerfile and Dockerfile.nvidia have drifted apart"; exit 1; }
