@@ -11,7 +11,7 @@ README und bleibt der Weg für Geräte.
 | Was | Wo | Eigenschaften |
 |---|---|---|
 | Bau-VM `ainux-build` | VM 110 auf `<proxmox-host>`, `<user>@<bau-vm>` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
-| Test-VM `hermes-test` | VM 112 auf `<proxmox-host>`, `<user>@<test-vm>` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`, seit 2026-09-27 das private Image darauf |
+| Test-VM `hermes-test` | VM 112 auf `<proxmox-host>`, `<user>@<test-vm>` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`; 64-GB-Platte |
 | Zwischenablage für die Platte | `<proxmox-host>`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
 
 Die Bau-VM gehört dem Projekt ainux und wird mitbenutzt (Entscheidung
@@ -124,7 +124,8 @@ trotzdem alles, was man an der Sitzung braucht; die Hilfen dafür liegen in
 | Anmelden am Anmeldebildschirm | auf dem Host `<proxmox-host>` als root: `qm sendkey 112 shift`, dann das Passwort Taste für Taste, dann `ret`. Auf deutscher Belegung liegt `-` auf der US-Taste `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
 | Befehle in der Sitzung | `ssh <user>@<test-vm>`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
 | Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@<test-vm>:hos/s.png .` auf den PC |
-| Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"` |
+| Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"`. Ist ein Nutzer ohne sudo angemeldet: `prep` als Admin-Nutzer, dann `flach` als dieser Nutzer |
+| Bildschirm aufnehmen | `rec_start` (Spectacles Kürzel „Bildschirm aufnehmen“ plus der Klick, den es verlangt), `rec_stop` gibt den Pfad der Datei aus; dann `scp` auf den PC |
 | Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Kontor, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
 | Leisten-Symbol zeigen | `/usr/libexec/hermes-os-tray --show` (reicht an die laufende Instanz weiter) |
 
@@ -176,6 +177,25 @@ niemanden stören sollen, gibt es die Offscreen-Tests
   Frame samt alter Uhr. Vorher `kscreen-doctor --dpms on` über
   `systemd-run --user`, dann stimmt das Foto; `wake` in
   `tests/vm-hilfen.sh` tut genau das.
+- **Ohne Bildschirm an der 3060 gibt es keine Sitzung.** Nach dem Start
+  melden alle Anschlüsse `disconnected`, solange der KVM-Umschalter nie auf
+  die VM stand: KWin hat keine Ausgabe, plasmashell stürzt in einer Schleife
+  ab, Fotos und Aufnahmen scheitern. Einmal auf die VM umschalten genügt;
+  danach bleibt HDMI verbunden, auch wenn der Umschalter zurückgeht.
+  Prüfen: `grep . /sys/class/drm/card0-*/status`.
+- **Spectacle nimmt erst nach einem Klick auf.** „Bildschirm aufnehmen“
+  zeigt ein Fadenkreuz und wartet, welcher Bildschirm gemeint ist; ohne Klick
+  beendet es sich still, ohne Meldung im Log. `rec_start` klickt; ein
+  `ydotool click 0xC0` in einem Zug kommt dort nicht an, Drücken und
+  Loslassen getrennt schon. Die Datei liegt im übersetzten Unterordner,
+  in deutscher Sitzung `~/Videos/Bildschirmaufnahmen`. Ein Bildschirmfoto
+  mit Spectacle während der Aufnahme geht an dieselbe Instanz und beendet sie.
+- **Platte vergrößern nur mit sudo in der VM.** Der Gast-Agent darf wegen
+  SELinux weder `/dev/sda` öffnen noch `systemd-run` aufrufen. Ablauf: auf dem
+  Host `qm resize 112 scsi0 +32G`, in der VM `sgdisk -e /dev/sda`,
+  `echo ",+" | sfdisk -N 4 --no-reread --force /dev/sda`, `partx -u -n 4
+  /dev/sda`, `btrfs filesystem resize max /var`. `parted` verweigert die
+  eingehängte Partition, `/sysroot` ist schreibgeschützt eingehängt.
 - **ydotool tippt US-Belegung.** `ydotool type` setzt auf deutscher Tastatur
   y und z vertauscht und Sonderzeichen falsch; Text deshalb über die
   Zwischenablage (`paste`). `wl-copy` ohne offene Ausgaben starten, sonst
