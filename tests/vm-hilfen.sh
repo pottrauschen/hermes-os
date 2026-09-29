@@ -115,9 +115,10 @@ rec_stop() {
   find "$(xdg-user-dir VIDEOS)" -type f -newer ~/hos/.rec \( -name '*.webm' -o -name '*.mp4' \) | sort | tail -1
 }
 
-# wl-copy ohne offene Ausgaben, sonst hält es die SSH-Sitzung offen
+# wl-copy ohne offene Ausgaben, sonst hält es die SSH-Sitzung offen; den Text
+# als Argument, weil ein </dev/null hinter der Pipe deren Inhalt verdrängt
 paste() {
-  printf '%s' "$1" | wl-copy >/dev/null 2>&1 </dev/null
+  wl-copy -- "$1" >/dev/null 2>&1 </dev/null
   sleep 0.3
   ydotool key 29:1 47:1 47:0 29:0
 }
