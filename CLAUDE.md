@@ -54,10 +54,13 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 - **Windows-Arbeitsplatz:** Arbeitsbaum CRLF, Index LF. Vor dem Übertragen in
   die VM `sed 's/\r$//'`; Skripte mit `sed 's/\r$//' | bash -n` prüfen;
   Dateien mit Apostrophen nicht per Heredoc schreiben.
-- **Claude fragt vorher** bei: VMs anderer Projekte anfassen (Bau-VM 110
-  gehört ainux), Neustart oder Stopp von VMs, Geheimnissen in Dateien
+- **Claude fragt vorher** bei: VMs anderer Projekte anfassen, Neustart oder
+  Stopp von VMs, Geheimnissen in Dateien
   (`disk.local.toml` ist ignoriert, `disk.toml` nur Muster), und bei allem,
   was Bedingungen von Anbietern berührt. Kein Claude-Abo in Hermes, siehe
   `docs/einrichtung.md`.
+- **Ausnahme VM 110 (ainux-build):** Der Maintainer hat sie am 2026-09-30 für
+  hermes-os freigegeben; Claude darf sie ohne Rückfrage umbauen, starten
+  und stoppen. ainux hat sonst keine VM im Homelab.
 - **Kein Session-Wissen als Datei.** Übergaben, Befunde und Pläne mit Datum
   gehören ins Brain; im Repo bleibt, was zum Code gehört und gepflegt wird.
