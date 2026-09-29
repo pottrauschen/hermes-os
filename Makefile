@@ -42,7 +42,7 @@ lint:
 		files/system/usr/share/hermes-os/plugins/hermes_os/*.py \
 		files/system/usr/share/hermes-os/setup/hermes_bridge.py files/system/usr/libexec/hermes-os-setup \
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
-		files/system/usr/share/hermes-os/tray/model_choice.py \
+		files/system/usr/share/hermes-os/tray/model_choice.py files/system/usr/share/hermes-os/tray/chat_text.py \
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
 		files/system/usr/share/hermes-os/dashboard/dashboard_server.py files/system/usr/libexec/hermes-os-dashboard \

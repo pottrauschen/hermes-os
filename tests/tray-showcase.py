@@ -4,8 +4,9 @@
 # =============================================================================
 # Rendert tray/Main.qml offscreen mit einem echt wirkenden Gespräch (lange
 # Antwort mit Markdown, Werkzeugzeilen, Bildschirmfoto, Freigabe-Pille) in
-# zwei Breiten, damit Vorher und Nachher vergleichbar sind. Nutzt die Stubs
-# aus tests/tray-gui-check.py; prüft nichts, das tut der Render-Test.
+# zwei Breiten, dazu schmal die Begrüßung im leeren Kontor und die tippenden
+# Punkte, damit Vorher und Nachher vergleichbar sind. Nutzt die Stubs aus
+# tests/tray-gui-check.py; prüft nichts, das tut der Render-Test.
 #
 # Aufruf:
 #   tests/tray-showcase.py [--qml-dir DIR] --out DIR [--image PNG]
@@ -48,6 +49,7 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
+    tgc.use_tray_dir(args.qml_dir)
     QQuickStyle.setStyle("org.kde.desktop")
     app = QGuiApplication(sys.argv)
     # Offscreen lädt Qt kein Symbol-Thema; ohne Breeze fehlten alle Symbole im Bild
@@ -80,7 +82,25 @@ def main():
         img.save(image)
     url = QUrl.fromLocalFile(os.path.abspath(image)).toString()
 
+    def grab(name, sizes):
+        for label, (w, h) in sizes:
+            root.setWidth(w)
+            root.setHeight(h)
+            settle(900)
+            lv = root.findChild(object, "messageList")
+            if lv is not None:
+                lv.positionViewAtEnd() if hasattr(lv, "positionViewAtEnd") else None
+            settle(400)
+            path = os.path.join(args.out, f"{args.prefix}{name}{label}.png")
+            root.grabWindow().save(path)
+            print(path)
+
+    wide, narrow = ("breit", (1180, 780)), ("schmal", (560, 780))
+
+    # Leerer Verlauf: Begrüßung und Vorschläge
     backend.set_state("ready", configured=True)
+    grab("begruessung-", (narrow,))
+
     m = backend._model
     m.append("user", "Welches Image ist gebootet, und wie viel Platz ist noch frei?", when="18:31")
     m.append("tool", "os_status · 0,3 s", meta="completed", when="18:31")
@@ -94,18 +114,14 @@ def main():
     m.append("info", "Freigabe: Einmal erlaubt", when="18:38")
     m.append("user", "genau - den hast du vergessen - oder?", when="18:38")
     m.append("assistant", "Ja. Das Kontor hätte ganz oben auf der Liste stehen sollen.", when="18:38")
+    grab("", (wide, narrow))
 
-    for name, (w, h) in (("breit", (1180, 780)), ("schmal", (560, 780))):
-        root.setWidth(w)
-        root.setHeight(h)
-        settle(900)
-        lv = root.findChild(object, "messageList")
-        if lv is not None:
-            lv.positionViewAtEnd() if hasattr(lv, "positionViewAtEnd") else None
-        settle(400)
-        path = os.path.join(args.out, f"{args.prefix}{name}.png")
-        root.grabWindow().save(path)
-        print(path)
+    # Hermes arbeitet: tippende Punkte am Ende
+    m.append("user", "Dann nimm es bitte auf.", when="18:39")
+    backend.set_busy(True)
+    backend.set_state("busy")
+    backend.set_waiting(True)
+    grab("tippen-", (narrow,))
     return 0
 
 

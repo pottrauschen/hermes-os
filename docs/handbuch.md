@@ -38,7 +38,8 @@ Schließen versteckt das Fenster nur, Hermes bleibt da.
 - **Modell und Denkaufwand:** der kleine Knopf links neben dem Senden-Knopf,
   etwa „Sonnet 5 · mittel“. Mehr Denkaufwand heißt gründlichere, aber
   langsamere Antworten. Dieselbe Wahl gibt es im Rechtsklick-Menü am Symbol.
-- **Neues Gespräch:** Knopf „Neu“ oben.
+- **Neues Gespräch:** Knopf „Neu“ oben. Ein leeres Kontor zeigt rechts unten
+  drei Vorschläge; ein Klick schickt den Vorschlag gleich ab.
 - Oben findest du außerdem **Bibliothek**, **Protokoll** und **Einrichten**.
 
 **Schneller ohne Fenster:**

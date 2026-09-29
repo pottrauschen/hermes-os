@@ -231,6 +231,7 @@ fi
 for f in /usr/libexec/hermes-os-tray \
          /usr/share/hermes-os/tray/Main.qml \
          /usr/share/hermes-os/tray/hermes_client.py \
+         /usr/share/hermes-os/tray/chat_text.py \
          /usr/share/applications/hermes-os-tray.desktop \
          /usr/share/kglobalaccel/hermes-os-tray.desktop \
          /etc/xdg/autostart/hermes-os-tray.desktop \

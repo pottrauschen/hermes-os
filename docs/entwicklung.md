@@ -1,6 +1,6 @@
 # Entwicklung: hermes-os vom Arbeitsplatz aus weiterbauen
 
-Stand: 2026-09-27. Wie hermes-os entsteht, von der Änderung am Windows-PC bis
+Stand: 2026-09-29. Wie hermes-os entsteht, von der Änderung am Windows-PC bis
 zum Test am Bildschirm der Test-VM. Diese Seite ist der Einstieg; was zu
 einem Thema gehört, steht in dessen eigener Doku (Doc-Map in `CLAUDE.md`).
 Stand, Entscheidungen und offene Punkte liegen nicht im Repo, sondern im
@@ -95,17 +95,25 @@ der VM, ohne die Sitzung dort zu stören:
 
 ```sh
 ssh <user>@<test-vm> 'mkdir -p ~/ui-test/qml'
-sed 's/\r$//' files/system/usr/share/hermes-os/tray/Main.qml | ssh <user>@<test-vm> 'cat > ~/ui-test/qml/Main.qml'
+for f in Main.qml chat_text.py; do
+  sed 's/\r$//' files/system/usr/share/hermes-os/tray/$f | ssh <user>@<test-vm> "cat > ~/ui-test/qml/$f"
+done
 sed 's/\r$//' tests/tray-gui-check.py | ssh <user>@<test-vm> 'cat > ~/ui-test/tray-gui-check.py'
 ssh <user>@<test-vm> 'cd ~/ui-test && python3 tray-gui-check.py --qml-dir ~/ui-test/qml --out ~/ui-test/bilder'
 ```
 
 `--out` legt je Schritt ein PNG ab (`tray-streaming.png`, `tray-approval.png`
 …). Für Design-Arbeit zeichnet `tests/tray-showcase.py` ein echt wirkendes
-Gespräch breit und schmal, mit Breeze-Symbolen, damit Vorher und Nachher
-vergleichbar sind; `--image` nimmt ein echtes Bildschirmfoto für die
-Nutzerblase. Neben `Main.qml` gehören weitere geänderte Dateien des Fensters
-(etwa `tray/model_choice.py`) mit in den Testordner.
+Gespräch breit und schmal, dazu schmal die Begrüßung im leeren Kontor und die
+tippenden Punkte, mit Breeze-Symbolen, damit Vorher und Nachher vergleichbar
+sind; `--image` nimmt ein echtes Bildschirmfoto für die Nutzerblase,
+`--prefix` stellt dem Dateinamen etwas voran (`vorher-`, `nachher-`). Beide
+Skripte laden `chat_text.py` aus dem Ordner von `Main.qml`; weitere geänderte
+Dateien des Fensters (etwa `tray/model_choice.py`) gehören ebenfalls in den
+Testordner. Die Farben kommen aus `kdeglobals` des Nutzers; für ein dunkles
+Bild ein Wegwerf-`XDG_CONFIG_HOME` mit einer `kdeglobals` aus
+`/usr/share/color-schemes/BreezeDark.colors` und `[General]
+ColorScheme=BreezeDark` setzen.
 
 Arbeitsweise, die sich bewährt hat: Vorher-Bild, Änderung, Nachher-Bild,
 beide ansehen, erst dann committen.

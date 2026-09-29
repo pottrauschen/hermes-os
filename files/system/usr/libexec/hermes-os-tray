@@ -88,6 +88,13 @@ try:
 except Exception as exc:
     mc = None
     _CHOICE_IMPORT_ERROR = str(exc)
+# Antworten mit Absatzabständen setzen; ohne das Modul setzt das Kontor das
+# Markdown selbst, nur enger
+try:
+    import chat_text as ct
+except Exception as exc:
+    ct = None
+    _CHAT_TEXT_IMPORT_ERROR = str(exc)
 
 # Die Bibliothek (Adressen, Dateien, Ordner für den Agenten) teilt sich das
 # Symbol mit dem Plugin: dieselbe Ablage über dieselbe Datei library.py, hier
@@ -308,6 +315,13 @@ def check_only():
         problems.append(f"model_choice.py nicht importierbar: {_CHOICE_IMPORT_ERROR}")
     else:
         problems.extend(f"hermes_client: {p}" for p in hc.self_test())
+    if ct is None:
+        problems.append(f"chat_text.py nicht importierbar: {_CHAT_TEXT_IMPORT_ERROR}")
+    else:
+        # QTextDocument braucht eine QGuiApplication (Schriften); ohne Bildschirm offscreen
+        from PySide6.QtGui import QGuiApplication
+        app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1] + ["-platform", "offscreen"])  # noqa: F841
+        problems.extend(f"chat_text: {p}" for p in ct.self_test())
     if lib is None:
         problems.append(f"library.py des Plugins nicht ladbar: {_LIBRARY_IMPORT_ERROR}")
     if audit is None:
@@ -833,6 +847,17 @@ def main():
             """Bild im Bildbetrachter öffnen (Klick auf ein Bild im Verlauf)."""
             if url:
                 QDesktopServices.openUrl(QUrl(url))
+
+        @Slot(str, float, result=str)
+        def chatHtml(self, text, point_size):
+            """Antwort von Hermes als HTML mit Absatzabständen (tray/chat_text.py);
+            leer ohne das Modul, dann setzt das Kontor das Markdown selbst."""
+            if ct is None or not text:
+                return ""
+            try:
+                return ct.to_html(text, point_size)
+            except Exception:
+                return ""
 
         # ---- Bibliothek: Wissensquellen für den Agenten (docs/bibliothek.md) ------
         @Property(bool, constant=True)

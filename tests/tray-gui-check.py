@@ -36,6 +36,18 @@ from PySide6.QtQuickControls2 import QQuickStyle
 # Harmloses Rauschen ohne Display; alles andere zählt.
 IGNORE = ("MESA-EGL", "egl: failed", "Could not register app ID", "QXcbConnection", "dri2 screen", "portal")
 
+# tray/chat_text.py aus dem geprüften Ordner: der Stub setzt Antworten damit wie
+# das echte Backend (use_tray_dir, auch aus tests/tray-showcase.py)
+CHAT_TEXT = None
+
+
+def use_tray_dir(path):
+    global CHAT_TEXT
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("chat_text_under_test", os.path.join(path, "chat_text.py"))
+    CHAT_TEXT = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(CHAT_TEXT)
+
 
 class StubModel(QAbstractListModel):
     """Dieselben Rollen wie MessageModel in hermes-os-tray."""
@@ -539,6 +551,10 @@ class StubBackend(QObject):
     def openImage(self, url):
         self.calls.append(("open", url))
 
+    @Slot(str, float, result=str)
+    def chatHtml(self, text, point_size):
+        return CHAT_TEXT.to_html(text, point_size) if CHAT_TEXT is not None and text else ""
+
     @Slot(str)
     def send(self, text):
         self.calls.append(("send", text))
@@ -675,6 +691,7 @@ def main():
     if not os.path.isfile(main_qml):
         print(f"FEHL  {main_qml} fehlt")
         return 1
+    use_tray_dir(args.qml_dir)
 
     warnings = []
 
@@ -866,6 +883,25 @@ def main():
          and images == 2,
          f"stop={busy_stop} count={lv and lv.property('count')} h={lv and lv.property('contentHeight')} "
          f"images={images}")
+
+    # 5b. Antworten von Hermes als HTML mit Zeilenhöhe (tray/chat_text.py), die Frage als
+    #     schlichter Text; unter der Antwort steht „Hermes · Uhrzeit“
+    def items_named(item, name, out):
+        if item.objectName() == name:
+            out.append(item)
+        for c in item.childItems():
+            items_named(c, name, out)
+        return out
+    # textFormat liest PySide nicht (kein Konverter für die Aufzählung): am Inhalt erkennen.
+    # Jede Zeile hat ein Textfeld, auch die Werkzeugzeile (leer); das Textfeld gibt HTML
+    # mit eigenem Kopf zurück, die Zeilenhöhe aus chat_text.py bleibt darin stehen.
+    texts = [str(t.property("text")) for t in items_named(root.contentItem(), "messageText", [])]
+    rich = [t for t in texts if "line-height" in t]
+    plain = [t for t in texts if t and "<" not in t]
+    metas = [str(t.property("text")) for t in items_named(root.contentItem(), "messageTime", [])]
+    step("Antwort als HTML mit Zeilenhöhe, Frage als Text, Absender unter der Antwort",
+         len(rich) == 1 and "Was zeigt dieser Screenshot?" in plain and any(m.startswith("Hermes") for m in metas),
+         f"texts={len(texts)} rich={len(rich)} plain={len(plain)} metas={metas}")
 
     # 6. Freigabe: Karte mit den erlaubten Knöpfen, Klick ruft backend.approve
     backend.set_approval({"request_id": "req-1", "command": "sudo bootc upgrade --check",

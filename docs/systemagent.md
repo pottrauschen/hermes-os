@@ -1,6 +1,6 @@
 # Systemagent: das Leisten-Symbol
 
-Stand: 2026-09-27. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
+Stand: 2026-09-29. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
 ein Fenster, das dauernd offen steht: ein Symbol in der Systemleiste, das
 Kontor (das Chat-Fenster, Titel „Hermes-Kontor“) mit Sprechblasen und
 Bildern, Freigaben als Benachrichtigung.
@@ -17,18 +17,26 @@ Einzelprüfung.
   orange (arbeitet), gelb (fragt nach einer Freigabe). Der Tooltip nennt den
   Zustand und die Hermes-Version.
 - **Klick oder Meta+H** öffnet ein Kirigami-Fenster wie einen Messenger: oben
-  ein Punkt in der Farbe des Zustands mit dem Zustand als Text („Hermes ist
-  bereit“) und die Knöpfe Bibliothek, Protokoll, Neu und Einrichten (im
-  breiten Fenster mit Namen, im schmalen als Symbole mit Erklärung). Verlauf
-  und Eingabe stehen in einer Lesespalte von höchstens 36 Rastereinheiten
-  (gut 70 Zeichen), im breiten Fenster mittig. Eigene Nachrichten stehen
-  rechts in einer Blase in gedämpfter Akzentfarbe, Antworten von Hermes links
-  als Text ohne Kasten, Fehler in einem roten Kasten; Bilder erscheinen als
-  kleine Karte über der Nachricht. Die Uhrzeit steht klein und blass unter
-  jeder Nachricht, bei älteren Tagen mit Datum. Antworten kommen gestreamt.
+  das Hermes-Symbol als Gegenüber, unten rechts daran ein Punkt in der Farbe
+  des Zustands, daneben der Zustand als Text („Hermes ist bereit“), rechts die
+  Knöpfe Bibliothek, Protokoll, Neu und Einrichten (im breiten Fenster mit
+  Namen, im schmalen als Symbole mit Erklärung). Verlauf und Eingabe stehen in
+  einer Lesespalte von höchstens 36 Rastereinheiten (gut 70 Zeichen), im
+  breiten Fenster mittig. Eigene Nachrichten stehen rechts in einer Blase in
+  gedämpfter Akzentfarbe (höchstens 80 % der Spalte), Antworten von Hermes
+  links in einer grauen Blase (85 %), Fehler in einer roten; die Ecke zum
+  Absender hin ist spitzer. Bilder erscheinen als kleine Karte über der
+  Nachricht. Unter jeder Nachricht steht klein und blass, wer wann geschrieben
+  hat („Hermes · 18:31“, bei eigenen nur die Uhrzeit), bei älteren Tagen mit
+  Datum. Text im Verlauf ist eine Stufe größer als die Bedienelemente
+  (Systemschrift mal 1,1, die Schriftart bleibt die des Systems). Antworten
+  setzt `tray/chat_text.py` aus dem Markdown: Luft unter jedem Absatz, etwas
+  mehr Zeilenhöhe, Listen schmal eingerückt; das Textfeld von Kirigami kann
+  beides nicht. Antworten kommen gestreamt.
   Solange Hermes arbeitet und gerade nichts schreibt, pulsieren am Ende des
-  Verlaufs drei Punkte: gleich nach dem Senden und zwischen zwei
-  Werkzeugschritten (Eigenschaft `waiting` des Backends). Jeder
+  Verlaufs drei Punkte in einer kleinen Blase von Hermes: gleich nach dem
+  Senden und zwischen zwei Werkzeugschritten (Eigenschaft `waiting` des
+  Backends). Jeder
   Werkzeugaufruf ist ein Kärtchen („✓ os_status · 0,3 s“), das beim Start
   erscheint und am Ende Dauer oder Fehler bekommt; Text danach beginnt eine
   neue Blase unter den Kärtchen. Hinweise des Systems
@@ -36,9 +44,10 @@ Einzelprüfung.
   neuen Frage ist mehr Luft als zwischen den Teilen einer Antwort. Text lässt
   sich markieren und kopieren, Markdown wird gerendert. Enter sendet,
   Umschalt+Enter macht eine neue Zeile (steht in der Erklärung am runden
-  Senden-Knopf). Ein leerer Verlauf zeigt eine Begrüßung mit anklickbaren
-  Vorschlägen. Escape versteckt das Fenster, Schließen ebenso; das Symbol
-  bleibt.
+  Senden-Knopf). Ein leerer Verlauf zeigt die Begrüßung als erste Blase von
+  Hermes und rechts unten, wo die eigene Nachricht hinkäme, drei Vorschläge
+  als Pillen; ein Klick schickt den Vorschlag ab. Escape versteckt das
+  Fenster, Schließen ebenso; das Symbol bleibt.
 - **Bilder mitschicken**: über den Knopf neben dem Textfeld (Dateidialog), mit
   Strg+V aus der Zwischenablage (Screenshot mit Spectacle, dann einfügen) oder
   indem man Dateien ins Fenster zieht. Angehängte Bilder erscheinen als
@@ -85,6 +94,7 @@ Einzelprüfung.
 | Startprogramm, Python mit PySide6 | `files/system/usr/libexec/hermes-os-tray` |
 | Fenster, QML mit Kirigami | `files/system/usr/share/hermes-os/tray/Main.qml` |
 | Client für den API-Server, nur Standardbibliothek | `files/system/usr/share/hermes-os/tray/hermes_client.py` |
+| Antworten als HTML mit Absatzabständen für den Verlauf (QTextDocument) | `files/system/usr/share/hermes-os/tray/chat_text.py` |
 | Kürzel und Benachrichtigungen mit Knöpfen, KGlobalAccel über D-Bus | `files/system/usr/share/hermes-os/tray/desktop.py` |
 | „Was sehe ich hier?“ und Push-to-Talk, Sprachhelfer in der Hermes-Venv | `files/system/usr/share/hermes-os/tray/screenshot.py`, `voice.py`, `voice_worker.py`, siehe [sehen-hoeren.md](sehen-hoeren.md) |
 | Menüeintrag „Hermes", trägt `X-KDE-Shortcuts=Meta+H` | `files/system/usr/share/applications/hermes-os-tray.desktop` |
@@ -93,7 +103,7 @@ Einzelprüfung.
 | Programmsymbol (geflügelte Sprechblase mit H, Pixel-Art als SVG, ein Pfad je Farbe) und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
 | Client-Test gegen ein nachgebautes Gateway | `tests/tray-client-check.py` |
 | Render-Test des Fensters ohne Display | `tests/tray-gui-check.py` |
-| Schaubilder des Fensters für Design-Änderungen (breit und schmal, mit echt wirkendem Gespräch) | `tests/tray-showcase.py` |
+| Schaubilder des Fensters für Design-Änderungen (breit und schmal mit echt wirkendem Gespräch, dazu Begrüßung und tippende Punkte) | `tests/tray-showcase.py` |
 
 Wie der Assistent läuft das Symbol mit Fedoras Python und PySide6 aus Aurora,
 nicht mit der Hermes-Venv. Es importiert nichts aus Hermes; alles läuft über
@@ -208,7 +218,8 @@ tests/tray-gui-check.py --qml-dir files/system/usr/share/hermes-os/tray --out /t
 
 Rendert die Zustände mit einem Stub statt des Gateways, hängt zwei erzeugte
 PNGs an, entfernt eines, schickt mit Bild, zeigt Bilder in beiden Blasen,
-klickt die Freigabe-Knöpfe und wertet jede QML-Warnung als Fehler. Mit `--out`
+prüft die Antwort als HTML aus `chat_text.py` mit „Hermes · Uhrzeit“
+darunter, klickt die Freigabe-Knöpfe und wertet jede QML-Warnung als Fehler. Mit `--out`
 entsteht je Schritt ein PNG (off, ready-empty, attachments, typing, streaming,
 approval, answered, nokey), gut zum Ansehen nach einer Änderung am Aussehen.
 Das Gate (`80-validate.sh`, 7d und 7e) führt beide Tests im Image-Build aus
@@ -268,7 +279,20 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   `*.debug=false`; zum Messen in QML `console.info` nehmen.
 - **`atYEnd` rechnet den unteren Rand der Liste mit, `positionViewAtEnd`
   nicht.** Wer beides kombiniert, bekommt einen Knopf „nach unten", der nie
-  verschwindet; das Fenster prüft stattdessen den Abstand zum Ende.
+  verschwindet; das Fenster prüft stattdessen den Abstand zum Ende. Dazu
+  gehört `originY`: die ListView verschiebt ihren Anfang, wenn Zeilen oberhalb
+  die Höhe ändern, ohne ihn stand der Knopf auch am Ende (VM 112, 29.09.).
+- **Keine `Column` um das Textfeld einer Blase.** Eine Column misst ihre Höhe
+  erst beim nächsten Layout; mit dem Nachführen ans Ende (`positionViewAtEnd`
+  bei jeder neuen Inhaltshöhe) legte die ListView die Zeilen immer wieder neu
+  an, der Render-Test hing. Das Textfeld sitzt deshalb direkt in der Blase.
+- **Das Textfeld kennt keinen Absatz- und Zeilenabstand.**
+  `Kirigami.SelectableLabel` ist ein TextEdit, ohne `lineHeight`, und das
+  Markdown setzt Qt eng. `chat_text.py` setzt die Abstände in einem
+  QTextDocument und gibt HTML ab; Schriftart und -größe aus dessen Kopf
+  fallen weg, sonst gewänne die Schrift des Python-Dokuments über die des
+  Textfelds. PySide liest `textFormat` nicht (kein Konverter für die
+  Aufzählung); der Render-Test erkennt das HTML am Inhalt.
 
 ## Geplant
 

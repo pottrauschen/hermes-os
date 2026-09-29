@@ -28,7 +28,14 @@ Kirigami.ApplicationWindow {
     pageStack.initialPage: chatPage
     pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.None
 
-    readonly property int bubbleRadius: Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing
+    // Sprechblasen wie in einem Messenger: kräftig gerundet, innen Luft
+    readonly property int bubbleRadius: Math.round(Kirigami.Units.gridUnit * 0.9)
+    readonly property int bubblePadX: Math.round(Kirigami.Units.gridUnit * 0.75)
+    readonly property int bubblePadY: Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing / 2
+    // Text im Verlauf eine Stufe größer als die Bedienelemente: Menüs und Knöpfe
+    // nehmen die Systemschrift wie sie ist, zum Lesen ist sie knapp. Die Schriftart
+    // bleibt die des Systems, die Größe wächst mit ihr (KDE HIG: Systemschrift achten).
+    readonly property real chatPointSize: Math.max(Kirigami.Theme.defaultFont.pointSize, 8) * 1.1
     // Lesespalte: Verlauf und Eingabe werden nie breiter, im breiten Fenster mittig.
     // Lange Zeilen lesen sich schlecht; 36 Rastereinheiten sind gut 70 Zeichen.
     readonly property int readingWidth: Kirigami.Units.gridUnit * 36
@@ -279,19 +286,34 @@ Kirigami.ApplicationWindow {
         header: Controls.ToolBar {
             contentItem: RowLayout {
                 spacing: Kirigami.Units.largeSpacing
-                // Name und Symbol stehen im Fensterrahmen und in der Taskleiste; hier nur
+                // Hermes als Gegenüber wie in einem Messenger: sein Symbol, unten rechts
                 // ein Punkt in der Farbe des Zustands, dieselbe wie im Leisten-Symbol
-                Rectangle {
-                    objectName: "stateDot"
-                    Layout.leftMargin: Kirigami.Units.largeSpacing
+                Item {
+                    Layout.leftMargin: Kirigami.Units.smallSpacing
                     Layout.alignment: Qt.AlignVCenter
-                    implicitWidth: Kirigami.Units.smallSpacing * 2 + 2
+                    implicitWidth: Kirigami.Units.iconSizes.medium
                     implicitHeight: implicitWidth
-                    radius: width / 2
-                    color: root.stateColor(backend.state)
+                    Kirigami.Icon {
+                        anchors.fill: parent
+                        source: "hermes-os"
+                    }
+                    Rectangle {
+                        objectName: "stateDot"
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: -2
+                        anchors.bottomMargin: -2
+                        width: Kirigami.Units.smallSpacing * 3
+                        height: width
+                        radius: width / 2
+                        color: root.stateColor(backend.state)
+                        // Ring in der Farbe des Kopfes, damit sich der Punkt vom Symbol abhebt
+                        border.width: 2
+                        border.color: Kirigami.Theme.backgroundColor
+                    }
                 }
-                // Der Name steht schon im Fensterrahmen; hier nur der Zustand, der ihn nennt
-                // („Hermes ist bereit“). Während Hermes zuhört, versteht oder spricht, steht das hier.
+                // Der Zustand nennt den Namen gleich mit („Hermes ist bereit“). Während
+                // Hermes zuhört, versteht oder spricht, steht das hier.
                 Controls.Label {
                     objectName: "stateLabel"
                     Layout.fillWidth: true
@@ -720,44 +742,56 @@ Kirigami.ApplicationWindow {
                     // Beim Streamen unten bleiben, solange der Nutzer nicht hochgescrollt hat.
                     // atYEnd rechnet den unteren Rand mit ein, positionViewAtEnd nicht;
                     // deshalb gilt "nah am Ende" ab weniger als zwei Rastereinheiten Abstand.
+                    // originY gehört dazu: die ListView verschiebt den Anfang, wenn sich Zeilen
+                    // oberhalb in der Höhe ändern; ohne ihn stand der Knopf „nach unten“ auch
+                    // am Ende des Verlaufs (VM 112, 29.09.).
                     property bool followTail: true
-                    readonly property bool nearEnd: contentHeight + bottomMargin - (contentY + height) < Kirigami.Units.gridUnit * 2
+                    readonly property bool nearEnd: originY + contentHeight + bottomMargin - (contentY + height)
+                                                    < Kirigami.Units.gridUnit * 2
                     onMovementEnded: followTail = nearEnd
                     onCountChanged: { followTail = true; Qt.callLater(messageList.positionViewAtEnd) }
                     onContentHeightChanged: if (followTail) Qt.callLater(messageList.positionViewAtEnd)
                     add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
 
-                    // Drei pulsierende Punkte am Ende, solange Hermes arbeitet und gerade nichts
-                    // schreibt: gleich nach dem Senden und zwischen zwei Werkzeugschritten
+                    // Drei pulsierende Punkte in einer kleinen Blase von Hermes, solange er arbeitet
+                    // und gerade nichts schreibt: gleich nach dem Senden und zwischen zwei
+                    // Werkzeugschritten
                     footer: Item {
                         width: ListView.view ? ListView.view.width - ListView.view.leftMargin - ListView.view.rightMargin : 0
-                        implicitHeight: typing.visible ? typing.implicitHeight + Kirigami.Units.largeSpacing : 0
+                        implicitHeight: typingBubble.visible ? typingBubble.height + Kirigami.Units.largeSpacing : 0
                         height: implicitHeight
-                        Row {
-                            id: typing
+                        Rectangle {
+                            id: typingBubble
                             objectName: "typingDots"
                             visible: backend.waiting
                             x: Math.round((parent.width - Math.min(parent.width, root.readingWidth)) / 2)
                             y: Kirigami.Units.largeSpacing
-                            spacing: Kirigami.Units.smallSpacing
-                            topPadding: Kirigami.Units.smallSpacing
-                            bottomPadding: Kirigami.Units.smallSpacing
-                            Repeater {
-                                model: 3
-                                Rectangle {
-                                    required property int index
-                                    width: Kirigami.Units.smallSpacing * 2
-                                    height: width
-                                    radius: width / 2
-                                    color: Kirigami.Theme.textColor
-                                    opacity: 0.3
-                                    SequentialAnimation on opacity {
-                                        running: typing.visible
-                                        loops: Animation.Infinite
-                                        PauseAnimation { duration: index * 160 }
-                                        NumberAnimation { to: 1; duration: 320 }
-                                        NumberAnimation { to: 0.3; duration: 320 }
-                                        PauseAnimation { duration: (2 - index) * 160 }
+                            width: typing.implicitWidth + root.bubblePadX * 2
+                            height: typing.implicitHeight + root.bubblePadY * 2
+                            radius: root.bubbleRadius
+                            bottomLeftRadius: Kirigami.Units.smallSpacing
+                            color: chatArea.bubbleColor
+                            Row {
+                                id: typing
+                                anchors.centerIn: parent
+                                spacing: Kirigami.Units.smallSpacing
+                                Repeater {
+                                    model: 3
+                                    Rectangle {
+                                        required property int index
+                                        width: Kirigami.Units.smallSpacing * 2
+                                        height: width
+                                        radius: width / 2
+                                        color: Kirigami.Theme.textColor
+                                        opacity: 0.3
+                                        SequentialAnimation on opacity {
+                                            running: typingBubble.visible
+                                            loops: Animation.Infinite
+                                            PauseAnimation { duration: index * 160 }
+                                            NumberAnimation { to: 1; duration: 320 }
+                                            NumberAnimation { to: 0.3; duration: 320 }
+                                            PauseAnimation { duration: (2 - index) * 160 }
+                                        }
                                     }
                                 }
                             }
@@ -775,10 +809,12 @@ Kirigami.ApplicationWindow {
                         readonly property bool mine: role === "user"
                         readonly property bool isBubble: role === "user" || role === "assistant" || role === "error"
                         readonly property var imageList: images ? images : []
-                        // Lesespalte, im breiten Fenster mittig; die Blase des Nutzers höchstens 80 % davon
+                        // Lesespalte, im breiten Fenster mittig; die Blase des Nutzers höchstens 80 %
+                        // davon, die von Hermes 85 %: so bleibt die Seite des Absenders erkennbar
                         readonly property int column: Math.min(width, root.readingWidth)
                         readonly property int colX: Math.round((width - column) / 2)
-                        readonly property int maxBubble: Math.max(Kirigami.Units.gridUnit * 6, Math.round(column * 0.8))
+                        readonly property int maxBubble: Math.max(Kirigami.Units.gridUnit * 6,
+                                                                  Math.round(column * (mine ? 0.8 : 0.85)))
                         // Rhythmus: vor jeder neuen Frage deutlich Luft, Werkzeugzeilen eng
                         // beieinander, sonst ein gleichmäßiger Abstand
                         readonly property string prevRole: ListView.previousSection
@@ -790,8 +826,9 @@ Kirigami.ApplicationWindow {
                         implicitHeight: topGap + (isBubble ? bubbleWrap.implicitHeight
                                       : (role === "tool" ? toolRow.implicitHeight : infoPill.implicitHeight))
 
-                        // Nutzer rechts in einer Blase in Akzentfarbe, Hermes links als ruhiger
-                        // Text ohne Kasten, Fehler in einem roten Kasten
+                        // Wie in einem Messenger: der Nutzer rechts in einer Blase in Akzentfarbe,
+                        // Hermes links in einer grauen Blase, Fehler in einer roten. Die Ecke zum
+                        // Absender hin ist spitzer, darunter steht klein, wer wann geschrieben hat.
                         Item {
                             id: bubbleWrap
                             visible: row.isBubble
@@ -822,69 +859,78 @@ Kirigami.ApplicationWindow {
                                     }
                                 }
                             }
+                            // Antworten von Hermes als HTML mit Absatzabständen (tray/chat_text.py);
+                            // leer, wenn das Backend es nicht kann, dann Markdown wie bisher
+                            readonly property string html: row.role === "assistant"
+                                                           ? backend.chatHtml(row.text, root.chatPointSize) : ""
                             // Unsichtbare Messung: die natürliche Breite des Textes ohne
-                            // Umbruch, damit kurze Nachrichten kurze Blasen bekommen
+                            // Umbruch, damit kurze Nachrichten kurze Blasen bekommen; bei Hermes
+                            // gesetzt, sonst zählten ** und ` mit
                             Text {
                                 id: measure
                                 visible: false
-                                text: row.text
-                                textFormat: Text.PlainText
-                                font: Kirigami.Theme.defaultFont
+                                text: bubbleWrap.html !== "" ? bubbleWrap.html : row.text
+                                textFormat: bubbleWrap.html !== "" ? Text.RichText
+                                          : (row.role === "assistant" ? Text.MarkdownText : Text.PlainText)
+                                font.family: Kirigami.Theme.defaultFont.family
+                                font.pointSize: root.chatPointSize
                             }
                             Rectangle {
                                 id: bubble
-                                // Antworten von Hermes stehen ohne Kasten in der ganzen Spalte
-                                readonly property bool plain: row.role === "assistant"
-                                readonly property int padX: plain ? 0 : Kirigami.Units.largeSpacing
-                                readonly property int padY: plain ? Kirigami.Units.smallSpacing
-                                                                  : Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing / 2
+                                readonly property int padX: root.bubblePadX
+                                readonly property int padY: root.bubblePadY
                                 visible: row.text.length > 0
-                                width: plain ? row.column
-                                     : Math.min(row.maxBubble, Math.ceil(measure.implicitWidth) + padX * 2)
-                                height: content.implicitHeight + padY * 2
+                                // zwei Pixel Luft: TextEdit und Text setzen nicht ganz gleich breit,
+                                // sonst bricht das letzte Wort einer kurzen Nachricht um
+                                width: Math.min(row.maxBubble, Math.ceil(measure.implicitWidth) + padX * 2 + 2)
+                                height: label.implicitHeight + padY * 2
                                 x: row.mine ? row.colX + row.column - width : row.colX
                                 y: imageFlow.visible ? imageFlow.height + 2 : 0  // Bild und Frage als Einheit
                                 radius: root.bubbleRadius
                                 bottomRightRadius: row.mine ? Kirigami.Units.smallSpacing : root.bubbleRadius
+                                bottomLeftRadius: row.mine ? root.bubbleRadius : Kirigami.Units.smallSpacing
                                 // Nutzerblase in gedämpfter Akzentfarbe statt voller Fläche:
                                 // erkennbar als eigene Nachricht, aber nicht das Lauteste im Fenster
                                 color: row.mine ? Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor,
                                                                                     Kirigami.Theme.highlightColor, 0.32)
-                                     : (row.role === "error" ? Kirigami.Theme.negativeBackgroundColor : "transparent")
+                                     : (row.role === "error" ? Kirigami.Theme.negativeBackgroundColor : chatArea.bubbleColor)
                                 border.width: row.role === "error" ? 1 : 0
                                 border.color: Kirigami.Theme.negativeTextColor
 
-                                Column {
-                                    id: content
+                                // Direkt in der Blase, ohne Column dazwischen: eine Column misst ihre
+                                // Höhe erst beim nächsten Layout, und das Nachführen ans Ende des
+                                // Verlaufs lief dann im Kreis (Render-Test hing, 29.09.)
+                                Kirigami.SelectableLabel {
+                                    id: label
+                                    objectName: "messageText"
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
                                     anchors.leftMargin: bubble.padX
                                     anchors.rightMargin: bubble.padX
                                     anchors.topMargin: bubble.padY
-                                    spacing: Kirigami.Units.smallSpacing
-                                    Kirigami.SelectableLabel {
-                                        id: label
-                                        width: parent.width
-                                        visible: row.text.length > 0
-                                        text: row.text
-                                        textFormat: row.role === "assistant" ? TextEdit.MarkdownText : TextEdit.PlainText
-                                        wrapMode: TextEdit.Wrap
-                                        color: row.role === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-                                        onLinkActivated: link => Qt.openUrlExternally(link)
-                                    }
+                                    text: bubbleWrap.html !== "" ? bubbleWrap.html : row.text
+                                    textFormat: bubbleWrap.html !== "" ? TextEdit.RichText
+                                              : (row.role === "assistant" ? TextEdit.MarkdownText : TextEdit.PlainText)
+                                    wrapMode: TextEdit.Wrap
+                                    font.pointSize: root.chatPointSize
+                                    color: row.role === "error" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+                                    onLinkActivated: link => Qt.openUrlExternally(link)
                                 }
                             }
-                            // Uhrzeit klein und blass unter der Nachricht, auf der Seite ihres Absenders
+                            // Absender und Uhrzeit klein und blass unter der Nachricht, auf der Seite
+                            // ihres Absenders: „Hermes · 18:31“, beim Nutzer nur die Uhrzeit
                             Controls.Label {
                                 id: timeLabel
                                 objectName: "messageTime"
-                                visible: row.time.length > 0 && (bubble.visible || imageFlow.visible)
-                                text: row.time
+                                readonly property bool named: row.role === "assistant"
+                                visible: (row.time.length > 0 || named) && (bubble.visible || imageFlow.visible)
+                                text: named ? (row.time.length > 0 ? "Hermes · " + row.time : "Hermes") : row.time
                                 font: Kirigami.Theme.smallFont
-                                opacity: 0.5
-                                topPadding: 2
-                                x: row.mine ? row.colX + row.column - width : row.colX + bubble.padX
+                                opacity: 0.55
+                                topPadding: Kirigami.Units.smallSpacing
+                                x: row.mine ? row.colX + row.column - width - Kirigami.Units.smallSpacing
+                                            : row.colX + Kirigami.Units.smallSpacing
                                 y: bubble.visible ? bubble.y + bubble.height
                                                   : imageFlow.height
                             }
@@ -977,44 +1023,114 @@ Kirigami.ApplicationWindow {
                     }
                 }
 
-                // Leerer Verlauf: Begrüßung und Vorschläge zum Anklicken
-                ColumnLayout {
+                // Leerer Verlauf wie bei einem Messenger-Assistenten: Hermes grüßt in seiner
+                // ersten Blase, Vorschläge stehen rechts unten, wo die eigene Nachricht
+                // hinkäme. Ein Klick schickt den Vorschlag ab.
+                Item {
                     id: welcome
+                    objectName: "welcome"
                     visible: messageList.count === 0
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 24)
-                    spacing: Kirigami.Units.largeSpacing
-                    Kirigami.Icon {
-                        source: "hermes-os"
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.huge
-                        Layout.preferredHeight: Kirigami.Units.iconSizes.huge
-                    }
-                    Kirigami.Heading {
-                        Layout.fillWidth: true
-                        text: "Was kann ich für dich tun?"
-                        level: 2
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
+                    anchors.fill: parent
+                    anchors.leftMargin: messageList.leftMargin
+                    anchors.rightMargin: messageList.rightMargin
+                    anchors.topMargin: messageList.topMargin
+                    anchors.bottomMargin: Kirigami.Units.largeSpacing * 2
+                    readonly property int column: Math.min(width, root.readingWidth)
+                    readonly property int colX: Math.round((width - column) / 2)
+
+                    Rectangle {
+                        id: greeting
+                        x: welcome.colX
+                        width: Math.round(welcome.column * 0.85)
+                        height: greetingCol.implicitHeight + root.bubblePadY * 2
+                        radius: root.bubbleRadius
+                        bottomLeftRadius: Kirigami.Units.smallSpacing
+                        color: chatArea.bubbleColor
+                        Column {
+                            id: greetingCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: root.bubblePadX
+                            anchors.topMargin: root.bubblePadY
+                            spacing: Kirigami.Units.largeSpacing
+                            Controls.Label {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                font.pointSize: root.chatPointSize
+                                font.bold: true
+                                text: "Hallo, ich bin Hermes."
+                            }
+                            Controls.Label {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                font.pointSize: root.chatPointSize
+                                text: "Ich kenne dieses System: Image, Dienste, Apps und Hardware. Frag mich etwas, "
+                                    + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein."
+                            }
+                            Controls.Label {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                font.pointSize: root.chatPointSize
+                                textFormat: Text.StyledText
+                                text: "<b>Meta+Umschalt+H</b> fragt zu einem Bildschirmausschnitt, "
+                                    + "<b>Meta+Leertaste</b> halten spricht mit mir."
+                            }
+                        }
                     }
                     Controls.Label {
-                        Layout.fillWidth: true
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                        opacity: 0.7
-                        text: "Ich kenne dieses System: Image, Dienste, Apps und Hardware. Frag mich etwas, "
-                            + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein. "
-                            + "Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit mir."
+                        id: greetingMeta
+                        x: welcome.colX + Kirigami.Units.smallSpacing
+                        y: greeting.height
+                        topPadding: Kirigami.Units.smallSpacing
+                        text: "Hermes"
+                        font: Kirigami.Theme.smallFont
+                        opacity: 0.55
                     }
-                    Repeater {
-                        model: root.suggestions
-                        Kirigami.Chip {
-                            required property string modelData
-                            Layout.alignment: Qt.AlignHCenter
-                            text: modelData
-                            closable: false
-                            checkable: false
-                            onClicked: { inputField.text = modelData; inputField.forceActiveFocus() }
+
+                    // Vorschläge als Pillen, rechtsbündig übereinander; nur, wenn sie unter
+                    // die Begrüßung passen (ein niedriges Fenster zeigt nur die Begrüßung)
+                    Column {
+                        id: suggestionList
+                        x: welcome.colX + welcome.column - width
+                        anchors.bottom: parent.bottom
+                        spacing: Kirigami.Units.smallSpacing + 2
+                        visible: greetingMeta.y + greetingMeta.height + Kirigami.Units.largeSpacing * 2 + height
+                                 <= welcome.height
+                        Repeater {
+                            model: root.suggestions
+                            delegate: Controls.AbstractButton {
+                                id: pill
+                                required property string modelData
+                                objectName: "suggestion"
+                                anchors.right: parent.right
+                                text: modelData
+                                enabled: backend.state === "ready" && !backend.busy
+                                leftPadding: root.bubblePadX
+                                rightPadding: root.bubblePadX
+                                topPadding: Kirigami.Units.largeSpacing
+                                bottomPadding: Kirigami.Units.largeSpacing
+                                opacity: enabled ? 1 : 0.5
+                                contentItem: Controls.Label {
+                                    text: pill.text
+                                    font.pointSize: root.chatPointSize
+                                }
+                                background: Kirigami.ShadowedRectangle {
+                                    radius: height / 2
+                                    color: pill.down ? Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor,
+                                                                                         Kirigami.Theme.highlightColor, 0.25)
+                                         : (pill.hovered ? Kirigami.ColorUtils.tintWithAlpha(Kirigami.Theme.backgroundColor,
+                                                                                              Kirigami.Theme.highlightColor, 0.1)
+                                                         : Kirigami.Theme.backgroundColor)
+                                    border.width: 1
+                                    border.color: pill.hovered || pill.visualFocus ? Kirigami.Theme.highlightColor
+                                                                                   : chatArea.hairline
+                                    shadow.size: Kirigami.Units.smallSpacing * 2
+                                    shadow.yOffset: 1
+                                    shadow.color: Qt.rgba(0, 0, 0, 0.1)
+                                }
+                                onClicked: { inputField.text = modelData; root.sendCurrent() }
+                            }
                         }
                     }
                 }
