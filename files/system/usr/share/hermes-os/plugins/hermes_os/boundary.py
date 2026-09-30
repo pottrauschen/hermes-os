@@ -23,9 +23,34 @@ Die Angriffsbatterie liegt in tests/boundary-check.py.
 """
 from __future__ import annotations
 
+import os
 import posixpath
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+
+def _load_lang():
+    """_() aus lang.py neben dieser Datei (Sprache der Meldungen, docs/systemagent.md).
+    Im Paket (Gateway, Plugin-Loader) über den relativen Import, ohne Paket (Tests
+    laden die Datei über ihren Pfad) über den Pfad. Scheitert beides, bleibt es
+    deutsch: ein Fehler hier darf das Plugin und damit den Freigabe-Hook nie abschalten."""
+    try:
+        from .lang import _ as tr
+        return tr
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang.py")
+        spec = importlib.util.spec_from_file_location("hermes_os_lang", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod._
+    except Exception:
+        return lambda text: text
+
+
+_ = _load_lang()
 
 # Gruppen, die nicht gefragt, sondern verweigert werden (Hook-Aktion "block").
 BLOCK_GROUPS = frozenset({"power"})
@@ -1396,6 +1421,7 @@ def classify_system_command(command: str) -> Optional[Dict[str, str]]:
     return None
 
 
+# Deutsch; übersetzt wird beim Gebrauch (lang.py), die Texte sind die Schlüssel
 _GROUP_TEXT = {
     "power": "würde den Rechner neu starten oder ausschalten",
     "sleep": "würde den Rechner in den Ruhezustand schicken",
@@ -1424,19 +1450,20 @@ def directive_for(hit: Dict[str, str]) -> Dict[str, str]:
     """Hook-Antwort für einen Treffer: block für BLOCK_GROUPS, sonst approve."""
     group = hit["group"]
     seg = (hit.get("text") or hit["segment"])[:120]
-    what = _GROUP_TEXT.get(group, "berührt das laufende System")
+    what = _(_GROUP_TEXT.get(group, "berührt das laufende System"))
     if group in BLOCK_GROUPS:
         return {
             "action": "block",
-            "message": (f"hermes-os: `{seg}` {what} ({group}). Das führt der Agent nie selbst aus. "
-                        "Bitte den Nutzer, es selbst zu tun."),
+            "message": _("hermes-os: `{seg}` {what} ({group}). Das führt der Agent nie selbst aus. "
+                         "Bitte den Nutzer, es selbst zu tun.").format(seg=seg, what=what, group=group),
         }
     rule = f"hermes-os:{group}"
     if hit.get("command"):
         rule += f":{hit['command']}"
     return {
         "action": "approve",
-        "message": f"hermes-os: `{seg}` {what} ({group}). Freigabe nötig.",
+        # Die Backticks um den Befehl stehen in jeder Sprache: tray/hermes_client.py liest ihn daraus
+        "message": _("hermes-os: `{seg}` {what} ({group}). Freigabe nötig.").format(seg=seg, what=what, group=group),
         "rule_key": rule,
     }
 
@@ -1461,7 +1488,8 @@ def fail_closed_directive(exc: BaseException) -> Dict[str, str]:
     """Wenn die Prüfung selbst scheitert: fragen statt durchwinken."""
     return {
         "action": "approve",
-        "message": (f"hermes-os: Die Grenzprüfung ist fehlgeschlagen ({type(exc).__name__}). "
-                    "Freigabe nötig, weil nicht feststeht, ob der Befehl das System berührt."),
+        "message": _("hermes-os: Die Grenzprüfung ist fehlgeschlagen ({error}). "
+                     "Freigabe nötig, weil nicht feststeht, ob der Befehl das System berührt.")
+        .format(error=type(exc).__name__),
         "rule_key": "hermes-os:hook-error",
     }

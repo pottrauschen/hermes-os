@@ -22,6 +22,12 @@ Audit-Log" aus Phase 4 in der Form, die ohne eigenen Dienst auskommt; siehe
 - **Export**: „Exportieren" schreibt die gezeigten Zeilen über den
   Dateidialog als Textdatei, älteste zuerst, mit Kopf (Rechner, Zeitpunkt,
   Filter).
+- **Sprache**: Die Texte der Zeilen (Gruppe, Entscheidung, Entscheider,
+  Ergebnis) und des Exports baut `audit.py` beim Lesen, in der Sprache des
+  Symbols ([systemagent.md](systemagent.md), „Sprache der Oberfläche“). In
+  englischer Sitzung heißt es etwa „Denied (user in tray icon) · Not
+  executed“ oder „Executed, exit 0“, das Datum `2026-09-29` statt
+  `29.09.2026`. In der Datei selbst steht nichts Sprachabhängiges.
 - **Aktualisierung**: Solange die Seite offen ist, liest das Symbol die Datei
   bei jeder Änderung neu (`QFileSystemWatcher` auf Datei und Ordner, 0,5 s
   gebündelt). Bei geschlossener Seite merkt es sich nur, dass etwas kam.
@@ -144,3 +150,13 @@ Wechsel zur Bibliothek.
   `auditSetFilter(period, changesOnly)` immer mit beiden.
 - **Der Watcher verliert die Datei bei der Rotation**; das Symbol hängt sie
   nach jeder Änderung am Ordner wieder an.
+- **Datum der Zeile und „heute“ auf der Seite gehören zusammen.** Bei Zeilen
+  von heute zeigt `Main.qml` nur die Uhrzeit; dazu vergleicht sie `date` aus
+  `audit.py` (`%d.%m.%Y`, englisch `%Y-%m-%d`) mit
+  `Qt.formatDate(new Date(), qsTr("dd.MM.yyyy"))` (englisch `yyyy-MM-dd`).
+  Ändert sich eines der Formate, das andere mitziehen; `tests/lang-check.py`
+  prüft beide Sprachen.
+- **Die rote Meldung hängt an Wörtern.** Die Seite färbt eine Meldung rot,
+  wenn sie „fehlgeschlagen“ oder „nicht verfügbar“ enthält, englisch
+  „failed“ oder „not available“; neue Fehlermeldungen des Exports brauchen
+  eines davon.

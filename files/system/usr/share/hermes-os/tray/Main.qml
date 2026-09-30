@@ -11,6 +11,11 @@
 // speaking), `look` (tray/screenshot.py) holt einen Bildschirmausschnitt als
 // Anhang; beides steht in docs/sehen-hoeren.md.
 // Das Fenster wird von Python gezeigt und versteckt; Schließen versteckt nur.
+// Sprache: jeder sichtbare Text steht deutsch in qsTr("…"), der deutsche Text ist
+// der Schlüssel. In englischer Sitzung installiert hermes-os-tray vor dem Laden
+// einen Übersetzer aus tray/lang.py (EN); ohne ihn liefert qsTr den Quelltext.
+// Zahlen und Kürzel über qsTr("… %1 …").arg(), Texte vom Backend kommen schon
+// übersetzt. Neue Texte brauchen einen EN-Eintrag (tests/lang-check.py).
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
@@ -18,7 +23,7 @@ import org.kde.kirigami as Kirigami
 
 Kirigami.ApplicationWindow {
     id: root
-    title: "Hermes-Kontor"
+    title: qsTr("Hermes-Kontor")
     width: Kirigami.Units.gridUnit * 30
     height: Kirigami.Units.gridUnit * 36
     minimumWidth: Kirigami.Units.gridUnit * 20
@@ -41,7 +46,8 @@ Kirigami.ApplicationWindow {
     readonly property int readingWidth: Kirigami.Units.gridUnit * 36
     // Ab dieser Fensterbreite tragen die Knöpfe im Kopf ihren Namen neben dem Symbol
     readonly property bool wideHeader: width >= Kirigami.Units.gridUnit * 34
-    readonly property var suggestions: ["Welches Image ist gebootet?", "Gibt es ein Update?", "Starte Firefox"]
+    readonly property var suggestions: [qsTr("Welches Image ist gebootet?"), qsTr("Gibt es ein Update?"),
+                                        qsTr("Starte Firefox")]
 
     // Farben der Zustände, dieselben wie in den Leisten-Symbolen
     function stateColor(state) {
@@ -133,7 +139,7 @@ Kirigami.ApplicationWindow {
     // Stufe zwei: Spiegel je Eintrag, Suche, Ablegen, Notizen ändern, Doku-Server
     function libraryMirrorText(entryId) {
         var m = backend.libraryMirror
-        return (m !== undefined && m[entryId] !== undefined) ? m[entryId].text : "Kein Spiegel: noch nicht indiziert."
+        return (m !== undefined && m[entryId] !== undefined) ? m[entryId].text : qsTr("Kein Spiegel: noch nicht indiziert.")
     }
     function libraryMirrorRunning(entryId) {
         var m = backend.libraryMirror
@@ -168,9 +174,9 @@ Kirigami.ApplicationWindow {
     // Protokoll: was Hermes am System getan hat, eigene Seite wie die Bibliothek.
     // Solange sie offen ist, liest das Backend die Datei bei jeder Änderung neu.
     readonly property var auditPeriods: [
-        { text: "Heute", value: "today" },
-        { text: "Letzte 7 Tage", value: "week" },
-        { text: "Alles", value: "all" }
+        { text: qsTr("Heute"), value: "today" },
+        { text: qsTr("Letzte 7 Tage"), value: "week" },
+        { text: qsTr("Alles"), value: "all" }
     ]
     function auditOpen() { return pageStack.currentItem === auditPage }
     function openAudit() {
@@ -348,9 +354,9 @@ Kirigami.ApplicationWindow {
                     objectName: "libraryButton"
                     icon.name: "bookmarks"
                     display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
-                    text: "Bibliothek"
+                    text: qsTr("Bibliothek")
                     visible: backend.libraryAvailable
-                    Controls.ToolTip.text: "Bibliothek: Adressen, Dateien und Ordner, die Hermes kennen soll"
+                    Controls.ToolTip.text: qsTr("Bibliothek: Adressen, Dateien und Ordner, die Hermes kennen soll")
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: root.openLibrary()
@@ -359,9 +365,9 @@ Kirigami.ApplicationWindow {
                     objectName: "auditButton"
                     icon.name: "view-history"
                     display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
-                    text: "Protokoll"
+                    text: qsTr("Protokoll")
                     visible: backend.auditAvailable
-                    Controls.ToolTip.text: "Protokoll: was Hermes am System getan hat"
+                    Controls.ToolTip.text: qsTr("Protokoll: was Hermes am System getan hat")
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: root.openAudit()
@@ -369,8 +375,8 @@ Kirigami.ApplicationWindow {
                 Controls.ToolButton {
                     icon.name: "list-add"
                     display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
-                    text: "Neu"
-                    Controls.ToolTip.text: "Neues Gespräch"
+                    text: qsTr("Neu")
+                    Controls.ToolTip.text: qsTr("Neues Gespräch")
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: backend.newConversation()
@@ -378,8 +384,8 @@ Kirigami.ApplicationWindow {
                 Controls.ToolButton {
                     icon.name: "configure"
                     display: root.wideHeader ? Controls.AbstractButton.TextBesideIcon : Controls.AbstractButton.IconOnly
-                    text: "Einrichten"
-                    Controls.ToolTip.text: "Hermes einrichten: Anbieter, Schlüssel und Modell"
+                    text: qsTr("Einrichten")
+                    Controls.ToolTip.text: qsTr("Hermes einrichten: Anbieter, Schlüssel und Modell")
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                     onClicked: backend.openSetup()
@@ -465,7 +471,7 @@ Kirigami.ApplicationWindow {
                                     icon.width: Kirigami.Units.iconSizes.small
                                     icon.height: Kirigami.Units.iconSizes.small
                                     display: Controls.AbstractButton.IconOnly
-                                    text: "Bild entfernen"
+                                    text: qsTr("Bild entfernen")
                                     Controls.ToolTip.text: text
                                     Controls.ToolTip.visible: hovered
                                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -497,7 +503,7 @@ Kirigami.ApplicationWindow {
                             objectName: "inputField"
                             background: null
                             wrapMode: TextEdit.Wrap
-                            placeholderText: backend.state === "ready" ? "Frag Hermes …" : backend.stateText
+                            placeholderText: backend.state === "ready" ? qsTr("Frag Hermes …") : backend.stateText
                             enabled: backend.state === "ready" && !backend.busy
                             // Enter sendet, Umschalt+Enter macht eine neue Zeile; Strg+V mit
                             // einem Bild in der Zwischenablage hängt es an statt Text einzufügen.
@@ -523,9 +529,9 @@ Kirigami.ApplicationWindow {
                             // Mikrofon wirkten neben dem Bild-Symbol unruhig
                             icon.name: "insert-image-symbolic"
                             display: Controls.AbstractButton.IconOnly
-                            text: "Bild anhängen"
+                            text: qsTr("Bild anhängen")
                             enabled: backend.state === "ready" && !backend.busy
-                            Controls.ToolTip.text: "Bild anhängen: Datei wählen, Strg+V oder ins Fenster ziehen"
+                            Controls.ToolTip.text: qsTr("Bild anhängen: Datei wählen, Strg+V oder ins Fenster ziehen")
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: backend.attachFromDialog()
@@ -534,10 +540,11 @@ Kirigami.ApplicationWindow {
                             objectName: "lookButton"
                             icon.name: "camera-photo-symbolic"
                             display: Controls.AbstractButton.IconOnly
-                            text: "Bildschirmausschnitt anhängen"
+                            text: qsTr("Bildschirmausschnitt anhängen")
                             visible: look.available
                             enabled: backend.state === "ready" && !backend.busy && !look.busy
-                            Controls.ToolTip.text: "Bildschirmausschnitt wählen und dazu fragen (" + look.shortcutText + " fragt sofort)"
+                            Controls.ToolTip.text: qsTr("Bildschirmausschnitt wählen und dazu fragen (%1 fragt sofort)")
+                                                   .arg(look.shortcutText)
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: look.capture()
@@ -547,12 +554,12 @@ Kirigami.ApplicationWindow {
                             icon.name: voice.state === "recording" || voice.state === "speaking"
                                        ? "media-playback-stop-symbolic" : "audio-input-microphone-symbolic"
                             display: Controls.AbstractButton.IconOnly
-                            text: voice.state === "recording" ? "Aufnahme beenden"
-                                : (voice.state === "speaking" ? "Vorlesen abbrechen" : "Mit Hermes sprechen")
+                            text: voice.state === "recording" ? qsTr("Aufnahme beenden")
+                                : (voice.state === "speaking" ? qsTr("Vorlesen abbrechen") : qsTr("Mit Hermes sprechen"))
                             enabled: voice.available && (voice.state === "idle" || voice.state === "recording"
                                      || voice.state === "speaking")
                             Controls.ToolTip.text: voice.available
-                                ? text + (voice.shortcutText !== "" ? " (" + voice.shortcutText + " halten oder antippen)" : "")
+                                ? text + (voice.shortcutText !== "" ? qsTr(" (%1 halten oder antippen)").arg(voice.shortcutText) : "")
                                 : voice.unavailableReason
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -561,8 +568,8 @@ Kirigami.ApplicationWindow {
                         // Nur, wenn Bilder mitgehen; der Tastenhinweis steht am Senden-Knopf
                         Controls.Label {
                             Layout.fillWidth: true
-                            text: backend.attachmentCount === 1 ? "1 Bild geht mit"
-                                : (backend.attachmentCount > 1 ? backend.attachmentCount + " Bilder gehen mit" : "")
+                            text: backend.attachmentCount === 1 ? qsTr("1 Bild geht mit")
+                                : (backend.attachmentCount > 1 ? qsTr("%1 Bilder gehen mit").arg(backend.attachmentCount) : "")
                             elide: Text.ElideRight
                             font: Kirigami.Theme.smallFont
                             opacity: 0.7
@@ -575,7 +582,7 @@ Kirigami.ApplicationWindow {
                             visible: backend.modelAvailable
                             text: backend.modelText + "  ▾"
                             font: Kirigami.Theme.smallFont
-                            Controls.ToolTip.text: "Modell und Denkaufwand für die nächsten Nachrichten"
+                            Controls.ToolTip.text: qsTr("Modell und Denkaufwand für die nächsten Nachrichten")
                             Controls.ToolTip.visible: hovered && !choicePopup.visible
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: { backend.refreshModels(); choicePopup.open() }
@@ -597,7 +604,7 @@ Kirigami.ApplicationWindow {
                                         Layout.fillWidth: true
                                         Layout.margins: Kirigami.Units.smallSpacing
                                         level: 5
-                                        text: "Modell"
+                                        text: qsTr("Modell")
                                     }
                                     Repeater {
                                         model: backend.modelOptions
@@ -620,7 +627,7 @@ Kirigami.ApplicationWindow {
                                         objectName: "modelSetup"
                                         visible: !backend.modelSwitchable
                                         Layout.fillWidth: true
-                                        text: "Anderes Modell: Hermes einrichten …"
+                                        text: qsTr("Anderes Modell: Hermes einrichten …")
                                         icon.name: "configure-symbolic"
                                         onClicked: { choicePopup.close(); backend.openSetup() }
                                     }
@@ -633,7 +640,7 @@ Kirigami.ApplicationWindow {
                                         Layout.fillWidth: true
                                         Layout.margins: Kirigami.Units.smallSpacing
                                         level: 5
-                                        text: "Denkaufwand"
+                                        text: qsTr("Denkaufwand")
                                     }
                                     Repeater {
                                         model: backend.effortOptions
@@ -655,14 +662,14 @@ Kirigami.ApplicationWindow {
                         Controls.RoundButton {
                             id: sendButton
                             objectName: "sendButton"
-                            text: backend.busy ? "Stopp" : "Senden"
+                            text: backend.busy ? qsTr("Stopp") : qsTr("Senden")
                             display: Controls.AbstractButton.IconOnly
                             icon.name: backend.busy ? "media-playback-stop-symbolic" : "document-send-symbolic"
                             highlighted: enabled && !backend.busy
                             enabled: backend.busy || (backend.state === "ready"
                                      && (inputField.text.trim().length > 0 || backend.attachmentCount > 0))
-                            Controls.ToolTip.text: backend.busy ? "Stopp: Hermes anhalten"
-                                : "Senden (Enter) · Umschalt+Enter für eine neue Zeile"
+                            Controls.ToolTip.text: backend.busy ? qsTr("Stopp: Hermes anhalten")
+                                : qsTr("Senden (Enter) · Umschalt+Enter für eine neue Zeile")
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                             onClicked: backend.busy ? backend.stopRun() : root.sendCurrent()
@@ -686,22 +693,22 @@ Kirigami.ApplicationWindow {
                 visible: backend.state === "off" || backend.state === "nokey"
                 type: Kirigami.MessageType.Warning
                 text: backend.state === "nokey"
-                    ? "Das Gateway läuft, aber in ~/.hermes/.env fehlt der Schlüssel für das Leisten-Symbol. "
-                      + "„Gateway starten“ legt ihn an und startet das Gateway neu."
+                    ? qsTr("Das Gateway läuft, aber in ~/.hermes/.env fehlt der Schlüssel für das Leisten-Symbol. "
+                           + "„Gateway starten“ legt ihn an und startet das Gateway neu.")
                     : (backend.configured
-                        ? "Das Hermes-Gateway läuft nicht."
-                        : "Hermes ist noch nicht eingerichtet: Anbieter, Schlüssel und Modell fehlen.")
+                        ? qsTr("Das Hermes-Gateway läuft nicht.")
+                        : qsTr("Hermes ist noch nicht eingerichtet: Anbieter, Schlüssel und Modell fehlen."))
                 actions: [
                     Kirigami.Action {
                         objectName: "setupAction"
-                        text: "Hermes einrichten"
+                        text: qsTr("Hermes einrichten")
                         icon.name: "configure"
                         visible: !backend.configured
                         onTriggered: backend.openSetup()
                     },
                     Kirigami.Action {
                         objectName: "gatewayAction"
-                        text: "Gateway starten"
+                        text: qsTr("Gateway starten")
                         icon.name: "media-playback-start"
                         visible: backend.configured
                         onTriggered: backend.startGateway()
@@ -1059,22 +1066,22 @@ Kirigami.ApplicationWindow {
                                 wrapMode: Text.WordWrap
                                 font.pointSize: root.chatPointSize
                                 font.bold: true
-                                text: "Hallo, ich bin Hermes."
+                                text: qsTr("Hallo, ich bin Hermes.")
                             }
                             Controls.Label {
                                 width: parent.width
                                 wrapMode: Text.WordWrap
                                 font.pointSize: root.chatPointSize
-                                text: "Ich kenne dieses System: Image, Dienste, Apps und Hardware. Frag mich etwas, "
-                                    + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein."
+                                text: qsTr("Ich kenne dieses System: Image, Dienste, Apps und Hardware. Frag mich etwas, "
+                                           + "zieh ein Bild ins Fenster oder füge einen Screenshot mit Strg+V ein.")
                             }
                             Controls.Label {
                                 width: parent.width
                                 wrapMode: Text.WordWrap
                                 font.pointSize: root.chatPointSize
                                 textFormat: Text.StyledText
-                                text: "<b>Meta+Umschalt+H</b> fragt zu einem Bildschirmausschnitt, "
-                                    + "<b>Meta+Leertaste</b> halten spricht mit mir."
+                                text: qsTr("<b>Meta+Umschalt+H</b> fragt zu einem Bildschirmausschnitt, "
+                                           + "<b>Meta+Leertaste</b> halten spricht mit mir.")
                             }
                         }
                     }
@@ -1167,7 +1174,7 @@ Kirigami.ApplicationWindow {
                         anchors.centerIn: parent
                         width: parent.width - Kirigami.Units.gridUnit * 4
                         icon.name: "insert-image"
-                        text: "Bild hier ablegen"
+                        text: qsTr("Bild hier ablegen")
                     }
                 }
             }
@@ -1189,7 +1196,7 @@ Kirigami.ApplicationWindow {
                 Kirigami.Action {
                     id: approveOnceAction
                     objectName: "approveOnce"
-                    text: "Einmal erlauben"
+                    text: qsTr("Einmal erlauben")
                     icon.name: "dialog-ok"
                     visible: root.allows("once")
                     onTriggered: backend.approve("once")
@@ -1197,21 +1204,21 @@ Kirigami.ApplicationWindow {
                 Kirigami.Action {
                     id: approveSessionAction
                     objectName: "approveSession"
-                    text: "Für diese Sitzung"
+                    text: qsTr("Für diese Sitzung")
                     visible: root.allows("session")
                     onTriggered: backend.approve("session")
                 }
                 Kirigami.Action {
                     id: approveAlwaysAction
                     objectName: "approveAlways"
-                    text: "Immer erlauben"
+                    text: qsTr("Immer erlauben")
                     visible: root.allows("always")
                     onTriggered: backend.approve("always")
                 }
                 Kirigami.Action {
                     id: approveDenyAction
                     objectName: "approveDeny"
-                    text: "Ablehnen"
+                    text: qsTr("Ablehnen")
                     icon.name: "dialog-cancel"
                     onTriggered: backend.approve("deny")
                 }
@@ -1232,9 +1239,10 @@ Kirigami.ApplicationWindow {
                             Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
                         }
                         Kirigami.Heading {
+                            objectName: "approvalTitle"
                             Layout.fillWidth: true
                             level: 4
-                            text: "Hermes bittet um Freigabe"
+                            text: qsTr("Hermes bittet um Freigabe")
                             elide: Text.ElideRight
                         }
                     }
@@ -1257,12 +1265,12 @@ Kirigami.ApplicationWindow {
                     Controls.Label {
                         Layout.fillWidth: true
                         visible: (backend.approval.description || "") !== ""
-                        text: "Warum: " + (backend.approval.description || "")
+                        text: qsTr("Warum: ") + (backend.approval.description || "")
                         wrapMode: Text.WordWrap
                     }
                     Controls.Label {
                         Layout.fillWidth: true
-                        text: "Ohne Antwort läuft der Befehl nicht."
+                        text: qsTr("Ohne Antwort läuft der Befehl nicht.")
                         font: Kirigami.Theme.smallFont
                         opacity: 0.7
                         wrapMode: Text.WordWrap
@@ -1287,7 +1295,7 @@ Kirigami.ApplicationWindow {
     Kirigami.ScrollablePage {
         id: libraryPage
         objectName: "libraryPage"
-        title: "Bibliothek"
+        title: qsTr("Bibliothek")
 
         header: Controls.ToolBar {
             contentItem: RowLayout {
@@ -1296,7 +1304,7 @@ Kirigami.ApplicationWindow {
                     objectName: "libraryBack"
                     icon.name: "go-previous"
                     display: Controls.AbstractButton.IconOnly
-                    text: "Zurück zum Chat"
+                    text: qsTr("Zurück zum Chat")
                     Controls.ToolTip.text: text
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -1310,11 +1318,11 @@ Kirigami.ApplicationWindow {
                 Kirigami.Heading {
                     Layout.fillWidth: true
                     level: 3
-                    text: "Bibliothek"
+                    text: qsTr("Bibliothek")
                     elide: Text.ElideRight
                 }
                 Controls.Label {
-                    text: backend.libraryCount === 1 ? "1 Eintrag" : backend.libraryCount + " Einträge"
+                    text: backend.libraryCount === 1 ? qsTr("1 Eintrag") : qsTr("%1 Einträge").arg(backend.libraryCount)
                     font: Kirigami.Theme.smallFont
                     opacity: 0.7
                 }
@@ -1328,9 +1336,9 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 opacity: 0.8
-                text: "Adressen, Dateien und Ordner, die Hermes kennen soll. Er liest sie bei Bedarf, folgt "
-                    + "Verweisen auf derselben Seite und nennt die Quelle. „Spiegeln“ legt einen durchsuchbaren "
-                    + "Index an, in dem Hermes und du suchen. Neue Einträge gelten ab dem nächsten Gespräch."
+                text: qsTr("Adressen, Dateien und Ordner, die Hermes kennen soll. Er liest sie bei Bedarf, folgt "
+                           + "Verweisen auf derselben Seite und nennt die Quelle. „Spiegeln“ legt einen durchsuchbaren "
+                           + "Index an, in dem Hermes und du suchen. Neue Einträge gelten ab dem nächsten Gespräch.")
             }
 
             Kirigami.FormLayout {
@@ -1338,21 +1346,21 @@ Kirigami.ApplicationWindow {
                 Controls.TextField {
                     id: librarySource
                     objectName: "librarySource"
-                    Kirigami.FormData.label: "Adresse oder Pfad:"
+                    Kirigami.FormData.label: qsTr("Adresse oder Pfad:")
                     Layout.fillWidth: true
-                    placeholderText: "https://docs.kde.org/ oder ein Ordner im Home"
+                    placeholderText: qsTr("https://docs.kde.org/ oder ein Ordner im Home")
                     onAccepted: root.libraryAddCurrent()
                 }
                 RowLayout {
                     Kirigami.FormData.label: " "
                     spacing: Kirigami.Units.smallSpacing
                     Controls.Button {
-                        text: "Datei wählen"
+                        text: qsTr("Datei wählen")
                         icon.name: "document-open"
                         onClicked: { var p = backend.libraryPickFile(); if (p !== "") librarySource.text = p }
                     }
                     Controls.Button {
-                        text: "Ordner wählen"
+                        text: qsTr("Ordner wählen")
                         icon.name: "folder-open"
                         onClicked: { var p = backend.libraryPickFolder(); if (p !== "") librarySource.text = p }
                     }
@@ -1360,17 +1368,17 @@ Kirigami.ApplicationWindow {
                 Controls.TextField {
                     id: libraryTitle
                     objectName: "libraryTitle"
-                    Kirigami.FormData.label: "Titel:"
+                    Kirigami.FormData.label: qsTr("Titel:")
                     Layout.fillWidth: true
-                    placeholderText: "optional, sonst Host oder Dateiname"
+                    placeholderText: qsTr("optional, sonst Host oder Dateiname")
                     onAccepted: root.libraryAddCurrent()
                 }
                 Controls.TextField {
                     id: libraryNote
                     objectName: "libraryNote"
-                    Kirigami.FormData.label: "Notiz für Hermes:"
+                    Kirigami.FormData.label: qsTr("Notiz für Hermes:")
                     Layout.fillWidth: true
-                    placeholderText: "z. B. deutsche Handbücher unter stable_kf6/de"
+                    placeholderText: qsTr("z. B. deutsche Handbücher unter stable_kf6/de")
                     onAccepted: root.libraryAddCurrent()
                 }
                 RowLayout {
@@ -1378,7 +1386,7 @@ Kirigami.ApplicationWindow {
                     spacing: Kirigami.Units.smallSpacing
                     Controls.Button {
                         objectName: "libraryAdd"
-                        text: "Hinzufügen"
+                        text: qsTr("Hinzufügen")
                         icon.name: "list-add"
                         highlighted: true
                         enabled: librarySource.text.trim().length > 0
@@ -1414,7 +1422,7 @@ Kirigami.ApplicationWindow {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
                     opacity: 0.7
-                    text: "Dateien, Ordner oder eine Adresse aus dem Browser hierher ziehen"
+                    text: qsTr("Dateien, Ordner oder eine Adresse aus dem Browser hierher ziehen")
                 }
                 DropArea {
                     id: libraryDropArea
@@ -1443,12 +1451,12 @@ Kirigami.ApplicationWindow {
                     id: librarySearchField
                     objectName: "librarySearchField"
                     Layout.fillWidth: true
-                    placeholderText: "In den Spiegeln suchen, z. B. versteckte Dateien"
+                    placeholderText: qsTr("In den Spiegeln suchen, z. B. versteckte Dateien")
                     onAccepted: root.librarySearchCurrent()
                 }
                 Controls.Button {
                     objectName: "librarySearchButton"
-                    text: "Suchen"
+                    text: qsTr("Suchen")
                     icon.name: "search"
                     enabled: !backend.librarySearching
                     onClicked: root.librarySearchCurrent()
@@ -1517,7 +1525,7 @@ Kirigami.ApplicationWindow {
                             objectName: "librarySearchOpen"
                             icon.name: "document-open"
                             display: Controls.AbstractButton.IconOnly
-                            text: "Öffnen"
+                            text: qsTr("Öffnen")
                             Controls.ToolTip.text: text
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -1533,8 +1541,8 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 visible: backend.libraryCount === 0
                 icon.name: "bookmarks"
-                text: "Noch keine Einträge"
-                explanation: "Trag oben eine Adresse ein, zum Beispiel https://docs.kde.org/, oder wähle eine Datei oder einen Ordner."
+                text: qsTr("Noch keine Einträge")
+                explanation: qsTr("Trag oben eine Adresse ein, zum Beispiel https://docs.kde.org/, oder wähle eine Datei oder einen Ordner.")
             }
 
             Repeater {
@@ -1610,9 +1618,9 @@ Kirigami.ApplicationWindow {
                                 objectName: "libraryMirrorButton"
                                 icon.name: libraryRow.mirroring ? "process-stop" : "view-refresh"
                                 display: Controls.AbstractButton.IconOnly
-                                text: libraryRow.mirroring ? "Spiegeln abbrechen" : "Spiegeln"
+                                text: libraryRow.mirroring ? qsTr("Spiegeln abbrechen") : qsTr("Spiegeln")
                                 Controls.ToolTip.text: libraryRow.mirroring ? text
-                                    : "Spiegeln: Seiten samt Verweisen auf demselben Host in den Index holen (Ordner und Dateien werden indiziert)"
+                                    : qsTr("Spiegeln: Seiten samt Verweisen auf demselben Host in den Index holen (Ordner und Dateien werden indiziert)")
                                 Controls.ToolTip.visible: hovered
                                 Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                                 onClicked: libraryRow.mirroring ? backend.libraryMirrorCancel(libraryRow.modelData.id)
@@ -1622,7 +1630,7 @@ Kirigami.ApplicationWindow {
                                 objectName: "libraryEdit"
                                 icon.name: "document-edit"
                                 display: Controls.AbstractButton.IconOnly
-                                text: "Titel und Notiz ändern"
+                                text: qsTr("Titel und Notiz ändern")
                                 checkable: true
                                 checked: libraryRow.editing
                                 Controls.ToolTip.text: text
@@ -1640,7 +1648,7 @@ Kirigami.ApplicationWindow {
                             Controls.ToolButton {
                                 icon.name: "document-open"
                                 display: Controls.AbstractButton.IconOnly
-                                text: "Öffnen"
+                                text: qsTr("Öffnen")
                                 Controls.ToolTip.text: text
                                 Controls.ToolTip.visible: hovered
                                 Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -1650,7 +1658,7 @@ Kirigami.ApplicationWindow {
                                 objectName: "libraryRemove"
                                 icon.name: "edit-delete"
                                 display: Controls.AbstractButton.IconOnly
-                                text: "Entfernen"
+                                text: qsTr("Entfernen")
                                 Controls.ToolTip.text: text
                                 Controls.ToolTip.visible: hovered
                                 Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -1664,14 +1672,14 @@ Kirigami.ApplicationWindow {
                             Controls.TextField {
                                 id: libraryEditTitle
                                 objectName: "libraryEditTitle"
-                                Kirigami.FormData.label: "Titel:"
+                                Kirigami.FormData.label: qsTr("Titel:")
                                 Layout.fillWidth: true
                                 onAccepted: root.librarySaveRow(libraryRow)
                             }
                             Controls.TextField {
                                 id: libraryEditNote
                                 objectName: "libraryEditNote"
-                                Kirigami.FormData.label: "Notiz für Hermes:"
+                                Kirigami.FormData.label: qsTr("Notiz für Hermes:")
                                 Layout.fillWidth: true
                                 onAccepted: root.librarySaveRow(libraryRow)
                             }
@@ -1680,13 +1688,13 @@ Kirigami.ApplicationWindow {
                                 spacing: Kirigami.Units.smallSpacing
                                 Controls.Button {
                                     objectName: "librarySave"
-                                    text: "Speichern"
+                                    text: qsTr("Speichern")
                                     icon.name: "document-save"
                                     highlighted: true
                                     onClicked: root.librarySaveRow(libraryRow)
                                 }
                                 Controls.Button {
-                                    text: "Abbrechen"
+                                    text: qsTr("Abbrechen")
                                     icon.name: "dialog-cancel"
                                     onClicked: libraryRow.editing = false
                                 }
@@ -1701,16 +1709,16 @@ Kirigami.ApplicationWindow {
             // Doku-Server aus Hermes' MCP-Katalog: Schalter in ~/.hermes/config.yaml
             Kirigami.Heading {
                 level: 4
-                text: "Doku-Server (MCP)"
+                text: qsTr("Doku-Server (MCP)")
             }
             Controls.Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 opacity: 0.8
-                text: "Server aus Hermes' Katalog, die Fragen zu Bibliotheken, Frameworks und fremden Projekten aus "
-                    + "deren Dokumentation beantworten. Ein Schalter trägt den Server in Hermes' config.yaml ein oder "
-                    + "aus; das Gateway übernimmt das von selbst innerhalb etwa einer Minute, ein laufendes Gespräch "
-                    + "ab dem nächsten neuen Gespräch."
+                text: qsTr("Server aus Hermes' Katalog, die Fragen zu Bibliotheken, Frameworks und fremden Projekten aus "
+                           + "deren Dokumentation beantworten. Ein Schalter trägt den Server in Hermes' config.yaml ein oder "
+                           + "aus; das Gateway übernimmt das von selbst innerhalb etwa einer Minute, ein laufendes Gespräch "
+                           + "ab dem nächsten neuen Gespräch.")
             }
             Repeater {
                 model: backend.libraryMcp
@@ -1764,7 +1772,7 @@ Kirigami.ApplicationWindow {
     Kirigami.ScrollablePage {
         id: auditPage
         objectName: "auditPage"
-        title: "Protokoll"
+        title: qsTr("Protokoll")
 
         header: Controls.ToolBar {
             contentItem: ColumnLayout {
@@ -1776,7 +1784,7 @@ Kirigami.ApplicationWindow {
                         objectName: "auditBack"
                         icon.name: "go-previous"
                         display: Controls.AbstractButton.IconOnly
-                        text: "Zurück zum Chat"
+                        text: qsTr("Zurück zum Chat")
                         Controls.ToolTip.text: text
                         Controls.ToolTip.visible: hovered
                         Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -1790,12 +1798,12 @@ Kirigami.ApplicationWindow {
                     Kirigami.Heading {
                         Layout.fillWidth: true
                         level: 3
-                        text: "Protokoll"
+                        text: qsTr("Protokoll")
                         elide: Text.ElideRight
                     }
                     Controls.Label {
                         objectName: "auditCount"
-                        text: backend.auditCount === 1 ? "1 Eintrag" : backend.auditCount + " Einträge"
+                        text: backend.auditCount === 1 ? qsTr("1 Eintrag") : qsTr("%1 Einträge").arg(backend.auditCount)
                         font: Kirigami.Theme.smallFont
                         opacity: 0.7
                     }
@@ -1816,16 +1824,16 @@ Kirigami.ApplicationWindow {
                     Controls.CheckBox {
                         id: auditChangesBox
                         objectName: "auditChangesOnly"
-                        text: "Nur Änderungen"
+                        text: qsTr("Nur Änderungen")
                         checked: backend.auditChangesOnly
-                        Controls.ToolTip.text: "Nur Systembefehle, die wirklich gelaufen sind"
+                        Controls.ToolTip.text: qsTr("Nur Systembefehle, die wirklich gelaufen sind")
                         Controls.ToolTip.visible: hovered
                         Controls.ToolTip.delay: Kirigami.Units.toolTipDelay
                         onToggled: backend.auditSetFilter(backend.auditPeriod, checked)
                     }
                     Controls.Button {
                         objectName: "auditExport"
-                        text: "Exportieren"
+                        text: qsTr("Exportieren")
                         icon.name: "document-save-as"
                         enabled: backend.auditCount > 0
                         onClicked: root.auditExportCurrent()
@@ -1838,7 +1846,8 @@ Kirigami.ApplicationWindow {
                     visible: text !== ""
                     wrapMode: Text.WordWrap
                     font: Kirigami.Theme.smallFont
-                    color: text.indexOf("fehlgeschlagen") >= 0 || text.indexOf("nicht verfügbar") >= 0
+                    // Fehlermeldungen erkennt die Seite an diesen Wörtern, in jeder Sprache
+                    color: text.indexOf(qsTr("fehlgeschlagen")) >= 0 || text.indexOf(qsTr("nicht verfügbar")) >= 0
                         ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
                 }
             }
@@ -1851,16 +1860,17 @@ Kirigami.ApplicationWindow {
             spacing: Kirigami.Units.smallSpacing
             topMargin: Kirigami.Units.smallSpacing
             bottomMargin: Kirigami.Units.smallSpacing
-            readonly property string today: Qt.formatDate(new Date(), "dd.MM.yyyy")
+            // Format wie die Spalte date aus audit.py (deutsch 29.09.2026, englisch 2026-09-29)
+            readonly property string today: Qt.formatDate(new Date(), qsTr("dd.MM.yyyy"))
 
             Kirigami.PlaceholderMessage {
                 anchors.centerIn: parent
                 width: parent.width - Kirigami.Units.gridUnit * 4
                 visible: auditList.count === 0
                 icon.name: "view-history"
-                text: backend.auditChangesOnly ? "Keine Änderungen am System" : "Noch nichts protokolliert"
-                explanation: "Hier steht, was Hermes am System getan hat: jede Freigabe-Anfrage mit Entscheidung, "
-                    + "jeder Systembefehl mit Ergebnis und jeder App-Start. Andere Zeiträume stehen oben zur Wahl."
+                text: backend.auditChangesOnly ? qsTr("Keine Änderungen am System") : qsTr("Noch nichts protokolliert")
+                explanation: qsTr("Hier steht, was Hermes am System getan hat: jede Freigabe-Anfrage mit Entscheidung, "
+                                  + "jeder Systembefehl mit Ergebnis und jeder App-Start. Andere Zeiträume stehen oben zur Wahl.")
             }
 
             delegate: Rectangle {
@@ -1940,7 +1950,7 @@ Kirigami.ApplicationWindow {
                         Controls.ToolButton {
                             objectName: "auditOutputToggle"
                             visible: auditRow.output !== ""
-                            text: auditRow.expanded ? "Ausgabe ausblenden" : "Ausgabe zeigen"
+                            text: auditRow.expanded ? qsTr("Ausgabe ausblenden") : qsTr("Ausgabe zeigen")
                             icon.name: auditRow.expanded ? "arrow-up" : "arrow-down"
                             display: Controls.AbstractButton.TextBesideIcon
                             font: Kirigami.Theme.smallFont

@@ -12,6 +12,14 @@ bleibt, wie sie getippt wurde. `hermes` allein, `h:` ohne Frage, `hermesfoo`
 oder `hermes-os` liefern keinen Treffer; `hermes` allein findet weiter den
 Menüeintrag „Hermes“.
 
+In einer englischen Sitzung ([systemagent.md](systemagent.md), „Sprache der
+Oberfläche“) heißt der Treffer „Ask Hermes: <Frage>“ mit dem Untertitel
+„Enter: ask in the Kontor“, die Aktion „Look up only“; Meldungen des
+Nachschlagens sind englisch („Hermes: lookup failed“, „Hermes is not ready“).
+Name, Beschreibung und Syntax-Hilfe der Desktop-Datei haben `[en]`-Fassungen
+(`X-Plasma-Runner-Syntax-Descriptions[en]`). Die Präfixe `hermes` und `h:`
+bleiben in jeder Sprache gleich.
+
 ## Aufbau
 
 | Datei | Aufgabe |

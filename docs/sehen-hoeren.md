@@ -109,6 +109,17 @@ Sekunden) meldet „Hermes hat nichts gehört“. Ohne Gateway sagt die Meldung,
 was verstanden wurde. Nichts davon stürzt ab; der Zustand geht zurück auf
 `idle`.
 
+**In englischer Sitzung** ([systemagent.md](systemagent.md), „Sprache der
+Oberfläche“) lautet die Standardfrage „What am I looking at here? Briefly
+describe …“, die Benachrichtigung „Hermes: What am I looking at?“ mit dem
+Knopf „Discuss in chat“. Der Kopf sagt „Hermes is listening …“, „Hermes is
+transcribing …“, „Hermes is thinking …“ und „Hermes is speaking …“, die
+Meldungen heißen „Hermes cannot listen“, „Hermes heard nothing“ und so
+weiter; vorgelesen wird „Code block skipped“ und „The rest is in the
+window“. Erkennung und Stimme stellt das nicht um: dafür `stt.language: en`
+und eine englische Piper-Stimme in `tts.piper.voice`. Fehlertexte des
+Sprachhelfers (`voice_worker.py`) bleiben deutsch.
+
 ## Was den Rechner verlässt
 
 Ausschnitt und erkannter Text gehen wie jede Chat-Nachricht an den

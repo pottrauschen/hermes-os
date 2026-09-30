@@ -19,6 +19,10 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Die Prüfungen vergleichen deutsche Texte: die Sprache der Oberfläche festhalten,
+# auch wenn die Sitzung englisch ist (tray/lang.py, docs/systemagent.md)
+os.environ["HERMES_OS_LANG"] = "de"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 FAILS = []

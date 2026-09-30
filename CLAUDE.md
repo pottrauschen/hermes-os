@@ -17,7 +17,7 @@ sondern im Second Brain: `/hole hermes-os` lädt sie, `/handoff` sichert sie.
 | `docs/testumgebung.md` | Bauen und Booten im Homelab: Bau-VM 110, Test-VM 112, Import, GPU-Passthrough, VM 112 von hier bedienen (`tests/vm-hilfen.sh`), Stolperfallen, Messwerte, Boot-Checkliste |
 | `docs/einrichtung.md` | Einrichtungsassistent, Brücke in die Hermes-Venv, Abo-Frage |
 | `docs/dashboard.md` | Dashboard: Node-Stufe und `15-dashboard.sh`, Fenster `hermes-os-dashboard` mit `dashboard_server.py`, Start und Stopp des Servers, Gate, Tests, Grenzen, Stolperfallen |
-| `docs/systemagent.md` | Leisten-Symbol: Zustände, Kontor, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Tests, Stolperfallen |
+| `docs/systemagent.md` | Leisten-Symbol: Zustände, Kontor, Bilder hinein und heraus, Kanal zum API-Server des Gateways, Freigaben, Sprache der Oberfläche (Deutsch ab Werk, Englisch per Locale oder `HERMES_OS_LANG`), Tests, Stolperfallen |
 | `docs/morgenbericht.md` | Morgenbericht: täglicher Cron-Job ohne Modell, `os_report` und `desktop_notify`, Knopf „Im Chat besprechen", ujust-Rezepte, Stolperfallen |
 | `docs/bibliothek.md` | Bibliothek: Wissensquellen im Kontor, Ablage, Werkzeuge `library_list`, `library_fetch`, `library_search`, `library_mirror`, Spiegel und Index mit FTS5, Doku-Server-Schalter (MCP), Grenzen, Stolperfallen |
 | `docs/lokales-modell.md` | Lokales Modell, optional: Ollama nicht im Image, Nachladen ins Home mit Prüfsumme, Nutzerdienst, Anbindung an Hermes (custom, 64k Kontext), Modellwahl für 12 GB, Rezepte, Karte im Assistenten, Test in VM 112 |

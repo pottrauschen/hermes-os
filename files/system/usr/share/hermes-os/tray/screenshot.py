@@ -28,7 +28,10 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from lang import _      # Sprache der Oberfläche (tray/lang.py)
+
 SHORTCUT = "Meta+Shift+H"
+# Deutsch und zugleich Schlüssel für tray/lang.py; übersetzt wird beim Gebrauch
 DEFAULT_QUESTION = ("Was sehe ich hier? Beschreibe kurz, was auf diesem Bildschirmausschnitt zu sehen ist, "
                     "und sag, was daran wichtig oder auffällig ist.")
 LOOK_SESSION = "hermes-os-look"     # plus Datum: ein Gespräch je Tag, wie beim Nachschlagen
@@ -51,25 +54,25 @@ def capture_region(path: str, run=subprocess.run, which=shutil.which, timeout: f
     """Ausschnitt aufnehmen. Liefert ("ok", Pfad), ("cancelled", "") wenn der Nutzer
     abgebrochen hat (Escape: Spectacle endet ohne Datei), oder ("error", Text)."""
     if which("spectacle") is None:
-        return "error", "Spectacle ist nicht installiert."
+        return "error", _("Spectacle ist nicht installiert.")
     try:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         if os.path.exists(path):
             os.unlink(path)
     except OSError as exc:
-        return "error", f"Cache nicht beschreibbar: {exc}"
+        return "error", _("Cache nicht beschreibbar: {err}").format(err=exc)
     try:
         proc = run(capture_command(path), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                    stderr=subprocess.PIPE, timeout=timeout)
     except subprocess.TimeoutExpired:
         return "cancelled", ""
     except OSError as exc:
-        return "error", f"Spectacle startet nicht: {exc}"
+        return "error", _("Spectacle startet nicht: {err}").format(err=exc)
     if os.path.isfile(path) and os.path.getsize(path) > 0:
         return "ok", path
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", "replace").strip() if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
-        tail = err.splitlines()[-1][:200] if err else f"Exit {proc.returncode}"
+        tail = err.splitlines()[-1][:200] if err else _("Exit {code}").format(code=proc.returncode)
         return "error", f"Spectacle: {tail}"
     return "cancelled", ""
 
@@ -116,13 +119,13 @@ class LookFlow:
             self.busy = False
 
     def _run(self, question: str, to_window: Optional[bool]) -> str:
-        question = " ".join((question or "").split()) or DEFAULT_QUESTION
+        question = " ".join((question or "").split()) or _(DEFAULT_QUESTION)
         path = capture_path(self.cache_dir)
         status, detail = self._capture(path)
         if status == "cancelled":
             return "cancelled"
         if status != "ok":
-            self._notify("Kein Bildschirmausschnitt", detail)
+            self._notify(_("Kein Bildschirmausschnitt"), detail)
             return "error"
         if to_window is None:
             to_window = bool(self._window_visible())
@@ -132,18 +135,18 @@ class LookFlow:
         try:
             data_url = self._encode(path)
         except (ValueError, OSError) as exc:
-            self._notify("Kein Bildschirmausschnitt", str(exc))
+            self._notify(_("Kein Bildschirmausschnitt"), str(exc))
             return "error"
         ok, answer = self._lookup(self._make_client(), question, look_session_id(), [data_url])
         if not ok:
-            self._notify("Hermes: Nachschlagen fehlgeschlagen", answer)
+            self._notify(_("Hermes: Nachschlagen fehlgeschlagen"), answer)
             return "error"
 
         def on_choice(choice: str) -> None:
             if choice == ACTION_DISCUSS:
                 self._discuss(path, question, answer)
 
-        self._notify_actions(NOTIFY_TITLE, answer, [(ACTION_DISCUSS, DISCUSS_LABEL)], on_choice, path)
+        self._notify_actions(_(NOTIFY_TITLE), answer, [(ACTION_DISCUSS, _(DISCUSS_LABEL))], on_choice, path)
         return "answered"
 
 

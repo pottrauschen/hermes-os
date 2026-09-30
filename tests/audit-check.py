@@ -26,6 +26,10 @@ import tempfile
 import time
 from pathlib import Path
 
+# Die Prüfungen vergleichen deutsche Texte: die Sprache der Oberfläche festhalten,
+# auch wenn die Sitzung englisch ist (tray/lang.py, docs/systemagent.md)
+os.environ["HERMES_OS_LANG"] = "de"
+
 PLUGIN_RULE = "<terminal> (plugin approval rule)"   # so zeigt Hermes eine Plugin-Freigabe an
 
 

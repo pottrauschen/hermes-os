@@ -81,10 +81,19 @@ PC; Python ist `python3-64.exe`, Ausgaben mit `PYTHONIOENCODING=utf-8` lesen.
 
 | Läuft unter Windows | Nur unter Linux (VM oder Build) |
 |---|---|
-| `tray-client-check.py`, `model-choice-check.py`, `library-check.py`, `boundary-check.py`, `runner-check.py` | `library2-check.py`, `audit-check.py` (Dateirechte 0600/0700), `report-check.py` (startet das Symbol), `dashboard-check.py` (startet den Server), `lokales-modell-check.py` (GPU-Attrappe mit Linux-Pfaden), `sehen-hoeren-check.py`, alle `*-gui-check.py`, `tray-showcase.py`, `venv-smoke.sh`, `boot-check.sh` |
+| `tray-client-check.py`, `model-choice-check.py`, `library-check.py`, `boundary-check.py`, `runner-check.py`, `lang-check.py` (der Qt-Teil meldet SKIP) | `library2-check.py`, `audit-check.py` (Dateirechte 0600/0700), `report-check.py` (startet das Symbol), `dashboard-check.py` (startet den Server), `lokales-modell-check.py` (GPU-Attrappe mit Linux-Pfaden), `sehen-hoeren-check.py`, alle `*-gui-check.py`, `tray-showcase.py`, `venv-smoke.sh`, `boot-check.sh` |
 
 Was unter Windows scheitert, läuft im Gate des Builds unter Linux; dort zählt
 es.
+
+Die Oberfläche ist deutsch ab Werk und englisch in englischer Sitzung
+([systemagent.md](systemagent.md), „Sprache der Oberfläche“). Neue sichtbare
+Texte kommen deutsch in `qsTr()` oder `_()` und bekommen einen Eintrag im
+Wörterbuch (`tray/lang.py`, für Grenze und Protokoll
+`plugins/hermes_os/lang.py`); `lang-check.py` findet, was fehlt.
+`audit-check.py`, `model-choice-check.py`, `runner-check.py` und
+`sehen-hoeren-check.py` vergleichen deutsche Texte und setzen deshalb
+`HERMES_OS_LANG=de`, damit sie auch in einer englischen Sitzung bestehen.
 
 ## Oberflächen ohne Bildschirm prüfen
 

@@ -35,6 +35,29 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+
+def _load_lang():
+    """_() aus lang.py neben dieser Datei (Sprache der Seite Protokoll). Im Paket
+    über den relativen Import; ohne Paket (Leisten-Symbol über HERMES_OS_AUDIT_PY,
+    tests/audit-check.py) über den Pfad. Scheitert beides, bleibt es deutsch."""
+    try:
+        from .lang import _ as tr
+        return tr
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang.py")
+        spec = importlib.util.spec_from_file_location("hermes_os_lang", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod._
+    except Exception:
+        return lambda text: text
+
+
+_ = _load_lang()
+
 VERSION = 1
 MAX_BYTES = 5 * 1024 * 1024       # ab hier wird audit.jsonl zu audit.jsonl.1
 MAX_COMMAND = 2000                # Zeichen je Befehl in der Datei
@@ -44,6 +67,9 @@ MEMORY = 256                      # offene Aufrufe, die sich das Plugin merkt
 TRAY_MATCH_SECONDS = 3600         # Klick im Symbol gehört zu einer Anfrage aus dieser Zeitspanne
 
 PERIODS = ("today", "week", "all")
+# Die Texte hier sind deutsch und zugleich die Schlüssel für lang.py; übersetzt
+# wird erst beim Zusammenbauen der Zeilen und des Exports (_finish_row, export_text),
+# also in der Sprache des Prozesses, der liest (Leisten-Symbol).
 PERIOD_LABEL = {"today": "Heute", "week": "Letzte 7 Tage", "all": "Alles"}
 
 GROUP_LABEL = {
@@ -300,19 +326,20 @@ def _finish_row(row: Dict[str, Any]) -> Dict[str, Any]:
         decider = "Nutzer im Leisten-Symbol"
 
     code = row["exit_code"]
-    result_text = STATUS_LABEL[status]
+    result_text = _(STATUS_LABEL[status])
     if isinstance(code, int) and not isinstance(code, bool) and row["kind"] == "command" and status in ("ok", "error"):
-        result_text += f", Exit {code}"
+        result_text += _(", Exit {code}").format(code=code)
     group = row["group"] or ("app" if row["kind"] == "app" else "hermes")
     when = datetime.datetime.fromtimestamp(row["ts"])
     return {
         "id": row["id"], "ts": row["ts"], "kind": row["kind"],
-        "date": when.strftime("%d.%m.%Y"), "time": when.strftime("%H:%M:%S"),
+        # Datum wie qsTr("dd.MM.yyyy") in tray/Main.qml: deutsch 29.09.2026, englisch 2026-09-29
+        "date": when.strftime(_("%d.%m.%Y")), "time": when.strftime("%H:%M:%S"),
         "command": row["command"] or row["raw_command"] or row["description"],
-        "group": group, "groupLabel": GROUP_LABEL.get(group, group),
+        "group": group, "groupLabel": _(GROUP_LABEL.get(group, group)),
         "description": row["description"],
-        "decision": decision, "decisionLabel": DECISION_LABEL.get(decision, decision),
-        "decider": decider, "status": status, "resultText": result_text,
+        "decision": decision, "decisionLabel": _(DECISION_LABEL.get(decision, decision)),
+        "decider": _(decider), "status": status, "resultText": result_text,
         "exitCode": code if isinstance(code, int) and not isinstance(code, bool) else None,
         "output": row["output"] or row["error"],
         # Änderung heißt: der Befehl ist wirklich gelaufen, erfolgreich oder nicht.
@@ -382,23 +409,24 @@ def load_rows(period: str = "all", changes_only: bool = False, path: Optional[Pa
 def export_text(rows: List[Dict[str, Any]], period: str = "all", changes_only: bool = False,
                 now: Optional[float] = None) -> str:
     """Klartext für die Datei aus dem Export-Dialog, älteste Zeile zuerst."""
-    stamp = datetime.datetime.fromtimestamp(time.time() if now is None else now).strftime("%d.%m.%Y %H:%M")
+    stamp = datetime.datetime.fromtimestamp(time.time() if now is None else now).strftime(_("%d.%m.%Y %H:%M"))
+    count = _("1 Eintrag") if len(rows) == 1 else _("{count} Einträge").format(count=len(rows))
     lines = [
-        f"Protokoll von Hermes auf {socket.gethostname()}, erstellt am {stamp}",
-        f"Zeitraum: {PERIOD_LABEL.get(period, period)}; "
-        + ("nur Änderungen am System" if changes_only else "alle Einträge")
-        + f"; {len(rows)} " + ("Eintrag" if len(rows) == 1 else "Einträge"),
+        _("Protokoll von Hermes auf {host}, erstellt am {stamp}").format(host=socket.gethostname(), stamp=stamp),
+        _("Zeitraum: {period}; ").format(period=_(PERIOD_LABEL.get(period, period)))
+        + (_("nur Änderungen am System") if changes_only else _("alle Einträge"))
+        + "; " + count,
         "",
     ]
     if not rows:
-        lines.append("Keine Einträge.")
+        lines.append(_("Keine Einträge."))
     for r in sorted(rows, key=lambda r: r["ts"]):
         head = f"{r['date']} {r['time']}  {r['groupLabel']}"
         if r["decisionLabel"]:
             head += f"  {r['decisionLabel']}" + (f" ({r['decider']})" if r["decider"] else "")
         head += f"  {r['resultText']}"
         lines.append(head)
-        lines.append(("  App: " if r["kind"] == "app" else "  $ ") + r["command"])
+        lines.append((_("  App: ") if r["kind"] == "app" else "  $ ") + r["command"])
         if r["output"]:
             for out in r["output"].splitlines():
                 lines.append("  | " + out)
@@ -413,7 +441,7 @@ def write_export(target: str, rows: List[Dict[str, Any]], period: str = "all", c
             f.write(export_text(rows, period, changes_only))
         return ""
     except OSError as exc:
-        return f"Export fehlgeschlagen: {exc.strerror or exc}"
+        return _("Export fehlgeschlagen: {err}").format(err=exc.strerror or exc)
 
 
 # ---------------------------------------------------------------------------

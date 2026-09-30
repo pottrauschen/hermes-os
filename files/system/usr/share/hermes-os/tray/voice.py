@@ -36,6 +36,8 @@ import wave
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from lang import _      # Sprache der Oberfläche (tray/lang.py); Texte hier deutsch als Schlüssel
+
 SHORTCUT = "Meta+Space"
 ACTION_ID = "push-to-talk"
 ACTION_LABEL = "Mit Hermes sprechen (halten oder antippen)"
@@ -90,10 +92,10 @@ def recorder_command(path: str, tool: Optional[str] = None, which=shutil.which) 
         for name, build in RECORDERS:
             if name == tool:
                 return build(path)
-        raise ValueError(f"unbekannter Rekorder: {tool}")
+        raise ValueError(_("unbekannter Rekorder: {tool}").format(tool=tool))
     found = find_tool(RECORDERS, which)
     if found is None:
-        raise ValueError("kein Aufnahmeprogramm (pw-record, parecord, arecord) gefunden")
+        raise ValueError(_("kein Aufnahmeprogramm (pw-record, parecord, arecord) gefunden"))
     return found[1](path)
 
 
@@ -171,13 +173,13 @@ class Recorder:
             self._proc = self._popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.PIPE, start_new_session=True)
         except OSError as exc:
-            return False, f"{argv[0]} startet nicht: {exc}"
+            return False, _("{program} startet nicht: {err}").format(program=argv[0], err=exc)
         return True, ""
 
     def stop(self) -> Tuple[bool, str]:
         proc, self._proc = self._proc, None
         if proc is None:
-            return False, "keine Aufnahme"
+            return False, _("keine Aufnahme")
         rc = proc.poll()
         if rc is None:
             try:
@@ -197,11 +199,13 @@ class Recorder:
         seconds = wav_seconds(self.path)
         if seconds <= 0:
             self.discard()
-            hint = err.splitlines()[-1][:200] if err else f"Exit {rc}"
-            return False, f"Nichts aufgenommen ({hint}). Ist ein Mikrofon angeschlossen und in den Systemeinstellungen gewählt?"
+            hint = err.splitlines()[-1][:200] if err else _("Exit {code}").format(code=rc)
+            return False, _("Nichts aufgenommen ({hint}). Ist ein Mikrofon angeschlossen und in den "
+                            "Systemeinstellungen gewählt?").format(hint=hint)
         if seconds < MIN_RECORD_SECONDS:
             self.discard()
-            return False, "Zu kurz gedrückt: Kürzel halten und sprechen, oder antippen und beim nächsten Druck beenden."
+            return False, _("Zu kurz gedrückt: Kürzel halten und sprechen, oder antippen und beim nächsten "
+                            "Druck beenden.")
         return True, self.path
 
     def cancel(self) -> None:
@@ -260,7 +264,7 @@ class Worker:
             try:
                 proc = self._ensure()
             except OSError as exc:
-                return {"ok": False, "error": f"Sprachhelfer startet nicht: {exc}"}
+                return {"ok": False, "error": _("Sprachhelfer startet nicht: {err}").format(err=exc)}
             payload = json.dumps({"op": op, **args}, ensure_ascii=False) + "\n"
             result: Dict[str, Any] = {}
 
@@ -280,9 +284,10 @@ class Worker:
                             continue
                         result.update(msg)
                         return
-                    result.update({"ok": False, "error": "Sprachhelfer hat sich beendet"})
+                    result.update({"ok": False, "error": _("Sprachhelfer hat sich beendet"), "worker_failed": True})
                 except (OSError, ValueError) as exc:
-                    result.update({"ok": False, "error": f"Sprachhelfer nicht erreichbar: {exc}"})
+                    result.update({"ok": False, "error": _("Sprachhelfer nicht erreichbar: {err}").format(err=exc),
+                                   "worker_failed": True})
 
             reader = threading.Thread(target=read, name="voice-worker-io", daemon=True)
             reader.start()
@@ -291,9 +296,11 @@ class Worker:
             if timed_out or not result:
                 self._kill()          # der Lese-Thread endet mit dem Prozess
                 if timed_out:
-                    return {"ok": False, "error": f"Sprachhelfer antwortet nicht ({op}, {int(timeout)} s)"}
-                return result or {"ok": False, "error": "Sprachhelfer hat sich beendet"}
-            if not result.get("ok") and result.get("error", "").startswith("Sprachhelfer"):
+                    return {"ok": False,
+                            "error": _("Sprachhelfer antwortet nicht ({op}, {seconds} s)").format(op=op, seconds=int(timeout))}
+                return result or {"ok": False, "error": _("Sprachhelfer hat sich beendet")}
+            # Der Helfer selbst ist ausgefallen (nicht nur der Auftrag): beim nächsten Mal neu starten
+            if not result.get("ok") and result.get("worker_failed"):
                 self._kill()
             return result
 
@@ -326,7 +333,7 @@ class Worker:
 
 # ---- Text fürs Vorlesen -------------------------------------------------------------------
 _MD_PATTERNS = [
-    (re.compile(r"```.*?```", re.DOTALL), " Codeblock ausgelassen. "),
+    (re.compile(r"```.*?```", re.DOTALL), lambda m: _(" Codeblock ausgelassen. ")),
     (re.compile(r"`([^`\n]*)`"), r"\1"),
     (re.compile(r"!\[[^\]]*\]\([^)]*\)"), ""),
     (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),
@@ -354,7 +361,7 @@ def speech_text(text: str, limit: int = MAX_SPEAK_CHARS) -> str:
     if len(text) > limit:
         cut = text[:limit]
         end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "), cut.rfind("\n"))
-        text = (cut[:end + 1] if end > limit // 2 else cut).rstrip() + " … Den Rest zeige ich im Fenster."
+        text = (cut[:end + 1] if end > limit // 2 else cut).rstrip() + _(" … Den Rest zeige ich im Fenster.")
     return text
 
 
@@ -433,7 +440,7 @@ class PushToTalk:
     def _start(self, hold: bool) -> None:
         ok, err = self._a.start_recording()
         if not ok:
-            self._a.notify("Hermes kann nicht zuhören", err or "Aufnahme nicht möglich.")
+            self._a.notify(_("Hermes kann nicht zuhören"), err or _("Aufnahme nicht möglich."))
             self._set("idle")
             return
         self.hold = hold
@@ -450,7 +457,7 @@ class PushToTalk:
         if self.state != "transcribing":
             return
         if not ok:
-            self._a.notify("Hermes hat nichts gehört", path_or_error)
+            self._a.notify(_("Hermes hat nichts gehört"), path_or_error)
             self._set("idle")
             return
         self._a.transcribe(path_or_error)
@@ -459,17 +466,18 @@ class PushToTalk:
         if self.state != "transcribing":
             return
         if not ok:
-            self._a.notify("Hermes hat dich nicht verstanden", text_or_error)
+            self._a.notify(_("Hermes hat dich nicht verstanden"), text_or_error)
             self._set("idle")
             return
         text = " ".join(text_or_error.split())
         if not text:
-            self._a.notify("Hermes hat nichts verstanden", "Bitte noch einmal, etwas näher am Mikrofon.")
+            self._a.notify(_("Hermes hat nichts verstanden"), _("Bitte noch einmal, etwas näher am Mikrofon."))
             self._set("idle")
             return
         self.last_text = text
         if not self._a.ask(text):
-            self._a.notify("Hermes ist nicht bereit", f"Verstanden: „{text}“. Das Gateway antwortet gerade nicht.")
+            self._a.notify(_("Hermes ist nicht bereit"),
+                           _("Verstanden: „{text}“. Das Gateway antwortet gerade nicht.").format(text=text))
             self._set("idle")
             return
         self._set("asking")
@@ -489,7 +497,7 @@ class PushToTalk:
         if self.state != "speaking":
             return
         if error:
-            self._a.notify("Hermes kann nicht sprechen", error)
+            self._a.notify(_("Hermes kann nicht sprechen"), error)
         self._set("idle")
 
 
@@ -530,7 +538,7 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
         def stateText(self):
             if self._ptt.state == "transcribing" and self._loading:
                 return self._loading
-            return STATE_TEXT.get(self._ptt.state, "")
+            return _(STATE_TEXT.get(self._ptt.state, ""))
 
         @Property(str, notify=stateChanged)
         def iconName(self):
@@ -543,9 +551,9 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
         @Property(str, constant=True)
         def unavailableReason(self):
             if self._recorder_tool is None:
-                return "Kein Aufnahmeprogramm (pw-record oder parecord) gefunden."
+                return _("Kein Aufnahmeprogramm (pw-record oder parecord) gefunden.")
             if not self._worker.available:
-                return "Der Sprachhelfer der Hermes-Venv fehlt."
+                return _("Der Sprachhelfer der Hermes-Venv fehlt.")
             return ""
 
         @Property(str, notify=stateChanged)
@@ -587,7 +595,7 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
             if self._recorder_tool is None or not self._worker.available:
                 return False, self.unavailableReason
             if microphone_available() is False:
-                return False, "Kein Mikrofon gefunden. Anschließen und in den Systemeinstellungen unter Audio wählen."
+                return False, _("Kein Mikrofon gefunden. Anschließen und in den Systemeinstellungen unter Audio wählen.")
             return self._recorder.start()
 
         def stop_recording(self):
@@ -610,7 +618,7 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
                 if result.get("ok"):
                     self._event.emit("transcribed", True, str(result.get("text") or ""))
                 else:
-                    self._event.emit("transcribed", False, str(result.get("error") or "Erkennung fehlgeschlagen"))
+                    self._event.emit("transcribed", False, str(result.get("error") or _("Erkennung fehlgeschlagen")))
             threading.Thread(target=work, name="voice-transcribe", daemon=True).start()
 
         def ask(self, text):
@@ -630,12 +638,12 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
                     self._cleanup(out)
                     return
                 if not result.get("ok"):
-                    self._event.emit("speaking_done", False, str(result.get("error") or "Sprachausgabe fehlgeschlagen"))
+                    self._event.emit("speaking_done", False, str(result.get("error") or _("Sprachausgabe fehlgeschlagen")))
                     return
                 argv = player_command(out)
                 if argv is None:
                     self._cleanup(out)
-                    self._event.emit("speaking_done", False, "Kein Abspielprogramm (pw-play, paplay, aplay) gefunden.")
+                    self._event.emit("speaking_done", False, _("Kein Abspielprogramm (pw-play, paplay, aplay) gefunden."))
                     return
                 try:
                     self._player = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -681,9 +689,9 @@ def install(backend, show_window: Callable[[], None], cache_dir: str):
         def _worker_event(self, event):
             # aus dem Lese-Thread des Helfers
             if event.get("event") == "loading":
-                what = "Sprachmodell" if event.get("what") == "stt" else "Stimme"
                 name = event.get("model") or event.get("voice") or ""
-                self._event.emit("loading", True, f"Lade {what} {name} …")
+                text = _("Lade Sprachmodell {name} …") if event.get("what") == "stt" else _("Lade Stimme {name} …")
+                self._event.emit("loading", True, text.format(name=name))
 
         def shutdown(self):
             """Beim Beenden: Aufnahme abbrechen, Helfer beenden, Kürzel bei KGlobalAccel

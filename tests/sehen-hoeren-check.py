@@ -43,6 +43,10 @@ import time
 import wave
 from pathlib import Path
 
+# Die Prüfungen vergleichen deutsche Texte: die Sprache der Oberfläche festhalten,
+# auch wenn die Sitzung englisch ist (tray/lang.py, docs/systemagent.md)
+os.environ["HERMES_OS_LANG"] = "de"
+
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_TRAY = REPO / "files/system/usr/share/hermes-os/tray"
 DEFAULT_DESKTOP = REPO / "files/system/usr/share/kglobalaccel/hermes-os-sehen.desktop"

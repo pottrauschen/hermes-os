@@ -45,6 +45,8 @@
 #          hermes-os-tray --check    Trockenlauf fürs Validierungs-Gate
 # Umgebung: HERMES_OS_TRAY_DIR überschreibt /usr/share/hermes-os/tray
 #           HERMES_HOME wie bei Hermes (Vorgabe ~/.hermes)
+#           HERMES_OS_LANG=en oder de wählt die Sprache der Oberfläche, sonst
+#           die Locale der Sitzung (tray/lang.py, docs/systemagent.md)
 # =============================================================================
 import base64
 import datetime
@@ -76,6 +78,25 @@ SESSION_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser
                             "hermes-os", "tray.json")
 
 sys.path.insert(0, TRAY_DIR)
+# Sprache der Oberfläche (tray/lang.py): Deutsch ab Werk, Englisch in englischer
+# Sitzung. Texte stehen hier deutsch und sind die Schlüssel des Wörterbuchs; _()
+# übersetzt dort, wo sie das Programm verlassen. Ohne lang.py bleibt alles deutsch.
+try:
+    import lang
+except Exception as exc:  # --check meldet es
+    lang = None
+    _LANG_IMPORT_ERROR = str(exc)
+
+
+def _(text):
+    """Text der Oberfläche in der Sprache der Sitzung (tray/lang.py)."""
+    return lang._(text) if lang is not None else text
+
+
+def english():
+    return lang is not None and lang.is_english()
+
+
 try:
     import hermes_client as hc
 except Exception as exc:  # --check meldet es lesbar
@@ -132,6 +153,7 @@ except Exception as exc:  # Fenster läuft ohne Protokoll weiter, --check meldet
     audit = None
     _AUDIT_IMPORT_ERROR = str(exc)
 
+# Deutsch und zugleich Schlüssel für tray/lang.py; übersetzt wird beim Gebrauch
 STATE_TEXT = {
     "off": "Hermes ist aus",
     "nokey": "Hermes läuft, aber der Schlüssel für das Leisten-Symbol fehlt",
@@ -165,6 +187,9 @@ def format_time(stamp):
         return ""
     if when.date() == datetime.date.today():
         return when.strftime("%H:%M")
+    if english():
+        # Monatsnamen fest (lang.MONTHS): nach QApplication liefert %b die Locale („Okt“)
+        return f"{lang.MONTHS[when.month - 1]} {when:%d %H:%M}"
     return when.strftime("%d.%m. %H:%M")
 
 
@@ -265,7 +290,7 @@ def encode_image_for_upload(path):
     from PySide6.QtGui import QImage
     image = QImage(path)
     if image.isNull():
-        raise ValueError(f"Kein lesbares Bild: {os.path.basename(path)}")
+        raise ValueError(_("Kein lesbares Bild: {name}").format(name=os.path.basename(path)))
     if max(image.width(), image.height()) > IMAGE_MAX_EDGE:
         image = image.scaled(IMAGE_MAX_EDGE, IMAGE_MAX_EDGE, Qt.AspectRatioMode.KeepAspectRatio,
                              Qt.TransformationMode.SmoothTransformation)
@@ -283,7 +308,7 @@ def encode_image_for_upload(path):
         data = encode(fmt, quality)
         if 0 < len(data) <= IMAGE_MAX_BYTES:
             return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
-    raise ValueError(f"Bild auch verkleinert zu groß: {os.path.basename(path)}")
+    raise ValueError(_("Bild auch verkleinert zu groß: {name}").format(name=os.path.basename(path)))
 
 
 def approval_timeout_seconds():
@@ -322,6 +347,10 @@ def check_only():
         from PySide6.QtGui import QGuiApplication
         app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1] + ["-platform", "offscreen"])  # noqa: F841
         problems.extend(f"chat_text: {p}" for p in ct.self_test())
+    if lang is None:
+        problems.append(f"lang.py nicht importierbar: {_LANG_IMPORT_ERROR}")
+    else:
+        problems.extend(f"lang: {p}" for p in lang.self_test())
     if lib is None:
         problems.append(f"library.py des Plugins nicht ladbar: {_LIBRARY_IMPORT_ERROR}")
     if audit is None:
@@ -350,15 +379,16 @@ def check_only():
 
 
 def tool_duration(seconds):
-    """Dauer eines Werkzeugaufrufs für die Zeile im Verlauf: „0,3 s“, ab einer Minute
-    „1 min 5 s“; ohne Angabe „fertig“."""
+    """Dauer eines Werkzeugaufrufs für die Zeile im Verlauf: „0,3 s“ (englisch „0.3 s“),
+    ab einer Minute „1 min 5 s“; ohne Angabe „fertig“ („done“)."""
     try:
         s = float(seconds)
     except (TypeError, ValueError):
-        return "fertig"
+        return _("fertig")
     if s >= 60:
         return f"{int(s // 60)} min {int(round(s % 60))} s"
-    return f"{s:.1f} s".replace(".", ",")
+    text = f"{s:.1f} s"
+    return text if english() else text.replace(".", ",")
 
 
 def main():
@@ -624,7 +654,7 @@ def main():
 
         @Property(str, notify=stateChanged)
         def stateText(self):
-            return STATE_TEXT.get(self._state, self._state)
+            return _(STATE_TEXT.get(self._state, self._state))
 
         @Property(str, notify=stateChanged)
         def stateIcon(self):
@@ -693,7 +723,8 @@ def main():
         def effortOptions(self):
             if mc is None:
                 return []
-            return [{"value": v, "label": label, "checked": v == self._choice["effort"]} for v, label in mc.EFFORTS]
+            return [{"value": v, "label": mc.effort_label(v), "checked": v == self._choice["effort"]}
+                    for v, _label in mc.EFFORTS]
 
         def _reload_choice(self):
             if mc is None:
@@ -741,10 +772,11 @@ def main():
             try:
                 mc.write_model(model)
             except Exception as exc:
-                self._model.append("error", f"Modell nicht umgestellt: {type(exc).__name__}: {exc}")
+                self._model.append("error", _("Modell nicht umgestellt: {err}").format(err=f"{type(exc).__name__}: {exc}"))
                 return
             self._reload_choice()
-            self._model.append("info", f"Modell für die nächsten Nachrichten: {mc.model_label(model, self._model_options)}",
+            label = mc.model_label(model, self._model_options)
+            self._model.append("info", _("Modell für die nächsten Nachrichten: {model}").format(model=label),
                                when=now_hhmm())
 
         @Slot(str)
@@ -754,11 +786,11 @@ def main():
             try:
                 mc.write_effort(effort)
             except Exception as exc:
-                self._model.append("error", f"Denkaufwand nicht umgestellt: {type(exc).__name__}: {exc}")
+                self._model.append("error", _("Denkaufwand nicht umgestellt: {err}").format(err=f"{type(exc).__name__}: {exc}"))
                 return
             self._reload_choice()
-            self._model.append("info", f"Denkaufwand für die nächsten Nachrichten: {mc.EFFORT_LABEL.get(effort, effort)}",
-                               when=now_hhmm())
+            self._model.append("info", _("Denkaufwand für die nächsten Nachrichten: {effort}").format(
+                effort=mc.effort_label(effort)), when=now_hhmm())
 
         # ---- Anhänge: Bilder für die nächste Nachricht ------------------------------
         @Property("QVariantList", notify=attachmentsChanged)
@@ -776,7 +808,7 @@ def main():
             if any(a["path"] == path for a in self._attachments):
                 return True
             if len(self._attachments) >= IMAGE_MAX_COUNT:
-                self._model.append("info", f"Höchstens {IMAGE_MAX_COUNT} Bilder je Nachricht.")
+                self._model.append("info", _("Höchstens {count} Bilder je Nachricht.").format(count=IMAGE_MAX_COUNT))
                 return False
             # path geht später verkleinert zum Gateway, url zeigt die Vorschau im Fenster
             self._attachments.append({"path": path, "url": file_url(make_preview(path)),
@@ -799,8 +831,8 @@ def main():
         def attachFromDialog(self):
             start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation) \
                 or os.path.expanduser("~")
-            files, _ = QFileDialog.getOpenFileNames(None, "Bild anhängen", start,
-                                                    "Bilder (*.png *.jpg *.jpeg *.gif *.webp *.bmp);;Alle Dateien (*)")
+            files, _filter = QFileDialog.getOpenFileNames(None, _("Bild anhängen"), start,
+                                                          _("Bilder (*.png *.jpg *.jpeg *.gif *.webp *.bmp);;Alle Dateien (*)"))
             if files:
                 self.attachFiles(list(files))
 
@@ -891,7 +923,7 @@ def main():
                             # Läuft im Gateway (library_mirror) oder blieb nach einem Abbruch des
                             # Symbols stehen: hier gibt es nichts abzubrechen, Spiegeln bleibt möglich
                             row["running"] = False
-                            row["text"] += " (nicht aus diesem Fenster gestartet)"
+                            row["text"] += _(" (nicht aus diesem Fenster gestartet)")
                         self._mirrors[entry_id] = row
                 for entry_id in list(self._mirrors):
                     if entry_id not in stored and entry_id not in self._mirror_jobs:
@@ -955,7 +987,7 @@ def main():
                 self._mirror_jobs.pop(entry_id, None)
                 entry = next((e for e in self._library if e["id"] == entry_id), None)
                 title = entry["title"] if entry else entry_id
-                self._model.append("info", f"Bibliothek: {title}, {lib.describe_mirror(status)}")
+                self._model.append("info", _("Bibliothek: {title}, {state}").format(title=title, state=lib.describe_mirror(status)))
                 if entry_id in self._remove_after_mirror:
                     self._remove_after_mirror.discard(entry_id)
                     self._mirrors.pop(entry_id, None)
@@ -991,17 +1023,18 @@ def main():
             def work():
                 try:
                     if not has_mirror:
-                        self._searchDone.emit(query, [], "Noch kein Spiegel: erst einen Eintrag spiegeln, dann suchen.")
+                        self._searchDone.emit(query, [], _("Noch kein Spiegel: erst einen Eintrag spiegeln, dann suchen."))
                         return
                     hits, mode = lib.search_index(query, "", lib.SEARCH_LIMIT_MAX)
                     if not hits:
-                        note = f"Keine Treffer für „{query}“."
+                        note = _("Keine Treffer für „{query}“.").format(query=query)
                     else:
-                        note = (f"{len(hits)} Treffer" if len(hits) > 1 else "1 Treffer") + f" für „{query}“"
-                        note += " (LIKE-Suche, kein FTS5)." if mode == "like" else "."
+                        note = (_("{count} Treffer für „{query}“").format(count=len(hits), query=query) if len(hits) > 1
+                                else _("1 Treffer für „{query}“").format(query=query))
+                        note += _(" (LIKE-Suche, kein FTS5).") if mode == "like" else "."
                     self._searchDone.emit(query, hits, note)
                 except Exception as exc:  # noqa: BLE001
-                    self._searchDone.emit(query, [], f"Suche fehlgeschlagen: {exc}")
+                    self._searchDone.emit(query, [], _("Suche fehlgeschlagen: {err}").format(err=exc))
 
             threading.Thread(target=work, name="hermes-library-search", daemon=True).start()
 
@@ -1020,7 +1053,7 @@ def main():
         def libraryUpdate(self, entry_id, title, note):
             """Titel und Notiz ändern; leerer Text heißt Erfolg, sonst der Fehler fürs Fenster."""
             if lib is None:
-                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+                return _("Die Bibliothek ist nicht verfügbar (library.py fehlt).")
             _entry, err = lib.update_entry(entry_id, title=title, note=note)
             self.libraryReload()
             return err
@@ -1030,7 +1063,7 @@ def main():
             """Ins Fenster gezogen: Dateien und Ordner aus dem Dateimanager, Adressen aus
             dem Browser (als Adresse oder als Text). Liefert die Meldung für die Seite."""
             if lib is None:
-                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+                return _("Die Bibliothek ist nicht verfügbar (library.py fehlt).")
             sources = []
             for value in urls or []:
                 path = local_path(value)
@@ -1046,7 +1079,7 @@ def main():
                         sources.append(line.strip())
                         break
             if not sources:
-                return "Nichts Verwertbares abgelegt: Dateien, Ordner oder eine http(s)-Adresse."
+                return _("Nichts Verwertbares abgelegt: Dateien, Ordner oder eine http(s)-Adresse.")
             added, errors = [], []
             for source in sources:
                 entry, err = lib.add_entry(source)
@@ -1057,8 +1090,11 @@ def main():
             self.libraryReload()
             parts = []
             if added:
-                parts.append(("Eingetragen: " if len(added) > 1 else "Eingetragen, gilt ab dem nächsten Gespräch: ") + ", ".join(added))
-                self._model.append("info", "Bibliothek: " + ", ".join(added) + " eingetragen, gilt ab dem nächsten Gespräch.")
+                titles = ", ".join(added)
+                parts.append((_("Eingetragen: {titles}") if len(added) > 1
+                              else _("Eingetragen, gilt ab dem nächsten Gespräch: {titles}")).format(titles=titles))
+                self._model.append("info", _("Bibliothek: {titles} eingetragen, gilt ab dem nächsten Gespräch.").format(
+                    titles=titles))
             parts += errors
             return " ".join(parts)
 
@@ -1082,7 +1118,7 @@ def main():
             """Doku-Server in ~/.hermes/config.yaml ein- oder austragen. Das Gateway
             gleicht die Datei von selbst ab; ein Neustart ist nicht nötig."""
             if lib is None:
-                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+                return _("Die Bibliothek ist nicht verfügbar (library.py fehlt).")
             _changed, message = lib.mcp_set(server_id, bool(enabled))
             self._mcp_message = message
             self._mcp = lib.mcp_catalog()
@@ -1093,12 +1129,13 @@ def main():
         def libraryAdd(self, source, title, note):
             """Eintrag anlegen; leerer Text heißt Erfolg, sonst der Fehler fürs Fenster."""
             if lib is None:
-                return "Die Bibliothek ist nicht verfügbar (library.py fehlt)."
+                return _("Die Bibliothek ist nicht verfügbar (library.py fehlt).")
             entry, err = lib.add_entry(source, title, note)
             self.libraryReload()
             if err:
                 return err
-            self._model.append("info", f"Bibliothek: {entry['title']} eingetragen, gilt ab dem nächsten Gespräch.")
+            self._model.append("info", _("Bibliothek: {titles} eingetragen, gilt ab dem nächsten Gespräch.").format(
+                titles=entry["title"]))
             return ""
 
         @Slot(str)
@@ -1118,15 +1155,16 @@ def main():
         def libraryPickFile(self):
             start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
                 or os.path.expanduser("~")
-            path, _ = QFileDialog.getOpenFileName(None, "Datei für die Bibliothek", start,
-                                                  "Texte und Dokumente (*.pdf *.md *.txt *.html *.htm *.rst *.csv *.json *.yaml *.yml);;Alle Dateien (*)")
+            path, _filter = QFileDialog.getOpenFileName(
+                None, _("Datei für die Bibliothek"), start,
+                _("Texte und Dokumente (*.pdf *.md *.txt *.html *.htm *.rst *.csv *.json *.yaml *.yml);;Alle Dateien (*)"))
             return path or ""
 
         @Slot(result=str)
         def libraryPickFolder(self):
             start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
                 or os.path.expanduser("~")
-            return QFileDialog.getExistingDirectory(None, "Ordner für die Bibliothek", start) or ""
+            return QFileDialog.getExistingDirectory(None, _("Ordner für die Bibliothek"), start) or ""
 
         @Slot(str)
         def libraryOpen(self, entry_id):
@@ -1219,16 +1257,17 @@ def main():
             """Gezeigte Zeilen als Textdatei über den Dateidialog; leerer Text heißt
             abgebrochen, sonst eine Meldung fürs Fenster."""
             if audit is None:
-                return "Das Protokoll ist nicht verfügbar (audit.py fehlt)."
+                # „nicht verfügbar“ / „not available“: daran färbt die Seite die Meldung rot
+                return _("Das Protokoll ist nicht verfügbar (audit.py fehlt).")
             start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation) \
                 or os.path.expanduser("~")
-            name = "hermes-protokoll-" + datetime.datetime.now().strftime("%Y-%m-%d") + ".txt"
-            target, _ = QFileDialog.getSaveFileName(None, "Protokoll exportieren", os.path.join(start, name),
-                                                    "Textdateien (*.txt);;Alle Dateien (*)")
+            name = _("hermes-protokoll-{date}.txt").format(date=datetime.datetime.now().strftime("%Y-%m-%d"))
+            target, _filter = QFileDialog.getSaveFileName(None, _("Protokoll exportieren"), os.path.join(start, name),
+                                                          _("Textdateien (*.txt);;Alle Dateien (*)"))
             if not target:
                 return ""
             err = audit.write_export(target, self._audit_rows, self._audit_period, self._audit_changes_only)
-            return err or f"Gespeichert: {target}"
+            return err or _("Gespeichert: {path}").format(path=target)
 
         @Slot()
         def showAudit(self):
@@ -1326,7 +1365,7 @@ def main():
                         text = r["content"]
                         if r["role"] == "user" and "[screenshot]" in text:
                             # Hermes speichert Bildteile nur als Platzhalter (agent/session_persistence.py)
-                            text = text.replace("[screenshot]", "(Bild mitgeschickt)")
+                            text = text.replace("[screenshot]", _("(Bild mitgeschickt)"))
                         rows.append({"role": r["role"], "text": text, "images": images,
                                      "time": format_time(r.get("timestamp"))})
                     out["rows"] = rows
@@ -1340,7 +1379,7 @@ def main():
         def _on_history(self, out):
             if not out.get("ok"):
                 self._history_loaded = False
-                self._model.append("info", f"Verlauf nicht geladen: {out.get('error')}")
+                self._model.append("info", _("Verlauf nicht geladen: {err}").format(err=out.get("error")))
                 return
             self._session_ready = True
             self._model.replace(out["rows"])
@@ -1364,7 +1403,7 @@ def main():
             Verlauf, und mit der nächsten Nachricht geht er als Kontext an Hermes."""
             context = hc.read_context_file(path)
             if not context:
-                self._model.append("info", "Der Bericht zur Benachrichtigung ist nicht mehr da.")
+                self._model.append("info", _("Der Bericht zur Benachrichtigung ist nicht mehr da."))
             else:
                 self._context = context
                 self._show_context()
@@ -1372,7 +1411,7 @@ def main():
 
         def _show_context(self):
             self._model.append("assistant", self._context, when=now_hhmm())
-            self._model.append("info", "Frag nach, was dich daran interessiert; der Bericht geht mit.")
+            self._model.append("info", _("Frag nach, was dich daran interessiert; der Bericht geht mit."))
 
         def discussAnswer(self, question, answer, image_paths):
             """Antwort aus einer Benachrichtigung („Was sehe ich hier?", tray/screenshot.py) ins
@@ -1382,8 +1421,9 @@ def main():
             self._model.append("user", question, images=[file_url(make_preview(p)) for p in paths], when=now_hhmm())
             self._model.append("assistant", answer, when=now_hhmm())
             self.attachFiles(paths)
-            self._context = f"Frage zum Bildschirmausschnitt: {question}\n\nAntwort von Hermes: {answer}"
-            self._model.append("info", "Frag nach, was dich daran interessiert; Ausschnitt und Antwort gehen mit.")
+            self._context = _("Frage zum Bildschirmausschnitt: {question}\n\nAntwort von Hermes: {answer}").format(
+                question=question, answer=answer)
+            self._model.append("info", _("Frag nach, was dich daran interessiert; Ausschnitt und Antwort gehen mit."))
             self.showRequested.emit()
 
         # ---- Senden und Ereignisse ---------------------------------------------
@@ -1465,13 +1505,13 @@ def main():
                 # oder Fehler angehängt, statt dass eine zweite Zeile dazukommt
                 tool = str(event.get("tool") or "")
                 failed = bool(event.get("error"))
-                mark = "Fehler" if failed else tool_duration(event.get("duration"))
+                mark = _("Fehler") if failed else tool_duration(event.get("duration"))
                 meta = "error" if failed else "completed"
-                hit = next((i for i, (t, _) in enumerate(self._open_tools) if t == tool), None)
+                hit = next((i for i, (t, _row) in enumerate(self._open_tools) if t == tool), None)
                 if hit is None:
                     self._model.append("tool", f"{tool} · {mark}", meta)
                 else:
-                    _, row = self._open_tools.pop(hit)
+                    _tool, row = self._open_tools.pop(hit)
                     self._model.set_text(row, f"{self._model.text(row)} · {mark}", meta)
             elif name == "approval.request":
                 choices = [c for c in (event.get("choices") or ["once", "deny"]) if c in hc.APPROVAL_CHOICES]
@@ -1481,7 +1521,7 @@ def main():
                     "command": hc.approval_command(event.get("command"), description),
                     "description": description,
                     "choices": choices,
-                    "labels": [CHOICE_LABEL[c] for c in choices],
+                    "labels": [_(CHOICE_LABEL[c]) for c in choices],
                 }
                 self.approvalChanged.emit()
                 self._set_state("asking")
@@ -1492,14 +1532,14 @@ def main():
                 self._finish_answer(event.get("output"))
                 final = self._model.text(self._assistant_row) if name == "run.completed" and self._assistant_row >= 0 else ""
                 if name == "run.failed":
-                    reason = str(event.get("turn_exit_reason") or event.get("error") or "unbekannt")
-                    self._model.append("error", f"Hermes hat abgebrochen: {reason}")
+                    reason = str(event.get("turn_exit_reason") or event.get("error") or _("unbekannt"))
+                    self._model.append("error", _("Hermes hat abgebrochen: {reason}").format(reason=reason))
                 elif name != "run.completed":
-                    self._model.append("info", "Abgebrochen.")
+                    self._model.append("info", _("Abgebrochen."))
                 self._finish()
                 self.answerFinished.emit(final)
             elif name == "client.error":
-                self._model.append("error", str(event.get("message") or "Fehler"))
+                self._model.append("error", str(event.get("message") or _("Fehler").capitalize()))
                 self._finish()
                 self.answerFinished.emit("")
             elif name == "stream.closed":
@@ -1541,14 +1581,15 @@ def main():
                 # Das Plugin sieht die Wahl auch, aber nicht, dass sie hier fiel
                 audit.record_tray_decision(self._approval.get("command", ""), choice, request_id,
                                            self._approval.get("description", ""))
-            self._model.append("info", f"Freigabe: {CHOICE_LABEL.get(choice, choice)}")
+            self._model.append("info", _("Freigabe: {detail}").format(detail=_(CHOICE_LABEL.get(choice, choice))))
             self._clear_approval()
 
             def work():
                 try:
                     client.approve(run_id, choice, request_id)
                 except hc.GatewayError as exc:
-                    self._runEvent.emit("client.error", {"run_id": run_id, "message": f"Freigabe: {exc}"})
+                    self._runEvent.emit("client.error", {"run_id": run_id,
+                                                         "message": _("Freigabe: {detail}").format(detail=exc)})
 
             threading.Thread(target=work, name="hermes-approve", daemon=True).start()
 
@@ -1579,13 +1620,13 @@ def main():
             args = ["-p", "-a", "hermes-os", "-i", "hermes-os-tray-asking", "-u", "critical",
                     "-t", str(approval_timeout_seconds() * 1000)]
             for c in a["choices"]:
-                args += ["-A", f"{c}={CHOICE_LABEL[c]}"]
+                args += ["-A", f"{c}={_(CHOICE_LABEL[c])}"]
             body = a["command"]
             if a["description"]:
                 body += "\n" + a["description"]
             proc = QProcess(self)
             proc.setProgram("notify-send")
-            proc.setArguments(args + ["Hermes fragt nach einer Freigabe", body])
+            proc.setArguments(args + [_("Hermes fragt nach einer Freigabe"), body])
             proc.notify_id = ""
 
             def read_id():
@@ -1650,6 +1691,12 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(QIcon.fromTheme("hermes-os", QIcon.fromTheme("dialog-messages")))
+    # Englische Sitzung: die qsTr-Texte von Main.qml kommen aus dem Wörterbuch (tray/lang.py).
+    # Vor engine.load, sonst stehen die Bindungen schon deutsch; die Referenz am app-Objekt
+    # hält den Übersetzer am Leben. Deutsch braucht keinen: qsTr liefert den Quelltext.
+    if english():
+        app.hermes_translator = lang.DictTranslator(app)
+        app.installTranslator(app.hermes_translator)
 
     backend = Backend()
     engine = QQmlApplicationEngine()
@@ -1690,13 +1737,13 @@ def main():
 
     tray = QSystemTrayIcon(icon_for(backend.state))
     menu = QMenu()
-    act_open = menu.addAction("Kontor öffnen")
+    act_open = menu.addAction(_("Kontor öffnen"))
     act_open.triggered.connect(toggle_window)
-    act_new = menu.addAction("Neues Gespräch")
+    act_new = menu.addAction(_("Neues Gespräch"))
     act_new.triggered.connect(backend.newConversation)
     # Modell und Denkaufwand: dieselbe Wahl wie der Knopf im Fenster, mit Haken am Stand
-    menu_model = menu.addMenu("Modell")
-    menu_effort = menu.addMenu("Denkaufwand")
+    menu_model = menu.addMenu(_("Modell"))
+    menu_effort = menu.addMenu(_("Denkaufwand"))
 
     def fill_choice_menus():
         menu_model.clear()
@@ -1708,9 +1755,9 @@ def main():
                 act.setChecked(bool(o["checked"]))
                 act.triggered.connect(lambda _checked=False, m=o["id"]: backend.setModel(m))
         else:
-            current = menu_model.addAction(backend.modelText.split(" · ")[0] if backend.modelAvailable else "kein Modell")
+            current = menu_model.addAction(backend.modelText.split(" · ")[0] if backend.modelAvailable else _("kein Modell"))
             current.setEnabled(False)
-            menu_model.addAction("Anderes Modell: Hermes einrichten …").triggered.connect(backend.openSetup)
+            menu_model.addAction(_("Anderes Modell: Hermes einrichten …")).triggered.connect(backend.openSetup)
         menu_effort.clear()
         for e in backend.effortOptions:
             act = menu_effort.addAction(e["label"])
@@ -1724,21 +1771,21 @@ def main():
     backend.refreshModels()     # einmal beim Start, damit der Knopf gleich den kurzen Namen zeigt
     menu.addSeparator()
     if backend.libraryAvailable:
-        menu.addAction("Bibliothek").triggered.connect(backend.showLibrary)
+        menu.addAction(_("Bibliothek")).triggered.connect(backend.showLibrary)
     if backend.auditAvailable:
-        menu.addAction("Protokoll").triggered.connect(backend.showAudit)
+        menu.addAction(_("Protokoll")).triggered.connect(backend.showAudit)
     if look.available:
-        menu.addAction("Was sehe ich hier?").triggered.connect(lambda: look.start())
+        menu.addAction(_("Was sehe ich hier?")).triggered.connect(lambda: look.start())
     if voice.available:
-        menu.addAction("Mit Hermes sprechen").triggered.connect(voice.toggle)
+        menu.addAction(_("Mit Hermes sprechen")).triggered.connect(voice.toggle)
     if backend.dashboardAvailable:
-        menu.addAction("Dashboard öffnen").triggered.connect(backend.openDashboard)
-    menu.addAction("Hermes einrichten").triggered.connect(backend.openSetup)
-    act_gateway = menu.addAction("Gateway starten")
+        menu.addAction(_("Dashboard öffnen")).triggered.connect(backend.openDashboard)
+    menu.addAction(_("Hermes einrichten")).triggered.connect(backend.openSetup)
+    act_gateway = menu.addAction(_("Gateway starten"))
     act_gateway.triggered.connect(backend.startGateway)
-    menu.addAction("Chat im Terminal").triggered.connect(backend.openTerminalChat)
+    menu.addAction(_("Chat im Terminal")).triggered.connect(backend.openTerminalChat)
     menu.addSeparator()
-    menu.addAction("Beenden").triggered.connect(app.quit)
+    menu.addAction(_("Beenden")).triggered.connect(app.quit)
     tray.setContextMenu(menu)
 
     def refresh_tray():

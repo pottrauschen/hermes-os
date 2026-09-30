@@ -26,6 +26,8 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from lang import _      # Sprache der Oberfläche (tray/lang.py); Kennungen bleiben, wie sie sind
+
 SERVICE = "io.github.pottrauschen.hermesos.tray"
 OBJECT_PATH = "/runner"
 INTERFACE = "org.kde.krunner1"
@@ -44,6 +46,7 @@ CATEGORY_HIGHEST = 100
 # Kleinschreibung egal. Die Frage bleibt, wie sie getippt wurde (Umlaute inklusive).
 QUERY_RE = re.compile(r"^\s*(?:hermes(?:\s*[:,]\s*|\s+)|h\s*:\s*)(?P<question>.*)$", re.IGNORECASE | re.DOTALL)
 
+# Der Text ist deutsch und Schlüssel für tray/lang.py; Runner.actions() übersetzt ihn
 ACTIONS: List[Tuple[str, str, str]] = [(ACTION_LOOKUP, "Nur nachschlagen", "system-search")]
 
 INTROSPECTION = """<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
@@ -89,11 +92,11 @@ def build_matches(query: str) -> List[Tuple[str, str, str, int, float, Dict[str,
     if question is None:
         return []
     props: Dict[str, Any] = {
-        "subtext": "Enter: im Kontor fragen",
+        "subtext": _("Enter: im Kontor fragen"),
         "category": "Hermes",
         "actions": [ACTION_LOOKUP],
     }
-    return [(MATCH_ID_PREFIX + question, "Hermes fragen: " + shorten(question, TITLE_MAX_CHARS),
+    return [(MATCH_ID_PREFIX + question, _("Hermes fragen: ") + shorten(question, TITLE_MAX_CHARS),
              "hermes-os", CATEGORY_HIGHEST, 1.0, props)]
 
 
@@ -119,7 +122,7 @@ class Runner:
         return build_matches(query)
 
     def actions(self):
-        return list(ACTIONS)
+        return [(action_id, _(text), icon) for action_id, text, icon in ACTIONS]
 
     def config(self) -> Dict[str, Any]:
         # Nur bei X-Plasma-API=DBus2 abgefragt; die Desktop-Datei setzt denselben Filter.
@@ -227,7 +230,7 @@ def lookup_answer(client, question: str, session_id: Optional[str] = None,
         client.ensure_session(session_id)
         run_id = client.start_run(session_id, question, images) if images else client.start_run(session_id, question)
     except Exception as exc:
-        return False, f"Hermes nicht erreichbar: {exc}"
+        return False, _("Hermes nicht erreichbar: {err}").format(err=exc)
     state: Dict[str, Any] = {"text": "", "denied": False, "error": None, "done": False}
 
     def consume():
@@ -250,11 +253,11 @@ def lookup_answer(client, question: str, session_id: Optional[str] = None,
                     return
                 elif name in ("run.failed", "run.cancelled", "run.interrupted"):
                     reason = str(event.get("turn_exit_reason") or event.get("error") or name)
-                    state["error"] = f"Hermes hat abgebrochen: {reason}"
+                    state["error"] = _("Hermes hat abgebrochen: {reason}").format(reason=reason)
                     return
-            state["error"] = "Verbindung abgebrochen, bevor Hermes fertig war."
+            state["error"] = _("Verbindung abgebrochen, bevor Hermes fertig war.")
         except Exception as exc:
-            state["error"] = f"Verbindung abgebrochen: {exc}"
+            state["error"] = _("Verbindung abgebrochen: {err}").format(err=exc)
 
     reader = threading.Thread(target=consume, name="hermes-lookup-events", daemon=True)
     reader.start()
@@ -265,17 +268,17 @@ def lookup_answer(client, question: str, session_id: Optional[str] = None,
             client.stop(run_id)
         except Exception:
             pass
-        return False, "Keine Antwort in der Zeit. Im Kontor weiterfragen."
+        return False, _("Keine Antwort in der Zeit. Im Kontor weiterfragen.")
     if not state["done"]:
-        return False, state["error"] or "Verbindung abgebrochen, bevor Hermes fertig war."
+        return False, state["error"] or _("Verbindung abgebrochen, bevor Hermes fertig war.")
     text = state["text"]
     if split_media is not None:
         text, _paths = split_media(text)
     text = text.strip()
     if state["denied"]:
-        note = "Hermes wollte einen Befehl mit Freigabe ausführen; beim Nachschlagen wird das abgelehnt."
+        note = _("Hermes wollte einen Befehl mit Freigabe ausführen; beim Nachschlagen wird das abgelehnt.")
         text = (text + "\n\n" + note) if text else note
-    return True, text or "(keine Antwort)"
+    return True, text or _("(keine Antwort)")
 
 
 def notify(title: str, body: str, icon: str = "hermes-os") -> None:
@@ -304,7 +307,7 @@ def start_lookup(make_client: Callable[[], Any], question: str, split_media: Opt
 
     def work():
         ok, text = lookup_answer(make_client(), question, split_media=split_media)
-        notify(title if ok else "Hermes: Nachschlagen fehlgeschlagen", text,
+        notify(title if ok else _("Hermes: Nachschlagen fehlgeschlagen"), text,
                "hermes-os" if ok else "dialog-warning")
 
     threading.Thread(target=work, name="hermes-lookup", daemon=True).start()
@@ -329,7 +332,7 @@ def install(backend, show_window: Callable[[], None], window, make_client: Calla
             QMetaObject.invokeMethod(window, "typeInput", Q_ARG("QVariant", question))
         except Exception:
             pass
-        notify("Hermes ist nicht bereit", "Die Frage aus KRunner steht im Eingabefeld des Kontors.",
+        notify(_("Hermes ist nicht bereit"), _("Die Frage aus KRunner steht im Eingabefeld des Kontors."),
                "dialog-information")
 
     pending = PendingAsk(can_send, backend.send, give_up)

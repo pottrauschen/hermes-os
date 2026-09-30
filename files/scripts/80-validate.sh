@@ -227,10 +227,14 @@ fi
 #     (Menü, Autostart, Kurzbefehl Meta+H über kglobalaccel). --check prüft
 #     PySide6 und den Client, der Client-Test spielt einen ganzen Chat samt
 #     Freigabe gegen ein nachgebautes Gateway durch, der Render-Test die
-#     Zustände des Fensters offscreen. Beide Tests kommen aus /ctx/tests.
+#     Zustände des Fensters offscreen, der Sprach-Test die englische Fassung der
+#     Oberfläche (Deutsch bleibt Vorgabe, docs/systemagent.md). Die Tests kommen
+#     aus /ctx/tests.
 for f in /usr/libexec/hermes-os-tray \
          /usr/share/hermes-os/tray/Main.qml \
          /usr/share/hermes-os/tray/hermes_client.py \
+         /usr/share/hermes-os/tray/lang.py \
+         /usr/share/hermes-os/plugins/hermes_os/lang.py \
          /usr/share/hermes-os/tray/chat_text.py \
          /usr/share/applications/hermes-os-tray.desktop \
          /usr/share/kglobalaccel/hermes-os-tray.desktop \
@@ -291,6 +295,23 @@ if [ -f /ctx/tests/tray-gui-check.py ]; then
   rm -rf /tmp/hermes-validate-xdg
 else
   echo "  WARN: /ctx/tests/tray-gui-check.py not in build context, render check skipped"
+fi
+# Sprache der Oberfläche: beide lang.py entscheiden gleich, jeder Text aus Main.qml
+# und den Modulen hat eine englische Fassung, der Übersetzer greift an der echten
+# Main.qml und ohne ihn bleibt alles deutsch.
+if [ -f /ctx/tests/lang-check.py ]; then
+  mkdir -p /tmp/hermes-validate-xdg
+  if HOME="${HERMES_HOME}" XDG_RUNTIME_DIR=/tmp/hermes-validate-xdg \
+     /usr/bin/python3 /ctx/tests/lang-check.py --tray-dir /usr/share/hermes-os/tray \
+       --plugin-dir /usr/share/hermes-os/plugins/hermes_os --tests-dir /ctx/tests \
+       --tray-bin /usr/libexec/hermes-os-tray; then
+    pass "ui language: german by default, english dictionary covers every visible text, translator works on Main.qml"
+  else
+    fail "ui language check failed (see above)"
+  fi
+  rm -rf /tmp/hermes-validate-xdg
+else
+  echo "  WARN: /ctx/tests/lang-check.py not in build context, language check skipped"
 fi
 
 # 7e. First-Login legt den Schlüssel für den API-Server an. Trockenlauf mit

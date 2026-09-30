@@ -18,3 +18,4 @@ X-Plasma-Runner-Min-Letter-Count=3
 X-Plasma-Runner-Match-Regex=(?i)^ *(hermes[ :,]|h *:)
 X-Plasma-Runner-Syntaxes=hermes :q:,h: :q:
 X-Plasma-Runner-Syntax-Descriptions=Fragt Hermes; Enter öffnet das Kontor mit der Frage,Kurzform von hermes :q:
+X-Plasma-Runner-Syntax-Descriptions[en]=Asks Hermes; Enter opens the Kontor with the question,Short form of hermes :q:

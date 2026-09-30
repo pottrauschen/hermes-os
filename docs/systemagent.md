@@ -1,6 +1,6 @@
 # Systemagent: das Leisten-Symbol
 
-Stand: 2026-09-29. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
+Stand: 2026-09-30. Wie Hermes am Desktop sichtbar wird, ohne Terminal und ohne
 ein Fenster, das dauernd offen steht: ein Symbol in der Systemleiste, das
 Kontor (das Chat-Fenster, Titel „Hermes-Kontor“) mit Sprechblasen und
 Bildern, Freigaben als Benachrichtigung.
@@ -96,6 +96,7 @@ Einzelprüfung.
 | Client für den API-Server, nur Standardbibliothek | `files/system/usr/share/hermes-os/tray/hermes_client.py` |
 | Antworten als HTML mit Absatzabständen für den Verlauf (QTextDocument) | `files/system/usr/share/hermes-os/tray/chat_text.py` |
 | Kürzel und Benachrichtigungen mit Knöpfen, KGlobalAccel über D-Bus | `files/system/usr/share/hermes-os/tray/desktop.py` |
+| Sprache der Oberfläche: `is_english`, Wörterbuch `EN`, `DictTranslator` für `Main.qml` | `files/system/usr/share/hermes-os/tray/lang.py`, für Grenze und Protokoll `plugins/hermes_os/lang.py` |
 | „Was sehe ich hier?“ und Push-to-Talk, Sprachhelfer in der Hermes-Venv | `files/system/usr/share/hermes-os/tray/screenshot.py`, `voice.py`, `voice_worker.py`, siehe [sehen-hoeren.md](sehen-hoeren.md) |
 | Menüeintrag „Hermes", trägt `X-KDE-Shortcuts=Meta+H` | `files/system/usr/share/applications/hermes-os-tray.desktop` |
 | Dieselbe Datei für den globalen Kurzbefehl | `files/system/usr/share/kglobalaccel/hermes-os-tray.desktop` |
@@ -103,6 +104,7 @@ Einzelprüfung.
 | Programmsymbol (geflügelte Sprechblase mit H, Pixel-Art als SVG, ein Pfad je Farbe) und die sechs Zustände (aus, bereit, arbeitet, fragt, hört zu, spricht) | `files/system/usr/share/icons/hicolor/scalable/{apps,status}/` |
 | Client-Test gegen ein nachgebautes Gateway | `tests/tray-client-check.py` |
 | Render-Test des Fensters ohne Display | `tests/tray-gui-check.py` |
+| Sprach-Test: Wörterbücher, Abdeckung, Übersetzer an der echten `Main.qml` | `tests/lang-check.py` |
 | Schaubilder des Fensters für Design-Änderungen (breit und schmal mit echt wirkendem Gespräch, dazu Begrüßung und tippende Punkte) | `tests/tray-showcase.py` |
 
 Wie der Assistent läuft das Symbol mit Fedoras Python und PySide6 aus Aurora,
@@ -197,6 +199,60 @@ gestartet hat. Was im Terminal-Chat oder über Messaging-Plattformen ausgelöst
 wird, fragt weiter dort. Cron und unbeaufsichtigte Läufe sind in der
 Config-Vorlage ohnehin auf `deny`.
 
+## Sprache der Oberfläche
+
+Deutsch ist die Vorgabe, wie das ganze System ab Werk. Ist die Sitzung
+englisch, zeigen Kontor, Menü am Symbol, Tooltip, Benachrichtigungen,
+Freigabe-Kasten, Bibliothek und Protokoll englische Texte, etwa für eine
+Demo-Aufnahme. Es gibt kein gettext und keine `.qm`-Dateien (im Image fehlt
+`lrelease`): der deutsche Text ist der Schlüssel, das Wörterbuch `EN` in
+`tray/lang.py` liefert den englischen dazu.
+
+- **Wer entscheidet:** `lang.is_english()`, bei jedem Aufruf aus der Umgebung.
+  `HERMES_OS_LANG=en` oder `de` gewinnt. Sonst zählt der erste nicht leere Wert
+  aus `LANGUAGE` (nur der Eintrag vor dem ersten Doppelpunkt), `LC_ALL`,
+  `LC_MESSAGES` und `LANG`: englisch, wenn er mit `en` beginnt. Es zählt nur
+  dieser erste Wert, `LC_ALL=C.UTF-8` mit `LANG=en_US.UTF-8` bleibt deutsch,
+  ebenso `LANGUAGE=de` mit `LANG=en_US.UTF-8`.
+- **QML:** Jeder sichtbare Text in `Main.qml` steht deutsch in `qsTr("…")`,
+  Zahlen und Kürzel über `qsTr("… %1 …").arg()`. In englischer Sitzung
+  installiert `hermes-os-tray` vor dem Laden von `Main.qml` einen
+  `DictTranslator` (Unterklasse von `QTranslator` in `tray/lang.py`); in
+  deutscher Sitzung keinen, dann liefert `qsTr` den Quelltext.
+- **Python:** `_()` aus `tray/lang.py` dort, wo ein Text das Programm verlässt:
+  Eigenschaft für QML, Benachrichtigung, Menü, Meldung im Verlauf. Konstanten
+  wie `STATE_TEXT`, `CHOICE_LABEL`, `EFFORTS`, `DEFAULT_QUESTION` und `ACTIONS`
+  bleiben deutsch, weil Tests gegen sie vergleichen.
+- **Plugin:** Grenze (`boundary.py`) und Protokoll (`audit.py`) haben ein
+  eigenes kleines Wörterbuch, `plugins/hermes_os/lang.py`, mit derselben
+  `is_english` als Code-Kopie; das Plugin läuft im Gateway, das Symbol lädt
+  `audit.py` über den Pfad, keiner kennt den Ordner des anderen. Die Meldung
+  der Grenze entsteht im Gateway und folgt dessen Umgebung; die Backticks um
+  den Befehl bleiben in jeder Sprache, weil `hermes_client.approval_command`
+  ihn daraus liest. Die Zeilen des Protokolls baut das Symbol beim Lesen, sie
+  folgen seiner Sprache.
+- **Formate:** Dauer im Verlauf „0,3 s“ oder „0.3 s“, ohne Angabe „fertig“
+  oder „done“; Datum im Verlauf „03.10. 18:31“ oder „Oct 03 18:31“ (Monatsnamen
+  aus `lang.MONTHS`); Datum im Protokoll `29.09.2026` oder `2026-09-29`.
+- **Bleibt deutsch:** Meldungen von `library.py` auf der Seite Bibliothek,
+  Fehlertexte des Gateways (`GatewayError`) und des Sprachhelfers
+  (`voice_worker.py`), der Vorspann für Kontext an den Agenten
+  (`hermes_client.with_context`), Namen der Kürzel in den Systemeinstellungen
+  (`desktop.py`), Einrichtungsassistent, Dashboard, Morgenbericht und der
+  System-Prompt des Plugins. In welcher Sprache Hermes antwortet, erkennt
+  (`stt.language`) und vorliest (`tts.piper.voice`), steht in
+  `~/.hermes/config.yaml`.
+- **Umschalten:** Sprache der Plasma-Sitzung auf Englisch stellen
+  (Systemeinstellungen, Region und Sprache; gilt nach der nächsten Anmeldung),
+  oder nur für Hermes `HERMES_OS_LANG=en` in
+  `~/.config/environment.d/hermes-os-lang.conf`. Danach das Symbol und
+  `hermes-gateway` neu starten, sonst behalten beide ihre alte Umgebung. Die
+  Autostart-Dateien und der KRunner-Eintrag tragen `[en]`-Schlüssel.
+- **Neue Texte:** deutsch schreiben, in `qsTr()` oder `_()` einwickeln, im
+  Wörterbuch einen EN-Eintrag anlegen. `tests/lang-check.py` findet fehlende
+  Schlüssel, vergessene Literale in `Main.qml`, abweichende Platzhalter und
+  Funktionen, die `_` als Wegwerfnamen binden.
+
 ## Testen
 
 Ohne Qt, überall mit Python 3.9 oder neuer, auch auf dem Windows-Arbeitsplatz:
@@ -225,6 +281,21 @@ approval, answered, nokey), gut zum Ansehen nach einer Änderung am Aussehen.
 Das Gate (`80-validate.sh`, 7d und 7e) führt beide Tests im Image-Build aus
 und prüft dazu `hermes-os-tray --check`, die Desktop-Dateien und das
 First-Login-Skript mit einer Wegwerf-`.env`.
+
+Die Sprache prüft `tests/lang-check.py`: Teil 1 bis 4 ohne Qt, auch unter
+Windows; der Qt-Teil lädt die echte `Main.qml` mit den Stubs aus
+`tray-gui-check.py`, ohne Übersetzer deutsch, mit `DictTranslator` englisch
+und danach wieder deutsch. Das Gate führt ihn in 7d aus.
+
+```sh
+python3 tests/lang-check.py --tray-dir files/system/usr/share/hermes-os/tray \
+  --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
+```
+
+`audit-check.py`, `model-choice-check.py`, `runner-check.py` und
+`sehen-hoeren-check.py` vergleichen deutsche Texte und setzen deshalb selbst
+`HERMES_OS_LANG=de`; sie bestehen auch in einer englischen Sitzung.
+Englische Schaubilder zeichnet `tests/tray-showcase.py --lang en`.
 
 Vom Windows-Arbeitsplatz aus läuft der Render-Test per SSH in der Test-VM
 (Dateien mit `sed 's/\r$//'` kopieren, siehe `CLAUDE.md`); die PNGs aus
@@ -293,6 +364,21 @@ Läuft schon eine Instanz aus `/usr`, bekommt die den `--show`-Befehl; vorher
   fallen weg, sonst gewänne die Schrift des Python-Dokuments über die des
   Textfelds. PySide liest `textFormat` nicht (kein Konverter für die
   Aufzählung); der Render-Test erkennt das HTML am Inhalt.
+
+- **`_` ist kein Wegwerfname.** Ruft eine Funktion `_()`, macht ein
+  `a, _ = …` darin den Namen in der ganzen Funktion lokal, und `_()` wirft
+  `UnboundLocalError`. Wegwerfwerte heißen deshalb `_filter`, `_tool` oder
+  ähnlich; `tests/lang-check.py` prüft das.
+- **`strftime("%b")` folgt der Locale.** `QApplication` ruft
+  `setlocale(LC_ALL, "")`; danach liefert `%b` in einer deutschen Sitzung
+  „Okt“, auch wenn `HERMES_OS_LANG=en` gilt. Englische Monatsnamen kommen aus
+  `lang.MONTHS`.
+- **Der Übersetzer braucht `isEmpty() == False`**, sonst meldet
+  `installTranslator` False und schickt kein LanguageChange. Qt fragt auch
+  eigene Kontexte ab (`QGuiApplication`, `QIODevice`); für sie liefert der
+  Übersetzer `None` (Null-QString), dann nimmt Qt den Quelltext. Ein leerer
+  Text `""` wäre für PySide6 ein gültiges Ergebnis und ließe Qt-eigene Menüs
+  (Cut, Copy, Paste) leer.
 
 ## Geplant
 

@@ -43,6 +43,7 @@ lint:
 		files/system/usr/share/hermes-os/setup/hermes_bridge.py files/system/usr/libexec/hermes-os-setup \
 		files/system/usr/share/hermes-os/tray/hermes_client.py files/system/usr/libexec/hermes-os-tray \
 		files/system/usr/share/hermes-os/tray/model_choice.py files/system/usr/share/hermes-os/tray/chat_text.py \
+		files/system/usr/share/hermes-os/tray/lang.py \
 		files/system/usr/libexec/hermes-os-morgenbericht \
 		files/system/usr/share/hermes-os/tray/runner.py files/system/usr/share/hermes-os/tray/dbus_peer.py \
 		files/system/usr/share/hermes-os/dashboard/dashboard_server.py files/system/usr/libexec/hermes-os-dashboard \
@@ -64,6 +65,9 @@ lint:
 		--desktop-file files/system/usr/share/applications/hermes-os-dashboard.desktop
 	python3 tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 	python3 tests/sehen-hoeren-check.py --tray-dir files/system/usr/share/hermes-os/tray
+	@# Sprache der Oberfläche; der Qt-Teil meldet ohne PySide6 SKIP
+	python3 tests/lang-check.py --tray-dir files/system/usr/share/hermes-os/tray \
+		--plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
 	@# Kürzel-Kopien für kglobalaccel müssen den Einträgen im Menü gleichen (80-validate.sh prüft das im Build)
 	@for d in hermes-os-tray hermes-os-sehen; do \
 		diff <(sed 's/\r$$//' files/system/usr/share/applications/$$d.desktop) \
