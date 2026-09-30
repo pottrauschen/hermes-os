@@ -189,7 +189,10 @@ niemanden stören sollen, gibt es die Offscreen-Tests
   `ydotool click 0xC0` in einem Zug kommt dort nicht an, Drücken und
   Loslassen getrennt schon. Die Datei liegt im übersetzten Unterordner,
   in deutscher Sitzung `~/Videos/Bildschirmaufnahmen`. Ein Bildschirmfoto
-  mit Spectacle während der Aufnahme geht an dieselbe Instanz und beendet sie.
+  mit Spectacle während der Aufnahme geht an dieselbe Instanz und beendet sie;
+  `shot` ruft deshalb `spectacle --new-instance`, so wie Hermes' Sichtprüfung,
+  und die Aufnahme läuft weiter. Ob eine Aufnahme läuft, verrät der
+  Leisten-Eintrag „Spectacle“ (`_rec_laeuft`); das Kürzel selbst schaltet nur um.
 - **Platte vergrößern nur mit sudo in der VM.** Der Gast-Agent darf wegen
   SELinux weder `/dev/sda` öffnen noch `systemd-run` aufrufen. Ablauf: auf dem
   Host `qm resize 112 scsi0 +32G`, in der VM `sgdisk -e /dev/sda`,

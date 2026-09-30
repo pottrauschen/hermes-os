@@ -35,11 +35,13 @@ wake() {
   sleep 1
 }
 
+# --new-instance: sonst geht der Aufruf an ein laufendes Spectacle und beendet
+# dessen Aufnahme (rec_start); mit eigener Instanz läuft sie weiter
 shot() {
   local out="${1:-$HOME/hos/s.png}"
   wake
   rm -f "$out"
-  timeout 20 spectacle -b -n -f -o "$out" >/dev/null 2>&1
+  timeout 20 spectacle --new-instance -b -n -f -o "$out" >/dev/null 2>&1
   ls "$out" >/dev/null
 }
 
@@ -47,7 +49,7 @@ shotp() {
   local out="${1:-$HOME/hos/s.png}"
   wake
   rm -f "$out"
-  timeout 20 spectacle -b -n -f -p -o "$out" >/dev/null 2>&1
+  timeout 20 spectacle --new-instance -b -n -f -p -o "$out" >/dev/null 2>&1
   ls "$out" >/dev/null
 }
 
@@ -95,26 +97,51 @@ click() {
 
 # Spectacles Kürzel „Bildschirm aufnehmen“ (Meta+Alt+R) über kglobalaccel. Es
 # startet nicht sofort: ein Fadenkreuz wartet auf den Klick, der den Bildschirm
-# wählt. Ein zweiter Aufruf beendet die Aufnahme. Die Datei landet im
-# übersetzten Unterordner von Videos, in deutscher Sitzung „Bildschirmaufnahmen“.
+# wählt. Das Kürzel schaltet nur um; ob eine Aufnahme läuft, verrät der
+# Leisten-Eintrag „Spectacle“, den es nur während der Aufnahme gibt. Die Datei
+# landet im übersetzten Unterordner von Videos, in deutscher Sitzung
+# „Bildschirmaufnahmen“.
 _rec_toggle() {
   gdbus call --session -d org.kde.kglobalaccel -o /component/org_kde_spectacle_desktop \
     -m org.kde.kglobalaccel.Component.invokeShortcut RecordScreen >/dev/null
 }
 
+_rec_laeuft() {
+  local it
+  for it in $(gdbus call --session -d org.kde.StatusNotifierWatcher -o /StatusNotifierWatcher \
+      -m org.freedesktop.DBus.Properties.Get org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems \
+      | grep -o "'[^']*'" | tr -d "'"); do
+    gdbus call --session -d "${it%%/*}" -o "/${it#*/}" -m org.freedesktop.DBus.Properties.Get \
+      org.kde.StatusNotifierItem Id 2>/dev/null | grep -q "'Spectacle'" && return 0
+  done
+  return 1
+}
+
+# X Y: Punkt für den Klick ins Fadenkreuz, besser auf freiem Desktop
 rec_start() {
+  if _rec_laeuft; then echo "rec_start: es läuft schon eine Aufnahme" >&2; return 1; fi
+  pkill -x spectacle; sleep 0.5    # wartendes Fadenkreuz oder Instanz im Leerlauf
   touch ~/hos/.rec
   _rec_toggle
-  sleep 3
-  click "${1:-400}" "${2:-300}"
+  local i
+  for i in 1 2 3; do
+    sleep 2
+    click "${1:-400}" "${2:-300}"
+    sleep 1
+    _rec_laeuft && return 0
+  done
+  echo "rec_start: Aufnahme ist nicht angelaufen" >&2
+  return 1
 }
 
 rec_stop() {
+  if ! _rec_laeuft; then echo "rec_stop: keine laufende Aufnahme" >&2; return 1; fi
   _rec_toggle
-  sleep 5
+  local i
+  for i in $(seq 1 20); do sleep 0.5; _rec_laeuft || break; done
+  sleep 2
   find "$(xdg-user-dir VIDEOS)" -type f -newer ~/hos/.rec \( -name '*.webm' -o -name '*.mp4' \) | sort | tail -1
 }
-
 # wl-copy ohne offene Ausgaben, sonst hält es die SSH-Sitzung offen; den Text
 # als Argument, weil ein </dev/null hinter der Pipe deren Inhalt verdrängt
 paste() {
