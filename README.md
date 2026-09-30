@@ -1,135 +1,19 @@
 # hermes-os
 
-> Arbeitsname. Der Name steht in `.github/workflows/build.yml` (`IMAGE_BASENAME`), als
-> `ARG IMAGE_NAME` und `LABEL title` in `Dockerfile` und `Dockerfile.nvidia`, im
-> `Makefile` (`IMAGE_NAME`) und in den Pfaden `/usr/share/hermes-os`.
+An atomic desktop Linux with an AI agent as part of the system. The base is
+[Aurora DX](https://getaurora.dev) (Universal Blue, Fedora bootc, KDE Plasma on Wayland). The
+agent is [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research, pinned
+to one release and baked into the image.
 
-Ein atomares Desktop-Linux, in dem ein KI-Agent Systembestandteil ist. Basis ist
-[Aurora DX](https://getaurora.dev) (Universal Blue, Fedora bootc, KDE Plasma auf
-Wayland). Der Agent ist [Hermes Agent](https://github.com/NousResearch/hermes-agent)
-von Nous Research, auf ein Release festgenagelt und ins Image gebacken.
+hermes-os is a working title. It leans on Hermes Agent and can read as a Nous Research product,
+which it is not. A new name is planned for 0.2, picked from the replies to the video post: the
+best suggestion, not the most liked. The name sits in `.github/workflows/build.yml`
+(`IMAGE_BASENAME`), `Dockerfile` and `Dockerfile.nvidia` (`ARG IMAGE_NAME`, `LABEL title`),
+the `Makefile` (`IMAGE_NAME`) and in file and path names under `/usr` (`hermes-os-*`).
 
-Das Repo folgt dem Muster von querencia-linux: ein `Dockerfile`, das nur `build.sh`
-aufruft, nummerierte Skripte in `files/scripts/`, Systemdateien in `files/system/`,
-ein Validierungs-Gate, Build-Tests, Signierung, ein eigener GitHub-Workflow nach dem
-Universal-Blue-Muster.
+## Try it
 
-**Bedienung:** [docs/handbuch.md](docs/handbuch.md). **Weiterentwickeln:**
-[docs/entwicklung.md](docs/entwicklung.md), von dort aus zu allen Einzelthemen.
-
-## Was das System kann und was nicht
-
-| | Stand |
-|---|---|
-| Schreibgeschützte Basis, Updates mit Rollback | Aurora, fertig |
-| Hermes als Nutzerdienst (Messaging, Cron, Sprachnachrichten auf Plattformen) | Hermes, konfiguriert |
-| Einrichtung beim ersten Login: Anbieter, Schlüssel, Modell | Kirigami-Assistent, siehe [docs/einrichtung.md](docs/einrichtung.md) |
-| Sichtbarer Agent am Desktop: Symbol in der Systemleiste mit Zuständen, Kontor (das Chat-Fenster) per Klick oder Meta+H mit Bildern (Datei, Strg+V, Ablegen), Freigaben als Benachrichtigung | Leisten-Symbol, seit 26./27.09. in der Plasma-Sitzung von VM 112 im Gebrauch, Freigaben dort am 27.09. in einer Einzelprüfung, siehe [docs/systemagent.md](docs/systemagent.md) |
-| Hermes aus KRunner fragen: Alt+Leertaste, `hermes <Frage>` oder `h: <Frage>`, Enter öffnet das Kontor mit der Frage, „Nur nachschlagen“ antwortet als Benachrichtigung | KRunner-Runner im Leisten-Symbol, gebaut, am 27.09. in der Plasma-Sitzung von VM 112 geprüft, siehe [docs/krunner.md](docs/krunner.md) |
-| Optional ohne Cloud: lokales Modell auf der eigenen GPU (Ollama nicht im Image, wird auf Wunsch ins Home geladen, Nutzerdienst, Vorgabe `qwen3.5:9b` für 12 GB) | Karte im Assistenten, `ujust hermes-lokal-ein`, `ujust hermes-lokal-entfernen`, siehe [docs/lokales-modell.md](docs/lokales-modell.md); in VM 112 auf der RTX 3060 mit CUDA geprüft, kleine Modelle bleiben schwächer als Cloud-Modelle |
-| Sehen und Hören am Desktop: Meta+Umschalt+H fragt zu einem Bildschirmausschnitt, Meta+Leertaste halten spricht mit Hermes, die Antwort wird vorgelesen; Erkennung (faster-whisper) und Ausgabe (piper) laufen lokal | Leisten-Symbol, gebaut, Tests ohne Hardware grün, „Was sehe ich hier?“ in VM 112 im Gebrauch, Sprechen und Vorlesen ungeprüft (kein Mikrofon), siehe [docs/sehen-hoeren.md](docs/sehen-hoeren.md); im Terminal: `hermes`, dann `/voice on` |
-| Undo für Projektdateien (Checkpoints vor write/patch und destruktiven Shell-Befehlen) | Hermes, eingeschaltet |
-| Gefährliche Befehle fragen, Rest läuft frei | Hermes Approval-Gate plus Plugin-Hook, siehe unten |
-| Das System kennt sich selbst (Image, Dienste, Apps, Hardware, Netz, Journal, Updates, Sprache und Tastatur) | Plugin `hermes_os`, Phase 2, lesend, ohne Root |
-| Deutsch ab Werk: Systemlocale, Konsolen- und X11-Tastatur, Plasma-Sprache und -Tastatur, Zeitzone Europe/Berlin | Vorgaben in `/etc` und `/etc/xdg`, änderbar in den Systemeinstellungen; Rezeptur für den Agenten im Skill |
-| Wissensquellen für den Agenten: Adressen, Dateien und Ordner, die er bei Bedarf liest und zitiert; Spiegel je Eintrag mit Volltextsuche (SQLite FTS5), Doku-Server context7 und deepwiki als Schalter | Bibliothek, Stufe zwei, Seite im Kontor mit Ablegen, Suche und Spiegeln, siehe [docs/bibliothek.md](docs/bibliothek.md) |
-| Morgenbericht: einmal am Tag Updates, neue Journal-Fehler, Plattenplatz und Dienste als Benachrichtigung, Knopf „Im Chat besprechen" | `ujust hermes-morgenbericht-ein`, gebaut, am 27.09. in VM 112 in einer Einzelprüfung gelaufen, siehe [docs/morgenbericht.md](docs/morgenbericht.md) |
-| Apps per Sprache starten | `app_launch`, fertig |
-| Hermes' eigenes Web-Dashboard als Fenster: Modelle, Schlüssel, Sessions, Cron, Plugins, Skills, Umgebung | Frontend in der Node-Stufe des Dockerfiles gebaut, Fenster mit QtWebEngine, Menü, Leisten-Symbol, `ujust hermes-dashboard`; offscreen gegen das echte Hermes geprüft, am 27.09. in der Plasma-Sitzung von VM 112 in einer Einzelprüfung gelaufen, siehe [docs/dashboard.md](docs/dashboard.md) |
-| Fenster steuern, tippen, klicken, Widgets lesen (AT-SPI) | Phase 3, Plan in [docs/phase3-desktop.md](docs/phase3-desktop.md) auf Basis von agent-cu |
-| Nachvollziehen ohne Terminal, was der Agent am System getan hat: Freigaben mit Entscheidung, Systembefehle mit Ergebnis, App-Starts, Filter und Export | Protokoll, Seite im Kontor, siehe [docs/protokoll.md](docs/protokoll.md); Portal-Vermittler und manipulationsfestes Log bleiben Phase 4 |
-
-## Aufbau
-
-```
-Basis-Image (Aurora DX)         /usr, read-only, bootc, Rollback
-  + Hermes v2026.9.24 (0.21.5)  /usr/lib/hermes-agent, eigene Python-3.13-Venv (uv), vorkompiliert
-  + uv                          /usr/bin/uv, Installer für Nachinstallationen ins Home
-  + Lokales Modell, optional    Nutzerdienst ollama.service; Ollama 0.34.4 selbst nicht im Image, `ujust hermes-lokal-ein` lädt es nach ~/.local/share/hermes-os/ollama, Modelle unter ~/.local/share/ollama
-  + Agent-Schicht               /usr/share/hermes-os: Plugin, Skill, Config-Vorlage, ujust-Rezepte
-  + Einrichtung                 /usr/libexec/hermes-os-setup (Kirigami, PySide6 aus Aurora) + setup/hermes_bridge.py in der Venv
-  + Leisten-Symbol              /usr/libexec/hermes-os-tray (Kirigami, PySide6) + tray/hermes_client.py, spricht mit dem API-Server des Gateways (127.0.0.1:8642)
-  + Dashboard                   /usr/libexec/hermes-os-dashboard (QtWebEngine, PySide6) zeigt `hermes dashboard` (127.0.0.1:9119); Frontend aus der Node-Stufe unter hermes_cli/web_dist
-  + Dienst                      hermes-gateway.service (User-Unit, an graphical-session gebunden)
-  + First-Login                 legt ~/.hermes an, verlinkt Plugin und Skill, legt den API-Schlüssel an, öffnet den Assistenten
-Nutzerdaten                     ~/.hermes: Config, Sessions, Memory, Checkpoints, lazy-packages
-Apps                            Flatpak
-Entwicklung                     Distrobox / Podman
-```
-
-Vier Schichten, vier Update-Zyklen. Hermes wird nur über ein neues Image aktualisiert.
-Der Launcher fängt `hermes update` ab und verweist auf `ujust update`; darunter trägt der
-Code den Install-Stempel `apt`, den Termux-Wert, weil Hermes damit verlässlich mit Exit 2
-verweigert. Ein Hermes-Bump ist eine Änderung von `HERMES_REF` im `Dockerfile`.
-
-Die Hermes-Tags `v2026.x.y` liegen auf der Release-Linie 0.21.x mit Python 3.11 bis 3.13.
-Der main-Zweig ist bereits bei Python 3.14 und einem anderen Build-System. Wer main pinnt,
-muss `HERMES_PYTHON` anheben und `10-hermes.sh` anpassen.
-
-Optionale Backends, die Hermes erst bei Gebrauch nachlädt (Messaging-SDKs, Wake-Word,
-Cloud-Suche), landen über `HERMES_LAZY_INSTALL_TARGET` unter `~/.hermes/lazy-packages`,
-nie in der read-only Venv. Die Variable setzen der Launcher und
-`/usr/lib/environment.d/60-hermes-os.conf`, letzteres auch für die Gateway-Unit, die
-`hermes setup` selbst unter `~/.config/systemd/user` anlegt.
-
-## Die Grenze
-
-Frei: Home, Container, Flatpak, Apps starten, `systemctl --user`, lesende Befehle,
-auch mit sudo. Fragen: bootc, rpm-ostree, `ujust update`, Systemdienste, `/etc`, `/usr`,
-Firewall, Nutzer, sudo mit allem außer reinen Lesebefehlen, Root-Shells, Partitionen,
-systemweite Sprache und Tastatur (`localectl set-*`). Neustart und Herunterfahren
-verweigert der Hook; der Agent bittet den Nutzer darum.
-
-Das ist eine Systemgrenze, keine Datengrenze: Alles im Home ist frei, auch User-Units,
-Autostart, `~/.ssh` und Netzwerkzugriffe. Die eigentliche Barriere gegen Systemänderungen
-ist, dass der Nutzer ohne Passwort kein Root hat; der Hook sorgt dafür, dass der Agent
-fragt, bevor er es versucht. Er erkennt Befehle, keine Wirkungen: Was ein Skript oder
-`python3 -c` im Inneren tut, sieht er nicht.
-
-Drei Stellen setzen das durch:
-
-- **System-Prompt-Section** in `plugins/hermes_os/__init__.py`, die der Agent in jeder
-  Session liest.
-- **`approvals.smart_policy`** in `config.yaml.default` für den Guardian. Der sieht nur
-  Befehle, die Hermes' eigener Detektor als gefährlich erkennt (rm -r, Schreiben nach
-  /etc, systemctl stop/mask).
-- **`pre_tool_call`-Hook** in `plugins/hermes_os/boundary.py` für alles, was der Detektor
-  nicht kennt. Er zerlegt den Befehl wie eine Shell, entschachtelt `sh -c`, `xargs`,
-  `find -exec`, `flatpak-spawn --host` und andere Hüllen und schickt Treffer in Hermes'
-  Freigabe-Dialog (CLI-Prompt, Gateway `/approve`; ohne Menschen verweigert). Scheitert
-  die Prüfung selbst, fragt er ebenfalls.
-
-Vertrag, Abdeckung, Allowlist und Restlücken in [docs/grenze.md](docs/grenze.md), die
-Angriffsbatterie in `tests/boundary-check.py`.
-
-## Bauen
-
-Lokal, mit Podman auf Linux:
-
-```sh
-make lint            # Syntax, überall
-make image           # AMD/Intel
-make image VARIANT=nvidia
-make qcow2 && make run-qemu-qcow
-```
-
-In CI: Push auf `main` baut beide Varianten und pusht nach `ghcr.io/<owner>/hermes-os`
-und `hermes-os-nvidia`, Tags `latest`, Datum und Commit. Die Image-Version ist
-`<Aurora-Version>.<Datum>`. Wöchentlicher Rebuild montags. Vor dem Build wird die Signatur
-des Aurora-Basis-Images gegen `aurora-cosign.pub` geprüft. Signierung des eigenen Images,
-sobald das Secret `SIGNING_SECRET` (cosign private key) im Repo hinterlegt und der
-zugehörige `cosign.pub` committet ist; `90-signing.sh` trägt ihn dann in die
-Container-Policy des Images ein.
-
-Der Workflow ist bewusst eigenständig und nicht AlmaLinux atomic-ci wie bei
-querencia-linux: dessen Build-Action prüft nach dem Build `rpm -q almalinux-gpg-keys`,
-was auf einer Fedora-Basis scheitert.
-
-Die NVIDIA-Variante ist eine eigene Datei `Dockerfile.nvidia`, weil die FROM-Zeile
-literal sein muss (Signaturprüfung und Versionsableitung lesen sie). `make lint` prüft,
-dass sich beide Dateien nur in dieser Zeile unterscheiden.
-
-Auf einem bestehenden bootc-System (Aurora, Bluefin, Silverblue, Kinoite) umschalten:
+From an existing bootc system (Aurora, Bluefin, Silverblue, Kinoite):
 
 ```sh
 sudo bootc switch ghcr.io/pottrauschen/hermes-os:latest          # AMD / Intel
@@ -137,82 +21,128 @@ sudo bootc switch ghcr.io/pottrauschen/hermes-os-nvidia:latest   # NVIDIA
 sudo reboot
 ```
 
-Das Paket auf GitHub muss dafür öffentlich sein (Packages, hermes-os, Package settings,
-Visibility). Ein per Actions erzeugtes Paket ist anfangs privat.
+At the first login a setup assistant opens. You pick a provider from Hermes' catalogue (for
+example OpenRouter), enter your key, which it checks, and choose a model, or set up a local
+model instead. Later it is “Set up Hermes” in the menu (German default: „Hermes einrichten“) or
+`ujust hermes-setup`. Details: [docs/einrichtung.md](docs/einrichtung.md).
 
-## Nach dem ersten Login
+The image ships German defaults: system locale, keyboard, Plasma language, time zone
+Europe/Berlin, all changeable in System Settings. In an English session (the first of
+`LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` that is set starts with `en`, or
+`HERMES_OS_LANG=en`) the Kontor (the chat window), tray menu, notifications, approvals, library
+and log are in English. The setup assistant, dashboard and morning report are still German, and
+so are messages on the Library page and error texts from the gateway.
 
-Das First-Login-Skript öffnet den Einrichtungsassistenten: Anbieter aus Hermes' Katalog,
-Schlüssel eintragen und prüfen, Modell wählen. Er schreibt `.env` und `config.yaml` über
-Hermes' eigene Helfer und schaltet das Gateway ein. Später erreichbar als „Hermes
-einrichten" im Menü oder `ujust hermes-setup`; der volle Terminal-Wizard bleibt unter
-`ujust hermes-setup-terminal`. Details in [docs/einrichtung.md](docs/einrichtung.md).
+To undo an update: `sudo bootc rollback`, then reboot. There is no `ujust rollback`, and
+`ujust rebase-helper` switches to upstream Aurora, which is wrong here.
 
-Ab dem Login sitzt Hermes als Symbol in der Systemleiste: grau, solange das Gateway
-aus ist, blau wenn bereit, orange während er arbeitet, gelb wenn er eine Freigabe
-braucht. Klick oder Meta+H öffnet das Kontor, in das man auch Bilder legen kann
-(Dateidialog, Strg+V, Ablegen); eine Freigabe kommt zusätzlich als Benachrichtigung mit
-Knöpfen. Meta+Umschalt+H wählt einen Bildschirmausschnitt und fragt Hermes, was darauf
-ist; Meta+Leertaste halten nimmt eine Frage auf, die Antwort wird vorgelesen
-([docs/sehen-hoeren.md](docs/sehen-hoeren.md)). Details in [docs/systemagent.md](docs/systemagent.md). Danach:
+## What it does
 
-```sh
-hermes                        # chatten; Sprache: /voice on (Push-to-Talk)
-ujust hermes-gateway-enable   # Messaging, Cron, Sprachnachrichten auf Plattformen als Dienst
-ujust hermes-doctor
+The status column comes from the test VM. *seen* means in use in its Plasma session, *tried*
+means it ran there in individual checks but not in daily use, *built* means it is in the
+image with tests passing but has not run in a session.
+
+| What | How | Status |
+|---|---|---|
+| Tray icon: grey while the gateway is off, blue when ready, orange while working, yellow when it needs an approval | appears at login | seen |
+| The Kontor: chat with images in and out (file, Ctrl+V, drag and drop) and a picker for model and reasoning effort | click the icon or Meta+H | seen |
+| Ask from KRunner. Enter opens the Kontor with the question; “Look up only” (German default: „Nur nachschlagen“) answers as a notification | Alt+Space, then `hermes <question>` or `h: <question>` | seen |
+| “What am I looking at?” (German default: „Was sehe ich hier?“): select a screen region and Hermes explains it | Meta+Shift+H | seen |
+| Approvals: dangerous commands ask first, with a box in the Kontor and a KDE notification (allow once, this session, always, deny). Unanswered after five minutes, the command does not run | ask for a system update | tried |
+| The log: approvals with the decision, system commands with the result, app launches, with filter and export | clock button in the Kontor | tried |
+| Reboot and shutdown are refused outright, even with sudo. Hermes asks you to do that | ask for a reboot | tried: Hermes refused and asked the user; the block with sudo is covered by the boundary tests |
+| Hermes knows its own system: image, services, apps, hardware, network, journal, updates, language and keyboard, read-only and without root | ask in the Kontor | seen |
+| Apps start on request | ask in the Kontor | built |
+| Local model on your own GPU. Ollama is loaded into your home, it is not in the image. The default for 12 GB is `qwen3.5:9b`; small models stay weaker than cloud models | card in the setup assistant, `ujust hermes-lokal-ein` | tried on an RTX 3060 with CUDA, not yet on AMD |
+| Voice: speak, and the answer is read aloud. Recognition (faster-whisper) and speech (piper) run locally | hold Meta+Space; in a terminal `hermes`, then `/voice on` | built, tests without hardware pass, untested in a session: the test VM has no microphone |
+| Library: web addresses, files and folders that Hermes reads when needed and cites. Entries can be mirrored with full-text search (SQLite FTS5); the doc servers context7 and deepwiki are switches | “Library” in the Kontor (German default: „Bibliothek“) | seen |
+| Morning report: once a day a notification on updates, new journal errors, disk space and services, with a button that opens it in the Kontor | `ujust hermes-morgenbericht-ein` | tried |
+| Hermes' own web dashboard in a window: models, keys, sessions, cron, plugins, skills, environment. Its chat tab stays empty because the Hermes TUI is not built | menu, tray icon, `ujust hermes-dashboard` | tried |
+| From Hermes itself: checkpoints before writes, patches and destructive shell commands allow undo in project files; the gateway serves messaging platforms, cron and voice messages | `ujust hermes-gateway-enable` | Hermes features: checkpoints on, gateway configured |
+| Clicking, typing and reading widgets through AT-SPI, based on agent-cu | not available | plan for phase 3 |
+
+## The boundary
+
+Hermes works freely in your home, in containers and Flatpak, starts apps, uses `systemctl --user`
+and runs read-only commands, even with sudo. It asks first for bootc, rpm-ostree, `ujust update`,
+system services, `/etc`, `/usr`, the firewall, users, sudo beyond pure reads, root shells,
+partitions and system-wide language and keyboard (`localectl set-*`). Reboot and shutdown are
+blocked outright.
+
+This is a system boundary, not a data boundary. User units, autostart and network access in
+the home stay open (Hermes' own detector still asks before writing to `~/.ssh`). The real barrier is that the user has no root without a password;
+the boundary makes Hermes ask before it tries. It recognises commands, not effects: what a
+script or `python3 -c` does inside, it cannot see.
+
+Three places enforce it: a section of the system prompt, `approvals.smart_policy` for what
+Hermes' own detector flags, and a `pre_tool_call` hook in `plugins/hermes_os/boundary.py`. The
+hook parses each command like a shell, unwraps `sh -c`, `xargs`, `find -exec`,
+`flatpak-spawn --host` and other wrappers, and sends matches to Hermes' approval dialog. With
+no human there the answer is no; if the check itself fails, it asks. `tests/boundary-check.py`
+runs 211 cases: 125 asked or refused, 86 free. Details and known gaps:
+[docs/grenze.md](docs/grenze.md).
+
+## How it is built
+
+```
+Base image (Aurora DX)          /usr, read-only, bootc, rollback
+  + Hermes v2026.9.24 (0.21.5)  /usr/lib/hermes-agent, own Python 3.13 venv (uv), precompiled
+  + Local model, optional       user service ollama.service; Ollama 0.34.4 not in the image
+  + Agent layer                 /usr/share/hermes-os: plugin, skill, config template, ujust recipes
+  + Setup, tray, dashboard      /usr/libexec/hermes-os-setup, -tray, -dashboard (Kirigami, QtWebEngine, PySide6)
+  + Service                     hermes-gateway.service (user unit, bound to graphical-session), API on 127.0.0.1:8642
+User data                       ~/.hermes: config, sessions, memory, checkpoints, lazy-packages
+Apps                            Flatpak
+Development                     Distrobox / Podman
 ```
 
-Rollback eines Updates: `sudo bootc rollback`, dann Reboot. Ein `ujust rollback` gibt es
-nicht; `ujust rebase-helper` wechselt auf Upstream-Aurora und ist hier falsch.
+Four layers, four update cycles. Hermes only changes with a new image: the launcher catches
+`hermes update` and points to `ujust update`, and Hermes itself refuses with exit 2. Backends
+that Hermes loads on first use go to `~/.hermes/lazy-packages`, never into the read-only venv.
+CI rebuilds both images on every push to `main` that changes the image (pushes touching only
+docs, tests, README or LICENSE are skipped) and every Monday, and pushes them to ghcr.io.
+Before every CI build, the Aurora base image signature is checked against `aurora-cosign.pub`.
 
-## Testen ohne Podman
+## Status
 
-`tests/venv-smoke.sh` führt den riskantesten Build-Schritt, die Hermes-Venv, außerhalb
-eines Containers aus, lädt das Plugin über den echten Plugin-Loader des Releases und
-prüft den Freigabe-Hook mit Beispielbefehlen. Das prüft die Python-Seite, nicht die
-Fedora-Paketschicht. Braucht uv ab 0.10.
+- Both images build in CI, on Aurora with Fedora 44. The build checks that Hermes 0.21.5 starts
+  from the read-only venv, the plugin loads, the approval hook fires, `hermes update` refuses
+  and `ujust --list` shows the recipes. The Hermes tree in the image is about 1 GB.
+- First boot on 2026-09-26, in a Proxmox VM. It has not run on real hardware yet.
+- The image is not signed yet; that waits for the secret `SIGNING_SECRET` and a `cosign.pub`.
+- A multi-stage review (five investigators, one sceptic each) raised 51 findings before the
+  first boot: 31 confirmed and fixed, 20 rejected.
 
-## Status und offene Punkte
+## Building it yourself
 
-- **Beide Images bauen in CI** und liegen unter `ghcr.io/pottrauschen/hermes-os` und
-  `ghcr.io/pottrauschen/hermes-os-nvidia`. Basis ist Aurora auf Fedora 44. Im Build
-  laufen Validierungs-Gate und Tests durch: Hermes 0.21.5 startet aus der read-only
-  Venv, das Plugin lädt über den echten Plugin-Loader, der Freigabe-Hook greift,
-  Sprachpakete sind importierbar, `hermes update` verweigert, `ujust --list` zeigt die
-  Rezepte. `bootc container lint` ist sauber. Der Hermes-Baum im Image ist rund 1 GB groß.
-- **Erster Boot am 2026-09-26** in einer Proxmox-VM, Ablauf und Befunde in
-  [docs/testumgebung.md](docs/testumgebung.md): Image, Hermes, Plugin, Skill, Rezepte
-  und First-Login greifen. Offen bleibt der Boot auf echter Hardware per `bootc switch`.
-- **Oberfläche, Stand 2026-09-27:** Der Einrichtungsassistent lief beim ersten Boot am
-  2026-09-26 als Testfassung aus dem Home, aus dem Image am 27.09., jeweils in der
-  Plasma-Sitzung von VM 112. Das Leisten-Symbol ist dort seit dem 26. und 27.09. im
-  täglichen Gebrauch: Zustände des Symbols, das Kontor (so heißt das Chat-Fenster seit
-  dem 27.09., Titel „Hermes-Kontor“, neues Symbol: geflügelte Sprechblase mit H), Modell
-  und Denkaufwand, „Hermes fragen“ in KRunner, „Was sehe ich hier?“ und die Bibliothek.
-  Freigabe-Kasten und -Benachrichtigung, Protokoll, Morgenbericht und Dashboard-Fenster
-  sind gebaut und im Build getestet und liefen am 27.09. in Einzelprüfungen in der
-  Sitzung, nicht im Alltag. Ungeprüft ist die Sprache (Sprechen und Vorlesen): VM 112 hat
-  kein Mikrofon. Das Dashboard ist Hermes' eigenes Web-Dashboard (`hermes dashboard`):
-  das Frontend baut eine Node-Stufe im Dockerfile, ein QtWebEngine-Fenster zeigt es,
-  erreichbar aus Menü, Leisten-Symbol, Assistent und `ujust hermes-dashboard`; Fenster
-  und Server sind außerdem offscreen gegen das echte Hermes geprüft, das Gate wiederholt
-  das im Build. Siehe [docs/systemagent.md](docs/systemagent.md),
-  [docs/sehen-hoeren.md](docs/sehen-hoeren.md),
-  [docs/morgenbericht.md](docs/morgenbericht.md) und [docs/dashboard.md](docs/dashboard.md).
-- **Review:** 51 Feststellungen aus einem mehrstufigen Review (fünf Untersucher, je ein
-  Skeptiker), 31 bestätigt und eingearbeitet, 20 verworfen. Nicht übernommen, weil
-  kosmetisch: Auroras `image-info.json` nennt weiterhin `aurora-dx` (fastfetch, MOTD).
-- Basis-Images geprüft (Registry-Manifest und cosign): `ghcr.io/ublue-os/aurora-dx:stable`
-  und `ghcr.io/ublue-os/aurora-dx-nvidia-open:stable`.
-- ujust: Auroras `/usr/bin/ujust` ruft just mit `/usr/share/ublue-os/just/00-entry.just`
-  auf (aus dem Aurora-common-Image), und die importiert eine feste Liste plus optional
-  `60-custom.just`. Unsere Rezepte landen deshalb genau dort.
-- Das Dashboard-Frontend wird in einer eigenen Node-Stufe gebaut, Node kommt nicht ins
-  Image. Die Hermes-TUI wird weiterhin nicht gebaut: CLI, Gateway, Sprache und das
-  Leisten-Symbol brauchen sie nicht; der Chat-Tab im Dashboard, der sie als Kindprozess
-  startet, bleibt damit leer. Chat läuft über das Leisten-Symbol.
-- Phase 3 (Desktop-Steuerung) wird ein eigenes Plugin mit eigener Gefahrenstufe.
+Locally, with Podman on Linux: `make lint` checks syntax anywhere, `make image` builds for
+AMD/Intel, `make image VARIANT=nvidia` for NVIDIA, and `make qcow2 && make run-qemu-qcow`
+boots a disk image in QEMU. A Hermes bump is a change of `HERMES_REF` in `Dockerfile`, `Dockerfile.nvidia` and the `Makefile`. An
+image pushed by Actions starts out private; make the package public before switching to it.
+The workflow is in [docs/entwicklung.md](docs/entwicklung.md), the test VM in
+[docs/testumgebung.md](docs/testumgebung.md).
 
-## Lizenz
+## Documentation
 
-MIT. Hermes Agent ist MIT (Nous Research). Aurora ist Apache 2.0 (Universal Blue).
+- [docs/handbuch.md](docs/handbuch.md): using hermes-os, shortcuts, commands, troubleshooting.
+- [docs/einrichtung.md](docs/einrichtung.md): the setup assistant and what it writes.
+- [docs/systemagent.md](docs/systemagent.md): tray icon and Kontor, approvals, UI language.
+- [docs/krunner.md](docs/krunner.md): asking Hermes from KRunner.
+- [docs/sehen-hoeren.md](docs/sehen-hoeren.md): screen regions and push-to-talk.
+- [docs/grenze.md](docs/grenze.md): the boundary, what asks and what runs freely.
+- [docs/protokoll.md](docs/protokoll.md): the log of what Hermes did to the system.
+- [docs/bibliothek.md](docs/bibliothek.md): the library Hermes reads and cites.
+- [docs/morgenbericht.md](docs/morgenbericht.md): the daily morning report.
+- [docs/dashboard.md](docs/dashboard.md): Hermes' web dashboard as a window.
+- [docs/lokales-modell.md](docs/lokales-modell.md): a local model on your own GPU.
+- [docs/phase3-desktop.md](docs/phase3-desktop.md): the plan for desktop control (phase 3).
+- [docs/entwicklung.md](docs/entwicklung.md): how hermes-os is developed, built and tested.
+- [docs/testumgebung.md](docs/testumgebung.md): building a disk image and booting it in a VM.
+- [docs/release-notes.md](docs/release-notes.md): notes per release.
+
+## License
+
+MIT, © 2026 pottrauschen, see [LICENSE](LICENSE). Hermes Agent is MIT (Nous Research). Aurora
+is Apache 2.0 (Universal Blue).
+
+Built on Hermes Agent by Nous Research.

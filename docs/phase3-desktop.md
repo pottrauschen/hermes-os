@@ -1,71 +1,70 @@
-# Phase 3: Desktop-Steuerung
+# Phase 3: Desktop control
 
-Stand: 2026-09-25. Bewertung von [kortix-ai/agent-computer-use](https://github.com/kortix-ai/agent-computer-use)
-(`agent-cu`, MIT, Rust, Version 0.1.1) als Grundlage für die dritte Tür aus dem Bauplan:
-Widgets semantisch lesen und bedienen über AT-SPI statt Pixel klicken.
+As of 2026-09-25. Assessment of [kortix-ai/agent-computer-use](https://github.com/kortix-ai/agent-computer-use)
+(`agent-cu`, MIT, Rust, version 0.1.1) as the basis for the third door in the blueprint:
+reading and operating widgets semantically via AT-SPI instead of clicking pixels.
 
-## Was agent-cu ist
+## What agent-cu is
 
-Ein einzelnes Binary mit einer CLI, die jede Desktop-App über den Accessibility-Baum
-bedient. Kern-Schleife: `snapshot` liefert die interaktiven Elemente mit Referenzen
-(`@e5`), `click`/`type`/`key` handeln, ein erneuter `snapshot` prüft das Ergebnis. Alle
-Ausgaben sind JSON. Dazu `find` mit Selektoren, `wait-for`, `ensure-text`, `get-value`,
-`batch`, YAML-Workflows zum Wiederabspielen, und eine `SKILL.md`, die einem Agenten
-genau diese Schleife beibringt.
+A single binary with a CLI that operates any desktop app through the accessibility tree.
+Core loop: `snapshot` returns the interactive elements with references (`@e5`),
+`click`/`type`/`key` act, and another `snapshot` verifies the result. All output is JSON.
+On top of that: `find` with selectors, `wait-for`, `ensure-text`, `get-value`, `batch`,
+YAML workflows for replay, and a `SKILL.md` that teaches an agent exactly this loop.
 
-Aufbau: `agent-computer-use-core` (Knoten, Rollen, Selektoren, Aktionen), je ein Crate für
-Linux, macOS, Windows, plus Chrome DevTools für Electron und Browser.
+Structure: `agent-computer-use-core` (nodes, roles, selectors, actions), one crate each for
+Linux, macOS and Windows, plus Chrome DevTools for Electron and browsers.
 
-## Warum es zu hermes-os passt
+## Why it fits hermes-os
 
-- Es ist die Evidence-Idee auf Desktop-Ebene: nichts gilt als getan, bevor ein neuer
-  Snapshot es zeigt. Keine Vision-Tokens, deterministisch.
-- Linux-Backend liest über AT-SPI2 auf D-Bus (`zbus`). AT-SPI ist unabhängig vom
-  Compositor, das Lesen funktioniert also unter Wayland genauso wie unter X11.
-- Ein statisches Binary lässt sich ins Image backen. Die `SKILL.md` lässt sich fast
-  wörtlich als Hermes-Skill übernehmen.
+- It is the evidence idea at desktop level: nothing counts as done until a new
+  snapshot shows it. No vision tokens, deterministic.
+- The Linux backend reads via AT-SPI2 on D-Bus (`zbus`). AT-SPI is independent of the
+  compositor, so reading works under Wayland just as it does under X11.
+- A static binary can be baked into the image. The `SKILL.md` can be adopted almost
+  word for word as a Hermes skill.
 
-## Wo es für hermes-os nicht reicht
+## Where it falls short for hermes-os
 
-Das Linux-Crate teilt sich in zwei Hälften, und nur eine ist Wayland-tauglich:
+The Linux crate splits into two halves, and only one of them works under Wayland:
 
-| Funktion | Umsetzung in 0.1.1 | Unter Plasma Wayland |
+| Function | Implementation in 0.1.1 | Under Plasma Wayland |
 |---|---|---|
-| Baum lesen, Elemente finden, Text, Werte, Fenster auflisten | AT-SPI2 über D-Bus | funktioniert |
-| Klicken, Tippen, Tasten, Fenster aktivieren, verschieben, Screenshot | `xdotool` (X11) | nur XWayland-Fenster, native Qt/GTK-Apps nicht |
-| Fokussiertes Element | nicht implementiert | fehlt |
-| Berechtigungsprüfung | nur Verbindungstest zur Registry | schaltet den a11y-Bus nicht ein |
+| Read the tree, find elements, text, values, list windows | AT-SPI2 via D-Bus | works |
+| Click, type, keys, activate and move windows, screenshot | `xdotool` (X11) | XWayland windows only, not native Qt/GTK apps |
+| Focused element | not implemented | missing |
+| Permission check | only a connection test to the registry | does not switch on the a11y bus |
 
-Klicks werden über `Component.GetExtents` in Koordinaten übersetzt und dann per
-`xdotool` ausgeführt. Die AT-SPI-Schnittstellen `Action` (DoAction: click, press) und
-`EditableText` (SetTextContents) werden nicht benutzt, obwohl sie ohne Zeiger auskommen
-und überall funktionieren.
+Clicks are translated into coordinates via `Component.GetExtents` and then executed with
+`xdotool`. The AT-SPI interfaces `Action` (DoAction: click, press) and
+`EditableText` (SetTextContents) are not used, although they need no pointer
+and work everywhere.
 
-Offen und erst auf dem gebooteten System prüfbar: Qt-Apps unter KDE stellen ihren
-Baum nur bereit, wenn Accessibility aktiv ist (`org.a11y.Status`, oder
-`QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`). agent-cu setzt das nicht selbst.
+Open, and only testable on the booted system: Qt apps under KDE expose their
+tree only when accessibility is active (`org.a11y.Status`, or
+`QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`). agent-cu does not set this itself.
 
 ## Plan
 
-1. **Binary ins Image.** Eigener CI-Job baut `agent-cu` aus dem gepinnten Tag mit Cargo
-   und legt es als Artefakt ab; `files/scripts/30-desktop.sh` kopiert es nach
-   `/usr/bin/agent-cu`. Kein `xdotool` im Image, das wäre X11.
-2. **Hermes-Skill** `hermes-os-desktop` aus der `SKILL.md`, angepasst: keine Claude-Code-
-   Freigaberegeln, stattdessen die hermes-os-Grenze (Apps bedienen ist frei, das System
-   bleibt hinter dem Freigabe-Gate). Gefahrenstufe: `agent-cu` schreibt in Apps, nicht
-   ins System, also frei.
-3. **Wayland-Eingabe beisteuern.** Im Linux-Crate eine zweite Eingabeschicht:
-   zuerst AT-SPI `Action` und `EditableText` (deckt Buttons, Menüs, Textfelder ohne
-   Zeiger ab), dann für echte Zeiger- und Tastatureingabe `libei` über das
-   RemoteDesktop-Portal (Plasma 6 unterstützt es, Freigabe kann dauerhaft gespeichert
-   werden). Fenster aktivieren und verschieben über KWin-Scripting per D-Bus statt
-   `xdotool`. Größenordnung: einige hundert Zeilen Rust. Upstream anbieten, sonst Fork.
-4. **Auf dem Image testen:** a11y-Bus-Status unter KDE, Thunderbird und Konsole über
-   `agent-cu snapshot` lesen, dann einen Klick über `Action`.
+1. **Binary into the image.** A separate CI job builds `agent-cu` from the pinned tag with Cargo
+   and stores it as an artifact; `files/scripts/30-desktop.sh` copies it to
+   `/usr/bin/agent-cu`. No `xdotool` in the image; that would be X11.
+2. **Hermes skill** `hermes-os-desktop` from the `SKILL.md`, adapted: instead of its original
+   approval rules, the hermes-os boundary applies (operating apps is free, the system
+   stays behind the approval gate). Risk level: `agent-cu` writes into apps, not
+   into the system, so it is free.
+3. **Contribute Wayland input.** A second input layer in the Linux crate:
+   first AT-SPI `Action` and `EditableText` (covers buttons, menus and text fields without
+   a pointer), then `libei` via the RemoteDesktop portal for real pointer and keyboard
+   input (Plasma 6 supports it, and the permission can be stored permanently).
+   Activate and move windows via KWin scripting over D-Bus instead of
+   `xdotool`. Scale: a few hundred lines of Rust. Offer it upstream, otherwise fork.
+4. **Test on the image:** a11y bus status under KDE, read Thunderbird and Konsole via
+   `agent-cu snapshot`, then a click via `Action`.
 
-## Risiken
+## Risks
 
-- Junges Projekt: Version 0.1.1, zwei npm-Releases, letzter Commit Mai 2026, ein
-  Hauptautor. Die CLI-Schnittstelle kann sich ändern, also Tag pinnen.
-- Bis Schritt 3 fertig ist, kann der Agent unter Wayland lesen, aber nicht handeln.
-  Für "öffne Thunderbird" reicht weiterhin `app_launch` aus Phase 2.
+- Young project: version 0.1.1, two npm releases, last commit in May 2026, one
+  main author. The CLI interface may change, so pin the tag.
+- Until step 3 is done, the agent can read under Wayland but not act.
+  For "open Thunderbird", `app_launch` from phase 2 is still enough.

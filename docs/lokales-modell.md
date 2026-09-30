@@ -1,132 +1,133 @@
-# Lokales Modell: Hermes ohne Cloud auf der eigenen GPU (optional)
+# Local model: Hermes without the cloud, on your own GPU (optional)
 
-Stand: 2026-09-27. Wie Hermes auf hermes-os mit einem Modell läuft, das auf
-dem Rechner selbst rechnet, was dafür im Image liegt und was erst auf Wunsch
-nachgeladen wird, warum es so gebaut ist und wo die Grenzen sind.
+As of 2026-09-27. How Hermes on hermes-os runs with a model that computes on
+the machine itself, what the image ships for it and what is only downloaded
+on request, why it is built this way, and where its limits are.
 
-## Entscheidung: optional, Ollama nicht im Image
+## Decision: optional, Ollama not in the image
 
-Das lokale Modell ist eine Option, kein Bestandteil. Ollama selbst liegt
-seit 2026-09-27 nicht mehr im Image; wer es will, lädt es mit
-`ujust hermes-lokal-ein` oder der Karte im Assistenten in sein Home. Gründe:
+The local model is an option, not a component. Since 2026-09-27 Ollama itself
+is no longer in the image; if you want it, `ujust hermes-lokal-ein` or the
+card in the setup assistant downloads it into your home directory. Reasons:
 
-- **Kleine Modelle bringen wenig.** Was auf eine 12-GB-Karte passt, bleibt
-  bei Werkzeugaufrufen deutlich hinter den Cloud-Modellen zurück (in VM 112
-  verfehlte `qwen3.5:4b` das Meta-Werkzeug `tool_call` und wich auf die
-  Websuche aus). Das rechtfertigt nicht, jedes Image damit zu belasten.
-- **Rund 0,9 GB weniger in beiden Images** (`/usr/lib/ollama`, davon
-  0,85 GB CUDA 13) und kein Bump des Images für einen Ollama-Bump.
-- **Die CUDA-Laufzeit liegt nicht mehr im Image.** Das Ollama-Archiv
-  enthält cuBLAS und cudart; im Image verteilte hermes-os sie mit. Jetzt
-  kommt das Archiv auf Wunsch direkt von Ollamas Releases auf den Rechner.
-  Ob NVIDIAs Weitergabe-Bedingungen damit ganz erledigt sind, ist nicht
-  geprüft; das Image selbst enthält nichts mehr davon.
+- **Small models add little.** What fits on a 12 GB card falls clearly
+  behind the cloud models at tool calls (in VM 112, `qwen3.5:4b` missed the
+  meta tool `tool_call` and fell back to web search). That does not justify
+  weighing down every image with it.
+- **About 0.9 GB less in both images** (`/usr/lib/ollama`, 0.85 GB of it
+  CUDA 13), and no image bump for an Ollama bump.
+- **The CUDA runtime is no longer in the image.** The Ollama archive
+  contains cuBLAS and cudart; while it was in the image, hermes-os
+  redistributed them. Now the archive comes to the machine on request,
+  directly from Ollama's releases. Whether this fully settles NVIDIA's
+  redistribution terms has not been checked; the image itself no longer
+  contains any of it.
 
-Was im Image bleibt: der Nutzerdienst `ollama.service` (zeigt auf das
-Programm im Home und bleibt ohne es still aus), der Helfer
-`hermes-os-lokal`, das Modul `local_model.py`, die Rezepte, die Karte im
-Assistenten, `zstd` zum Entpacken. Alle übrigen Funktionen von hermes-os
-hängen nicht am lokalen Modell.
+What stays in the image: the user service `ollama.service` (it points to the
+program in the home directory and quietly stays off without it), the helper
+`hermes-os-lokal`, the module `local_model.py`, the recipes, the card in the
+setup assistant, and `zstd` for unpacking. No other part of hermes-os
+depends on the local model.
 
-**Nachladen, gepinnt wie früher im Build.** `local_model.install_ollama`
-lädt `ollama-linux-amd64.tar.zst` in der Version `OLLAMA_PIN` von
-`github.com/ollama/ollama/releases`, vergleicht die SHA256 mit
-`OLLAMA_SHA256` (aus der `sha256sum.txt` des Releases übernommen), entpackt
-ohne `cuda_v12` nach `~/.local/share/hermes-os/ollama/{bin,lib}` und schreibt
-den Stempel `.hermes-os-release` (Version, Prüfsumme, Backends). Vorher prüft
-es den Platz: Archiv (1,3 GB) und Ergebnis (0,9 GB) liegen beim Entpacken
-nebeneinander, dazu 1 GB Luft. Erst nach Prüfsumme, Entpacken und einem
-Probelauf (`ollama --version`) ersetzt es ein vorhandenes Ollama; scheitert
-ein Schritt, bleibt der alte Stand.
+**Downloaded on request, pinned as it used to be in the build.**
+`local_model.install_ollama` downloads `ollama-linux-amd64.tar.zst` at
+version `OLLAMA_PIN` from `github.com/ollama/ollama/releases`, compares its
+SHA256 with `OLLAMA_SHA256` (taken from the release's `sha256sum.txt`),
+unpacks it without `cuda_v12` into `~/.local/share/hermes-os/ollama/{bin,lib}`
+and writes the stamp `.hermes-os-release` (version, checksum, backends).
+Before that it checks disk space: archive (1.3 GB) and result (0.9 GB) sit
+side by side while unpacking, plus 1 GB of headroom. It replaces an existing
+Ollama only after the checksum, the unpacking and a test run
+(`ollama --version`); if a step fails, the old state stays.
 
-## Warum Ollama, und warum als Nutzerdienst
+## Why Ollama, and why as a user service
 
-**Ollama statt llama-server.** Beide bringen einen OpenAI-kompatiblen
-Endpunkt mit Werkzeugaufrufen, den Hermes als Anbieter `custom` anspricht.
-Der Unterschied liegt im Drumherum: Ollama lädt Modelle aus seiner
-Bibliothek mit Fortschritt (`/api/pull`), verwaltet sie (`/api/tags`,
-`/api/show` mit Fähigkeiten wie `tools` und Kontextlänge), wählt beim Start
-selbst das Rechen-Backend (CUDA, Vulkan, CPU) und hält ein Modell nach
-Gebrauch im Speicher. Der Assistent und die ujust-Rezepte brauchen genau
-das. llama-server (ggml-org/llama.cpp, Release b11205) kann Werkzeugaufrufe
-inzwischen ohne Zusatzflag (`--jinja` ist Standard) und holt GGUF-Dateien
-per `-hf` von Hugging Face, hat aber weder Pull mit Fortschritt noch eine
-Modellverwaltung noch die automatische Wahl des Backends; die CUDA-Builds
-gibt es nur für Ubuntu, und ob sie auf Fedora laufen, ist ungeprüft. Ollama
-bündelt llama.cpp ohnehin (`lib/ollama/llama-server` liegt bei). Hermes
-kennt für llama-server den Slug `llamacpp`, der aber Hermes' eigene
-Laufzeit meint und `model.base_url` ignoriert; ein fremder llama-server wäre
-ebenfalls `custom`. Das bleibt als Ausweg offen, braucht aber keinen Code.
+**Ollama instead of llama-server.** Both provide an OpenAI-compatible
+endpoint with tool calls, which Hermes addresses as provider `custom`. The
+difference is everything around it: Ollama pulls models from its library
+with progress (`/api/pull`), manages them (`/api/tags`, `/api/show` with
+capabilities such as `tools` and context length), picks the compute backend
+itself at startup (CUDA, Vulkan, CPU) and keeps a model in memory after use.
+The setup assistant and the ujust recipes need exactly that. llama-server
+(ggml-org/llama.cpp, release b11205) now handles tool calls without an extra
+flag (`--jinja` is the default) and fetches GGUF files from Hugging Face via
+`-hf`, but it has no pull with progress, no model management and no automatic
+backend selection; the CUDA builds exist only for Ubuntu, and whether they
+run on Fedora is untested. Ollama bundles llama.cpp anyway
+(`lib/ollama/llama-server` is included). For llama-server Hermes knows the
+slug `llamacpp`, but that refers to Hermes' own runtime and ignores
+`model.base_url`; an external llama-server would also be `custom`. That
+remains open as a way out, but needs no code.
 
-**Das native Archiv statt Podman-Quadlet.** Der Release-Tarball
-`ollama-linux-amd64.tar.zst` (v0.34.4 vom 2026-09-23, 1,3 GB, entpackt
-2,2 GB, Layout geprüft) enthält `bin/ollama` und `lib/ollama` mit
-CPU-Backends je Prozessorfamilie, CUDA 12 (1,3 GB), CUDA 13 (0,85 GB) und
-Vulkan (43 MB). cuBLAS und cudart liefert Ollama selbst mit; vom Host
-braucht es nur `libcuda.so.1` aus dem Treiber. Gründe gegen den Container:
+**The native archive instead of a Podman Quadlet.** The release tarball
+`ollama-linux-amd64.tar.zst` (v0.34.4 from 2026-09-23, 1.3 GB, 2.2 GB
+unpacked, layout checked) contains `bin/ollama` and `lib/ollama` with CPU
+backends per processor family, CUDA 12 (1.3 GB), CUDA 13 (0.85 GB) and
+Vulkan (43 MB). Ollama ships cuBLAS and cudart itself; from the host it only
+needs `libcuda.so.1` from the driver. Reasons against the container:
 
-- Ein Quadlet müsste `docker.io/ollama/ollama` (3,75 GB komprimiert) ins
-  Home ziehen, mit `latest` oder einem Pin, den niemand mit dem Image
-  aktualisiert. Das Archiv ist kleiner und in `local_model.py` gepinnt: eine
-  Version, ein Bump, geprüft mit SHA256.
-- GPU im Container braucht CDI. `aurora-dx-nvidia-open` bringt
-  `nvidia-container-toolkit` und `nvidia-cdi-refresh.service` mit (die Datei
-  liegt unter `/var/run/cdi/nvidia.yaml`), die AMD/Intel-Variante nichts
-  davon; das Quadlet wäre je Variante anders. Universal Blue hatte
-  `ujust ollama` als Quadlet und hat es am 2024-11-21 wieder entfernt
-  (Bluefin-Commit `c271947`); heute empfiehlt Aurora ramalama per Homebrew.
-- Der Agent auf dem Host sieht den Container nicht: `ollama ps`, Logs und
-  Modelle lägen hinter `podman exec`.
+- A Quadlet would have to pull `docker.io/ollama/ollama` (3.75 GB
+  compressed) into the home directory, with `latest` or with a pin that
+  nobody updates along with the image. The archive is smaller and pinned in
+  `local_model.py`: one version, one bump, verified with SHA256.
+- GPU access in a container needs CDI. `aurora-dx-nvidia-open` brings
+  `nvidia-container-toolkit` and `nvidia-cdi-refresh.service` (the file sits
+  at `/var/run/cdi/nvidia.yaml`), the AMD/Intel variant none of it; the
+  Quadlet would differ per variant. Universal Blue had `ujust ollama` as a
+  Quadlet and removed it again on 2024-11-21 (Bluefin commit `c271947`);
+  today Aurora recommends ramalama via Homebrew.
+- The agent on the host does not see the container: `ollama ps`, logs and
+  models would sit behind `podman exec`.
 
-**Ein Archiv für beide Varianten.** Nichts fragt beim Nachladen nach der
-GPU. Ollama prüft beim Start jedes Backend-Verzeichnis neben dem Programm
-(`~/.local/share/hermes-os/ollama/lib/ollama`): CUDA über den NVIDIA-Treiber
-(nur im NVIDIA-Image vorhanden), Vulkan über Mesa (AMD, Intel) oder als
-Ausweich über den NVIDIA-Treiber, sonst CPU mit dem Log
-`inference compute id=cpu`. Die AMD/Intel-Variante rechnet also mit einer
-AMD- oder Intel-GPU über Vulkan und ohne GPU auf der CPU; der Helfer sagt
-vorher, was er vorfindet. `cuda_v12` wird nicht entpackt: die offenen
-Kernelmodule laufen erst ab Turing, das deckt CUDA 13 (Treiber ab 580; Aurora
-stable hat 615.71.09) ab. Spart 1,3 GB im Home; das Programm ist rund 0,9 GB
-groß. ROCm-Bibliotheken kommen nicht mit (eigener Tarball, 1 GB); AMD läuft
-über Vulkan.
+**One archive for both variants.** Nothing asks about the GPU when
+downloading. At startup Ollama probes every backend directory next to the
+program (`~/.local/share/hermes-os/ollama/lib/ollama`): CUDA via the NVIDIA
+driver (present only in the NVIDIA image), Vulkan via Mesa (AMD, Intel) or,
+as a fallback, via the NVIDIA driver, otherwise the CPU, with the log line
+`inference compute id=cpu`. So the AMD/Intel variant computes on an AMD or
+Intel GPU via Vulkan, and on the CPU when there is no GPU; the helper says
+beforehand what it finds. `cuda_v12` is not unpacked: the open kernel
+modules only run from Turing onwards, which CUDA 13 covers (driver 580 or
+later; Aurora stable has 615.71.09). That saves 1.3 GB in the home
+directory; the program is about 0.9 GB. ROCm libraries are not included
+(separate tarball, 1 GB); AMD runs via Vulkan.
 
-**Nutzerdienst statt Systemdienst.** `ollama.service` liegt unter
-`/usr/lib/systemd/user`, ist ab Werk aus und hört nur auf `127.0.0.1:11434`.
-Er startet `%h/.local/share/hermes-os/ollama/bin/ollama` und hat dieselbe
-Datei als `ConditionPathExists`: ohne nachgeladenes Programm bleibt er still
-aus, statt in eine Neustartschleife zu laufen.
-Modelle liegen unter `~/.local/share/ollama/models` (`OLLAMA_MODELS`), nicht
-unter `/var/lib` und nicht im versteckten `~/.ollama`; ein Image-Update
-lässt sie in Ruhe. Das hält alles in der Grenze: `systemctl --user` und das
-Home sind frei, der Agent darf den Dienst ohne Rückfrage schalten
-(`docs/grenze.md`), und niemand braucht Root. Ollamas eigenes `install.sh`
-täte das Gegenteil (System-Unit, Nutzer `ollama`, Treiber per dnf) und ist
-auf bootc unbrauchbar.
+**User service instead of system service.** `ollama.service` lives in
+`/usr/lib/systemd/user`, is off by default and listens only on
+`127.0.0.1:11434`. It starts `%h/.local/share/hermes-os/ollama/bin/ollama`
+and has the same file as `ConditionPathExists`: without the downloaded
+program it quietly stays off instead of running into a restart loop.
+Models live in `~/.local/share/ollama/models` (`OLLAMA_MODELS`), not in
+`/var/lib` and not in the hidden `~/.ollama`; an image update leaves them
+alone. That keeps everything inside the boundary: `systemctl --user` and the
+home directory are free, the agent may switch the service without asking
+(`docs/grenze.md`), and nobody needs root. Ollama's own `install.sh` would do
+the opposite (system unit, user `ollama`, drivers via dnf) and is unusable
+on bootc.
 
-## Was im Image liegt und was nachgeladen wird
+## What is in the image and what is downloaded
 
-| Was | Wo |
+| What | Where |
 |---|---|
-| Pin `OLLAMA_PIN`, Archiv, `OLLAMA_SHA256`, Nachladen, Platzprüfung, Entfernen | `files/system/usr/share/hermes-os/local/local_model.py` |
-| Ollama, Backends, Stempel (nachgeladen, nicht im Image) | `~/.local/share/hermes-os/ollama/bin/ollama`, `…/lib/ollama/{cuda_v13,vulkan,…}`, `…/.hermes-os-release` |
-| Modelle (nachgeladen) | `~/.local/share/ollama/models` |
-| Nutzerdienst | `files/system/usr/lib/systemd/user/ollama.service` |
-| Logik: GPU, Ollama-API, Vorschläge, Config-Schreibweg | `files/system/usr/share/hermes-os/local/local_model.py` |
-| Helfer für Rezepte, Assistent und Agent | `files/system/usr/libexec/hermes-os-lokal` |
-| Rezepte | `hermes-lokal-ein`, `-aus`, `-entfernen`, `-modell`, `-status` in `hermes-os.just` |
-| Karte im Assistenten | `setup/Main.qml` (Seite „Lokales Modell“), Backend in `hermes-os-setup` |
-| Anleitung für den Agenten | Abschnitt „Lokales Modell statt Cloud“ in `skills/hermes-os-system/SKILL.md` |
-| `zstd` fürs Entpacken, PyYAML für den Helfer | `files/scripts/20-agent-layer.sh` |
-| Test | `tests/lokales-modell-check.py`, Gate `80-validate.sh` Abschnitt 7m, „kein Ollama im Image“ in `89-tests.sh` |
+| Pin `OLLAMA_PIN`, archive, `OLLAMA_SHA256`, download, space check, removal | `files/system/usr/share/hermes-os/local/local_model.py` |
+| Ollama, backends, stamp (downloaded, not in the image) | `~/.local/share/hermes-os/ollama/bin/ollama`, `…/lib/ollama/{cuda_v13,vulkan,…}`, `…/.hermes-os-release` |
+| Models (downloaded) | `~/.local/share/ollama/models` |
+| User service | `files/system/usr/lib/systemd/user/ollama.service` |
+| Logic: GPU, Ollama API, suggestions, config write path | `files/system/usr/share/hermes-os/local/local_model.py` |
+| Helper for the recipes, the setup assistant and the agent | `files/system/usr/libexec/hermes-os-lokal` |
+| Recipes | `hermes-lokal-ein`, `-aus`, `-entfernen`, `-modell`, `-status` in `hermes-os.just` |
+| Card in the setup assistant | `setup/Main.qml` (page “Local model”, German UI: „Lokales Modell“), backend in `hermes-os-setup` |
+| Instructions for the agent | section “Local model instead of cloud” (German: „Lokales Modell statt Cloud“) in `skills/hermes-os-system/SKILL.md` |
+| `zstd` for unpacking, PyYAML for the helper | `files/scripts/20-agent-layer.sh` |
+| Test | `tests/lokales-modell-check.py`, gate `80-validate.sh` section 7m, “no Ollama in the image” in `89-tests.sh` |
 
-## Wie Hermes angebunden ist
+## How Hermes is connected
 
-Hermes 0.21.x (Tag v2026.9.24) hat keinen eigenen Ollama-Slug; `ollama` ist
-ein Alias auf `custom`, den Anbieter für OpenAI-kompatible Server. Der Helfer
-schreibt in `~/.hermes/config.yaml` denselben Block, den Hermes' Wizard für
-einen Custom-Endpunkt ohne Schlüssel erzeugt (`_persist_model`), plus drei
-Einträge, die ein Agent mit Werkzeugen an Ollama braucht:
+Hermes 0.21.x (tag v2026.9.24) has no Ollama slug of its own; `ollama` is an
+alias for `custom`, the provider for OpenAI-compatible servers. The helper
+writes the same block into `~/.hermes/config.yaml` that Hermes' wizard
+generates for a custom endpoint without a key (`_persist_model`), plus three
+entries that an agent with tools needs on Ollama:
 
 ```yaml
 model:
@@ -134,178 +135,183 @@ model:
   provider: custom
   base_url: http://127.0.0.1:11434/v1
   api_mode: chat_completions
-  context_length: 65536      # deckelt, was Hermes aus /api/show liest (GGUF sagt 256k)
-  ollama_num_ctx: 65536      # hebt über Hermes' Untergrenze, auch wenn das Modell weniger meldet
+  context_length: 65536      # caps what Hermes reads from /api/show (the GGUF says 256k)
+  ollama_num_ctx: 65536      # lifts it above Hermes' minimum, even if the model reports less
 agent:
-  reasoning_effort: none     # Hermes schickt dann think:false an Ollama
+  reasoning_effort: none     # Hermes then sends think:false to Ollama
 ```
 
-Es entsteht keine `.env`-Zeile: ohne Schlüssel setzt Hermes selbst
-`no-key-required` als Bearer, und Ollama prüft keinen. Der Schlüssel für den
-API-Server des Gateways (Leisten-Symbol) kommt trotzdem in `.env`, weil der
-Helfer nach dem Eintragen das First-Login-Skript ruft; das erkennt seit
-diesem Stand auch einen Anbieter in `config.yaml` als Einrichtung. Das
-Gateway liest `config.yaml` bei jedem Gesprächsschritt neu und baut den
-Agenten um, sobald Modell, Adresse oder Anbieter wechseln; ein Neustart ist
-nicht nötig. Sitzungen mit eigenem `/model` bleiben auf ihrem Modell.
+No `.env` line is created: without a key, Hermes itself sets
+`no-key-required` as the bearer token, and Ollama checks none. The key for
+the gateway's API server (for the panel icon) still goes into `.env`,
+because after writing the config the helper calls the first-login script;
+as of this version, that script also counts a provider in `config.yaml` as a
+completed setup. The gateway rereads `config.yaml` at every conversation
+step and rebuilds the agent as soon as the model, address or provider
+changes; no restart is needed. Sessions with their own `/model` stay on
+their model.
 
-Warum nicht Hermes' `_persist_model` über die Brücke des Assistenten: der
-Schreibweg muss auch aus dem ujust-Rezept mit Fedoras Python laufen und im
-Test ohne Hermes prüfbar sein. Der Vertrag ist stattdessen im Gate: was
-`hermes-os-lokal eintragen` schreibt, liest `hermes config get` zurück, und
-65536 liegt über `MINIMUM_CONTEXT_LENGTH`. Der Katalog der Brücke blendet
-`custom` ohnehin aus (kein Schlüssel), deshalb kommt die Karte aus dem
-Assistenten selbst, sobald `/usr/libexec/hermes-os-lokal` da ist.
+Why not Hermes' `_persist_model` through the setup assistant's bridge: the
+write path also has to run from the ujust recipe with Fedora's Python and be
+testable without Hermes. Instead, the contract lives in the gate: what
+`hermes-os-lokal eintragen` writes, `hermes config get` reads back, and
+65536 is above `MINIMUM_CONTEXT_LENGTH`. The bridge's catalogue hides
+`custom` anyway (no key), so the card comes from the setup assistant itself
+as soon as `/usr/libexec/hermes-os-lokal` exists.
 
-**64k Kontext ist Pflicht.** Hermes verweigert den Start mit Werkzeugen
-unter 64.000 Token (`agent/agent_init.py`, Meldung verweist auf
-`OLLAMA_CONTEXT_LENGTH` oder `model.ollama_num_ctx`). Ollama gibt Karten
-unter 23 GiB nur 4096 Token, und der OpenAI-kompatible Endpunkt nimmt
-`num_ctx` nicht je Anfrage an (Hermes schickt es in `extra_body.options`,
-Ollama ignoriert es dort). Deshalb setzt die Unit `OLLAMA_CONTEXT_LENGTH=65536`
-für alle Modelle, dazu `OLLAMA_FLASH_ATTENTION=1` und
-`OLLAMA_KV_CACHE_TYPE=q8_0` (halbiert den Cache), `OLLAMA_KEEP_ALIVE=1h`
-und `OLLAMA_NO_CLOUD=1`. Wer mehr will, überschreibt mit
+**64k context is mandatory.** Hermes refuses to start with tools below
+64,000 tokens (`agent/agent_init.py`; the message points to
+`OLLAMA_CONTEXT_LENGTH` or `model.ollama_num_ctx`). Ollama gives cards
+under 23 GiB only 4096 tokens, and the OpenAI-compatible endpoint does not
+accept `num_ctx` per request (Hermes sends it in `extra_body.options`, and
+Ollama ignores it there). That is why the unit sets
+`OLLAMA_CONTEXT_LENGTH=65536` for all models, plus `OLLAMA_FLASH_ATTENTION=1`
+and `OLLAMA_KV_CACHE_TYPE=q8_0` (halves the cache), `OLLAMA_KEEP_ALIVE=1h`
+and `OLLAMA_NO_CLOUD=1`. To get more, override it with
 `systemctl --user edit ollama.service`.
 
-**Werkzeugaufrufe.** Hermes schickt an `custom` nur `tools` (kein
-`tool_choice`, kein `parallel_tool_calls`, kein `max_tokens`) und erwartet
-echte `tool_calls` in der Antwort; einen Text-Fallback gibt es nicht. Das
-Modell muss die Fähigkeit `tools` haben (Ollama-Bibliothek, Filter „tools“).
-Die Prüfung im Helfer und im Assistenten schickt genau so eine Anfrage mit
-einer Werkzeugdefinition und lässt nur eintragen, was mit einem Aufruf
-antwortet. Denkmodus: ohne Einstellung schickt Hermes an Custom-Endpunkte
-`reasoning_effort: medium`, Qwen3.5 dächte dann vor jedem Werkzeugschritt;
-`agent.reasoning_effort: none` wird zu `think: false` (nur auf Port 11434)
-und verhindert auch Werkzeugaufrufe im Denkblock, ein bekanntes
-Qwen3.5-Problem. Der Helfer merkt sich den vorherigen Wert und stellt ihn
-mit `aus` zurück. Ollamas `/v1`-Endpunkt setzt `temperature 1.0`, wenn der
-Client keine schickt; Hermes schickt keine. Das ist nicht ideal für
-Werkzeugaufrufe und in der VM zu beobachten.
+**Tool calls.** Hermes sends only `tools` to `custom` (no `tool_choice`, no
+`parallel_tool_calls`, no `max_tokens`) and expects real `tool_calls` in the
+response; there is no text fallback. The model must have the `tools`
+capability (Ollama library, filter “tools”). The check in the helper and in
+the setup assistant sends exactly such a request with one tool definition
+and only writes a model into the config if it answers with a call. Thinking
+mode: without a setting, Hermes sends `reasoning_effort: medium` to custom
+endpoints, and Qwen3.5 would then think before every tool step;
+`agent.reasoning_effort: none` becomes `think: false` (only on port 11434)
+and also prevents tool calls inside the thinking block, a known Qwen3.5
+problem. The helper remembers the previous value and restores it with
+`aus`. Ollama's `/v1` endpoint sets `temperature 1.0` if the client sends
+none; Hermes sends none. That is not ideal for tool calls and is visible in
+the VM.
 
-## Modellwahl für 12 GB
+## Model choice for 12 GB
 
-Empfehlung nach der Recherche vom 2026-09-26 (Ollama-Bibliothek, Ollamas
-eigene Hermes-Anleitung `docs/integrations/hermes.mdx`, `cmd/launch/models.go`,
-Hermes' `local-ollama-setup.md`, Speicherrechnung nach Architektur). Die
-Downloadgrößen stammen aus Suchauszügen, `ollama.com` war aus der Cloud
-nicht erreichbar; die VRAM-Werte sind gerechnet, nicht gemessen.
+Recommendation based on the research of 2026-09-26 (Ollama library, Ollama's
+own Hermes guide `docs/integrations/hermes.mdx`, `cmd/launch/models.go`,
+Hermes' `local-ollama-setup.md`, memory calculation by architecture). The
+download sizes come from search excerpts, since `ollama.com` was not
+reachable from the cloud; the VRAM figures are calculated, not measured.
 
-| Modell | Größe | 64k in 12 GB | Warum |
+| Model | Size | 64k in 12 GB | Why |
 |---|---|---|---|
-| **`qwen3.5:9b`** (Vorgabe) | 6,6 GB | ja, rund 8,5 GB mit q8_0-Cache | Werkzeugaufrufe verlässlich (Familie führt den Tool-Calling-Test von jdhodges an), 201 Sprachen, 256k Modellkontext, hybrid: nur 8 von 32 Schichten haben einen KV-Cache (32 KiB je Token statt 160 KiB bei `qwen3:14b`). Ollama nennt es selbst als lokales Modell für Hermes. |
-| `qwen3.5:4b` (8 GB, CPU) | 3,4 GB | ja, deutlich | Gleiche Familie; für 8-GB-Karten und ohne GPU. Auf der CPU dauert das erste Verarbeiten von Systemprompt und Werkzeugschemas Minuten. |
-| `gemma4:12b` | 7,6 GB | vermutlich | Besseres Deutsch im Praxistest; Werkzeugaufrufe im September 2026 noch mit offenen Fehlern (Hermes #79639 verliert mit `tools` den Verlauf, Ollama #18275 kaputtes Aufrufformat). Testkandidat. |
-| `granite4:tiny-h` | 4,2 GB | ja | IBM, Deutsch offiziell, Mamba-Hybrid ohne Denkmodus. Schlichter. |
+| **`qwen3.5:9b`** (default) | 6.6 GB | yes, about 8.5 GB with q8_0 cache | Reliable tool calls (the family leads jdhodges' tool-calling test), 201 languages, 256k model context, hybrid: only 8 of 32 layers have a KV cache (32 KiB per token instead of 160 KiB for `qwen3:14b`). Ollama itself names it as a local model for Hermes. |
+| `qwen3.5:4b` (8 GB, CPU) | 3.4 GB | yes, easily | Same family; for 8 GB cards and machines without a GPU. On the CPU, the first pass over the system prompt and tool schemas takes minutes. |
+| `gemma4:12b` | 7.6 GB | probably | Better German in a hands-on test; tool calls still had open bugs in September 2026 (Hermes #79639 loses the history with `tools`, Ollama #18275 broken call format). Candidate for testing. |
+| `granite4:tiny-h` | 4.2 GB | yes | IBM, German officially supported, Mamba hybrid without a thinking mode. Plainer. |
 
-Ausgeschieden: `qwen3:14b` und `qwen3:8b` (dichte Modelle; 64k Kontext
-braucht 5 bis 10 GiB Cache, dazu 40k Kontextgrenze), `gpt-oss:20b` (14 GB,
-Denken nicht abschaltbar, vorwiegend englisch), `gemma3` und
-`deepseek-r1:14b` (keine Werkzeuge in Ollama), `mistral-small3.2`,
-`devstral-small-2`, `glm-4.7-flash`, `qwen3.6:27b`, `gemma4:31b` (15 bis
-20 GB). Ein Hermes-4-Modell von Nous liegt nicht in der Ollama-Bibliothek.
+Ruled out: `qwen3:14b` and `qwen3:8b` (dense models; 64k context needs 5 to
+10 GiB of cache, plus a 40k context limit), `gpt-oss:20b` (14 GB, thinking
+cannot be switched off, mostly English), `gemma3` and `deepseek-r1:14b` (no
+tools in Ollama), `mistral-small3.2`, `devstral-small-2`, `glm-4.7-flash`,
+`qwen3.6:27b`, `gemma4:31b` (15 to 20 GB). There is no Hermes 4 model from
+Nous in the Ollama library.
 
-Die Vorgabe wählt `recommend()` in `local_model.py` nach dem Speicher der
-Karte: 12 GB `qwen3.5:9b`, 8 GB `qwen3.5:4b`, ohne GPU `qwen3.5:4b`. Der
-Nutzer kann im Assistenten und im Rezept jedes andere Ollama-Tag angeben;
-die Prüfung auf Werkzeugaufrufe bleibt.
+The default is chosen by `recommend()` in `local_model.py` from the card's
+memory: 12 GB `qwen3.5:9b`, 8 GB `qwen3.5:4b`, no GPU `qwen3.5:4b`. In the
+setup assistant and in the recipe, the user can give any other Ollama tag;
+the tool-call check still applies.
 
-## Bedienung
+## Usage
 
-Im Assistenten (`ujust hermes-setup`, Menü „Hermes einrichten“): Anbieter
-„Lokales Modell (Ollama)“, dann auf einer Seite Ollama laden (nur beim
-ersten Mal, mit Fortschritt und Platzangabe), Dienst starten, Modell wählen
-und laden (Fortschritt; Modelle, die nicht auf die Platte passen, sind
-markiert), Verbindung prüfen, eintragen. Im Terminal oder durch den Agenten:
+In the setup assistant (`ujust hermes-setup`, or the menu entry
+“Set up Hermes”, German default: „Hermes einrichten“): choose the provider
+“Local model (Ollama)” (German UI: „Lokales Modell (Ollama)“), then, on a
+single page, download Ollama (first time only, with progress and space
+estimate), start the service, choose and download a model (with progress;
+models that do not fit on the disk are marked), check the connection and
+write the config. In the terminal or through the agent:
 
 ```sh
-ujust hermes-lokal-status              # GPU, Ollama, Dienst, Modelle, was Hermes nutzt
-ujust hermes-lokal-ein                 # Ollama laden (falls nötig), Dienst an, Vorgabe laden, prüfen, eintragen
-ujust hermes-lokal-ein qwen3.5:4b      # mit eigenem Modell
-ujust hermes-lokal-modell gemma4:12b   # anderes Modell laden, prüfen, eintragen
-ujust hermes-lokal-aus                 # Dienst aus, vorheriger Anbieter zurück
-ujust hermes-lokal-entfernen           # wie aus, dazu Ollama und alle Modelle löschen
+ujust hermes-lokal-status              # GPU, Ollama, service, models, what Hermes uses
+ujust hermes-lokal-ein                 # download Ollama (if needed), service on, download default, check, write config
+ujust hermes-lokal-ein qwen3.5:4b      # with a model of your choice
+ujust hermes-lokal-modell gemma4:12b   # download another model, check, write config
+ujust hermes-lokal-aus                 # service off, previous provider back
+ujust hermes-lokal-entfernen           # like aus, plus delete Ollama and all models
 ```
 
-Vor jedem Modell-Download prüft der Helfer den Platz unter
-`~/.local/share/ollama`: bekannte Modelle mit ihrer Größe plus 1 GB Luft,
-eigene Tags mit einer Untergrenze von 2 GB und einem Hinweis, dass die Größe
-unbekannt ist. Reicht es nicht, bricht er vorher ab.
+Before every model download the helper checks the space under
+`~/.local/share/ollama`: known models with their size plus 1 GB of headroom,
+custom tags with a floor of 2 GB and a note that the size is unknown. If
+there is not enough space, it stops before downloading.
 
-`aus` holt den model-Block und `agent.reasoning_effort` von vor dem
-Umschalten zurück (`~/.hermes/hermes-os/local-previous-model.json`). War
-vorher kein Anbieter eingetragen, ist Hermes danach ohne Modell und der
-Assistent oder `hermes setup` wählt neu. Für den Agenten ist das Umschalten
-frei (Nutzerdienst, Home, `ujust hermes-*`), aber nur auf ausdrücklichen
-Wunsch; der Skill sagt ihm, was er vorher ankündigt.
+`aus` restores the model block and `agent.reasoning_effort` from before the
+switch (`~/.hermes/hermes-os/local-previous-model.json`). If no provider was
+set before, Hermes is left without a model, and the setup assistant or
+`hermes setup` picks a new one. For the agent, switching is free (user
+service, home directory, `ujust hermes-*`), but only when the user
+explicitly asks for it; the skill tells it what to announce beforehand.
 
-## Testen
+## Testing
 
-Ohne GPU, ohne Ollama, ohne Hermes:
+Without a GPU, without Ollama, without Hermes:
 
 ```sh
 tests/lokales-modell-check.py --local-dir files/system/usr/share/hermes-os/local
 ```
 
-Prüft die GPU-Erkennung gegen Attrappen (ein `nvidia-smi` im PATH, das eine
-RTX 3060 meldet; eines, das scheitert; ein `/dev/kfd`; nichts), die
-Vorschläge, den Config-Schreibweg gegen eine Wegwerf-`config.yaml` aus der
-Vorlage (Block, Rest, 0600, Merken und Zurückholen), die Endpunktprüfung
-gegen einen nachgebauten Ollama-Server (`/api/version`, `/api/tags`,
-`/api/show`, `/api/pull` als Strom, `/v1/models`, `/v1/chat/completions`
-mit und ohne Werkzeugaufruf) und das Nachladen gegen ein nachgebautes
-Release-Archiv über `file://` (falsche Prüfsumme, richtige ohne `cuda_v12`,
-zu wenig Platz, zweiter Aufruf, Entfernen; braucht `tar` und `zstd`), dazu
-den Helfer mit einem `systemctl`, das nur mitschreibt. Kein Schritt geht ins
-Internet. `make lint` und das Gate (`80-validate.sh` 7m) führen ihn aus; das
-Gate prüft außerdem, dass kein Ollama im Image liegt, die Unit, die Rezepte
-und den Vertrag mit Hermes.
+It checks GPU detection against mocks (an `nvidia-smi` in PATH that reports
+an RTX 3060; one that fails; a `/dev/kfd`; nothing), the suggestions, the
+config write path against a throwaway `config.yaml` made from the template
+(block, rest of the file, 0600, remembering and restoring), the endpoint
+check against a mock Ollama server (`/api/version`, `/api/tags`,
+`/api/show`, `/api/pull` as a stream, `/v1/models`, `/v1/chat/completions`
+with and without a tool call) and the download against a mock release
+archive via `file://` (wrong checksum, correct one without `cuda_v12`, too
+little space, second call, removal; needs `tar` and `zstd`), plus the helper
+with a `systemctl` that only records its calls. No step goes to the
+internet. `make lint` and the gate (`80-validate.sh` 7m) run it; the gate
+also checks that there is no Ollama in the image, and checks the unit, the
+recipes and the contract with Hermes.
 
-Nur in Test-VM 112 (RTX 3060 per Passthrough, `docs/testumgebung.md`) lässt
-sich prüfen, was die Cloud nicht kann. Am 2026-09-27 (noch mit Ollama im
-Image) bestanden: `inference compute … library=CUDA`, `qwen3.5:4b` mit
-100 % GPU und Kontext 65536, `os_services` über das lokale Modell, Bilder im
-Chat, `hermes-lokal-aus` mit Rückkehr zum Cloud-Anbieter. Die Vorgabe
-`qwen3.5:9b` passte nicht auf die 31-GB-Platte der VM (6,1 GB frei); daher
-die Platzprüfung.
+Only test VM 112 (RTX 3060 via passthrough, `docs/testumgebung.md`) can check
+what the cloud cannot. Passed on 2026-09-27 (still with Ollama in the
+image): `inference compute … library=CUDA`, `qwen3.5:4b` at 100% GPU with
+context 65536, `os_services` through the local model, images in the chat,
+`hermes-lokal-aus` returning to the cloud provider. The default
+`qwen3.5:9b` did not fit on the VM's 31 GB disk (6.1 GB free); hence the
+space check.
 
 ```sh
-ujust hermes-lokal-ein                              # Ollama laden, Dienst, Download 6,6 GB, Prüfung, Eintrag
-journalctl --user -u ollama.service -n 40           # "inference compute" muss CUDA nennen
-ollama ps                                           # 100 % GPU, Kontext 65536, Größe im VRAM
-nvidia-smi --query-gpu=memory.used --format=csv     # Luft neben Plasma (rund 0,5 bis 1 GB)
-hermes                                              # Chat: "Welche Dienste sind fehlgeschlagen?" muss os_services aufrufen
-ujust hermes-lokal-aus                              # Anbieter zurück
-ujust hermes-lokal-entfernen                        # Programm und Modelle weg, Platz zurück
+ujust hermes-lokal-ein                              # download Ollama, service, 6.6 GB download, check, write config
+journalctl --user -u ollama.service -n 40           # "inference compute" must name CUDA
+ollama ps                                           # 100% GPU, context 65536, size in VRAM
+nvidia-smi --query-gpu=memory.used --format=csv     # headroom next to Plasma (about 0.5 to 1 GB)
+hermes                                              # chat: "Which services have failed?" must call os_services
+ujust hermes-lokal-aus                              # provider back
+ujust hermes-lokal-entfernen                        # program and models gone, space back
 ```
 
-Zeigt `ollama ps` weniger als 100 % GPU, ist der Kontext für die Karte zu
-groß: `OLLAMA_CONTEXT_LENGTH=65536` beibehalten und `qwen3.5:4b` nehmen,
-nicht den Kontext senken (Hermes startet dann nicht).
+If `ollama ps` shows less than 100% GPU, the context is too large for the
+card: keep `OLLAMA_CONTEXT_LENGTH=65536` and use `qwen3.5:4b` instead of
+lowering the context (Hermes will not start then).
 
-## Grenzen und Stolperfallen
+## Limits and pitfalls
 
-- **Ollama meldet Vulkan auch für NVIDIA.** Findet es CUDA, gewinnt CUDA;
-  ohne `libcuda.so.1` (AMD/Intel-Image auf NVIDIA-Hardware mit Nouveau) läuft
-  es über Vulkan und ist langsamer. `journalctl --user -u ollama.service`
-  zeigt beim Start, welches Backend es nimmt.
-- **Ohne GPU ist es langsam.** Ein 4B-Modell auf der CPU antwortet, aber der
-  erste Schritt mit Werkzeugschemas dauert Minuten. Der Helfer sagt das
-  vorher; `HERMES_API_TIMEOUT` in `.env` verlängert Hermes' Geduld.
-- **`hermes doctor`** meldet bei `custom` ohne Schlüssel fälschlich „No API
-  key found in .env“. Der Endpunkt braucht keinen.
-- **Modellliste im Assistenten** kommt aus `local_model.RECOMMENDED`; wer ein
-  fremdes Tag einträgt, bekommt keine Speicherwarnung, nur die
-  Werkzeugprüfung und die Platz-Untergrenze.
-- **Speicher:** Ollama selbst braucht rund 0,9 GB, `~/.local/share/ollama`
-  wächst je Modell um 3 bis 8 GB. `ollama rm <tag>` räumt ein Modell auf; das
-  Rezept `aus` löscht nichts, `entfernen` alles.
-- **Umstieg von einem Image mit Ollama darin:** Das alte `/usr/bin/ollama`
-  verschwindet mit dem Image-Update, die Modelle unter `~/.local/share/ollama`
-  bleiben. `ollama.service` bleibt aus, bis `ujust hermes-lokal-ein` das
-  Programm ins Home geladen hat; danach findet es die Modelle wieder.
-- **Bump:** `OLLAMA_PIN` und `OLLAMA_SHA256` in `local_model.py` (Wert aus der
-  `sha256sum.txt` des Releases), danach in VM 112 die Schritte oben. Ein neuer
-  Tarball kann Backend-Verzeichnisse umbenennen; der Stempel
-  `~/.local/share/hermes-os/ollama/.hermes-os-release` zeigt, welche Backends
-  mitkamen.
+- **Ollama reports Vulkan for NVIDIA too.** If it finds CUDA, CUDA wins;
+  without `libcuda.so.1` (AMD/Intel image on NVIDIA hardware with Nouveau)
+  it runs via Vulkan and is slower. `journalctl --user -u ollama.service`
+  shows at startup which backend it picks.
+- **Without a GPU it is slow.** A 4B model on the CPU answers, but the first
+  step with tool schemas takes minutes. The helper says so beforehand;
+  `HERMES_API_TIMEOUT` in `.env` extends Hermes' patience.
+- **`hermes doctor`** wrongly reports “No API key found in .env” for
+  `custom` without a key. The endpoint does not need one.
+- **The model list in the setup assistant** comes from
+  `local_model.RECOMMENDED`; if you enter a tag that is not on it, you get no
+  memory warning, only the tool check and the space floor.
+- **Disk space:** Ollama itself needs about 0.9 GB, and
+  `~/.local/share/ollama` grows by 3 to 8 GB per model. `ollama rm <tag>`
+  removes a model; the recipe `aus` deletes nothing, `entfernen` deletes
+  everything.
+- **Moving from an image with Ollama in it:** the old `/usr/bin/ollama`
+  disappears with the image update, while the models under
+  `~/.local/share/ollama` stay. `ollama.service` stays off until
+  `ujust hermes-lokal-ein` has downloaded the program into the home
+  directory; after that it finds the models again.
+- **Bump:** `OLLAMA_PIN` and `OLLAMA_SHA256` in `local_model.py` (value from
+  the release's `sha256sum.txt`), then the steps above in VM 112. A new
+  tarball may rename backend directories; the stamp
+  `~/.local/share/hermes-os/ollama/.hermes-os-release` shows which backends
+  came with it.

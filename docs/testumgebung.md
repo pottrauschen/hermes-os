@@ -1,253 +1,255 @@
-# Testumgebung: Bauen und Booten im Homelab
+# Test environment: building and booting in the homelab
 
-Wo hermes-os gebootet wird, solange kein Rechner dafür frei ist: auf dem
-Proxmox-Host `<proxmox-host>`, nach dem Muster des Projekts ainux. Das Image kommt fertig
-aus der CI; im Homelab entsteht nur der Datenträger daraus, und der bootet in
-einer Test-VM. Der Weg über `bootc switch` auf einem echten Rechner steht in der
-README und bleibt der Weg für Geräte.
+Where hermes-os boots while no machine is free for it: on the Proxmox host
+`<proxmox-host>`, following the pattern of the ainux project. The image comes
+ready-made from CI; the homelab only turns it into a disk, and that disk boots
+in a test VM. The route via `bootc switch` on a real machine is in the README
+and remains the route for devices.
 
-## Beteiligte
+## What is involved
 
-| Was | Wo | Eigenschaften |
+| What | Where | Properties |
 |---|---|---|
-| Bau-VM `ainux-build` | VM 110 auf `<proxmox-host>`, `<user>@<bau-vm>` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 Kerne, 4 GB, 80 GB Platte |
-| Test-VM `hermes-test` | VM 112 auf `<proxmox-host>`, `<user>@<test-vm>` (DHCP) | q35, OVMF ohne Secure Boot, 4 Kerne, 8 GB; RTX 3060 per Passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, Bild am HDMI der 3060, Tastatur und Maus über den KVM-Umschalter (`usb0: host=5-6.1.4.1`); bootet `hermes-os-nvidia`; 64-GB-Platte |
-| Zwischenablage für die Platte | `<proxmox-host>`, `/zfspool0/iso/transfer/` | auf dem ZFS-Pool, nicht in `/tmp` |
+| Build VM `ainux-build` | VM 110 on `<proxmox-host>`, `<user>@<build-vm>` | Fedora Cloud 44, rootful Podman, bootc-image-builder, 4 cores, 4 GB, 80 GB disk |
+| Test VM `hermes-test` | VM 112 on `<proxmox-host>`, `<user>@<test-vm>` (DHCP) | q35, OVMF without Secure Boot, 4 cores, 8 GB; RTX 3060 via passthrough (`hostpci0: 0000:0c:00,pcie=1`), `vga: none`, picture on the 3060's HDMI, keyboard and mouse through the KVM switch (`usb0: host=5-6.1.4.1`); boots `hermes-os-nvidia`; 64 GB disk |
+| Staging area for the disk | `<proxmox-host>`, `/zfspool0/iso/transfer/` | on the ZFS pool, not in `/tmp` |
 
-Die Bau-VM gehört dem Projekt ainux und wird mitbenutzt (Entscheidung
-2026-09-26). hermes-os legt dort nur `~/hermes-os` an und das gepullte Image im
-root-Speicher von Podman; die Platte wurde dafür von 40 auf 80 GB vergrößert.
+The build VM belongs to the ainux project and is shared (decision
+2026-09-26). hermes-os only creates `~/hermes-os` there, plus the pulled image
+in Podman's root storage; the disk was grown from 40 to 80 GB for this.
 
-**110 und 112 laufen nie gleichzeitig.** Der Host hat rund 9 bis 15 GB RAM
-frei, je nachdem, welche anderen VMs laufen. Der Ablauf ist deshalb seriell:
-bauen, 110 stoppen, 112 starten. Wer 110 während des Baus stoppt, bricht ihn
-ab; der Neustart wiederholt nur den Datenträgerbau, nicht den Pull.
+**110 and 112 never run at the same time.** The host has roughly 9 to 15 GB of
+RAM free, depending on which other VMs are running. The sequence is therefore
+serial: build, stop 110, start 112. Stopping 110 during a build aborts it; the
+restart only repeats the disk build, not the pull.
 
-## Ablauf
+## Steps
 
-1. **Image auf die Bau-VM holen.** Auf 110, in den root-Speicher, weil der
-   Builder nur den sieht:
+1. **Get the image onto the build VM.** On 110, into root storage, because the
+   builder only sees that one:
 
    ```sh
    sudo podman pull ghcr.io/pottrauschen/hermes-os:latest
    ```
 
-2. **Datenträger bauen.** `~/hermes-os/build-qcow2.sh` auf 110 ruft den
-   bootc-image-builder genauso auf wie das Makefile-Ziel `qcow2`, nur ohne
-   Repo. Die Konfiguration `~/hermes-os/config.toml` entspricht einer
-   `disk.local.toml`: Nutzer `admin` in `wheel`, Passwort und der
-   SSH-Schlüssel des Arbeitsplatzes. Das Skript nennt vor dem Bau Kennung,
-   Digest und Version des Images; die Zeile gehört gelesen und mit
-   `bootc status` in der gebooteten VM verglichen. Ergebnis:
-   `~/hermes-os/output/qcow2/disk.qcow2`.
+2. **Build the disk.** `~/hermes-os/build-qcow2.sh` on 110 calls
+   bootc-image-builder exactly like the Makefile target `qcow2`, just without
+   the repo. The configuration `~/hermes-os/config.toml` corresponds to a
+   `disk.local.toml`: user `admin` in `wheel`, password and the workstation's
+   SSH key. Before building, the script prints the image's identifier, digest
+   and version; read that line and compare it with `bootc status` in the
+   booted VM. Result: `~/hermes-os/output/qcow2/disk.qcow2`.
 
-3. **Platte importieren.** Auf `<proxmox-host>` als root: `/root/hermes-import.sh` holt
-   die Datei per SSH von 110 auf den ZFS-Pool, importiert sie mit
-   `qm importdisk` nach `vmdata`, hängt sie als `scsi0` mit
-   `discard=on,iothread=1` ein, setzt die Bootreihenfolge und löscht die
-   Zwischendatei. Der RSA-Schlüssel von `root@pve` ist dafür auf 110 in den
-   `authorized_keys` von `admin` eingetragen; die Bau-VM selbst hat keinen
-   privaten Schlüssel und kommt an keinen anderen Rechner heran.
+3. **Import the disk.** On `<proxmox-host>` as root: `/root/hermes-import.sh`
+   fetches the file from 110 via SSH onto the ZFS pool, imports it with
+   `qm importdisk` into `vmdata`, attaches it as `scsi0` with
+   `discard=on,iothread=1`, sets the boot order and deletes the intermediate
+   file. For this, the RSA key of `root@<proxmox-host>` is listed in the
+   `authorized_keys` of `admin` on 110; the build VM itself holds no private
+   key and cannot reach any other machine.
 
-4. **Booten.** `qm stop 110`, `qm start 112`. Die Adresse liefert der
-   Gast-Agent, den Aurora mitbringt:
+4. **Boot.** `qm stop 110`, `qm start 112`. The address comes from the guest
+   agent that Aurora ships:
 
    ```sh
    qm guest cmd 112 network-get-interfaces
    ```
 
-5. **Prüfen.** Die SSH-Teile der Boot-Checkliste (Abschnitt unten)
-   erledigt `tests/boot-check.sh`:
+5. **Check.** `tests/boot-check.sh` covers the SSH parts of the boot checklist
+   (section below):
 
    ```sh
-   ssh <user>@<adresse> 'bash -s' < tests/boot-check.sh <kennung-aus-schritt-2>
+   ssh <user>@<address> 'bash -s' < tests/boot-check.sh <id-from-step-2>
    ```
 
-   First-Login-Terminal, Freigabe-Dialog, Sprache und der AT-SPI-Baum brauchen
-   die grafische Sitzung: Proxmox-Konsole von VM 112, Anmeldung als `admin`.
+   The first-login terminal, the approval dialog, language and the AT-SPI tree
+   need the graphical session: Proxmox console of VM 112, log in as `admin`.
 
-Der Datenträgerbau ist nur für den allerersten Boot nötig. Die gebootete VM
-trägt `ghcr.io/pottrauschen/hermes-os:latest` als Ursprung, das Paket ist
-öffentlich; jede weitere Fassung kommt wie auf einem echten Gerät:
+The disk build is only needed for the very first boot. The booted VM tracks
+`ghcr.io/pottrauschen/hermes-os:latest` as its origin, and the package is
+public; every later version arrives the same way as on a real device:
 
 ```sh
-sudo bootc upgrade          # holt latest, staged das Deployment
-systemctl reboot            # aktiviert es
+sudo bootc upgrade          # fetches latest, stages the deployment
+systemctl reboot            # activates it
 ```
 
-Am 2026-09-26 brauchte das für eine geänderte Schicht (450 MB) 38 Sekunden
-plus Neustart in unter einer Minute. Wer trotzdem eine neue Platte baut: die
-alte wird durch `qm set --scsi0` zum `unused0` und belegt weiter Platz auf
-`vmdata`; nach dem Tausch `qm set 112 --delete unused0`.
+On 2026-09-26 this took 38 seconds for a changed layer (450 MB), plus a
+reboot in under a minute. If you build a new disk anyway: `qm set --scsi0`
+turns the old one into `unused0`, and it keeps taking up space on `vmdata`;
+after the swap, run `qm set 112 --delete unused0`.
 
-## GPU-Passthrough: RTX 3060 an VM 112
+## GPU passthrough: RTX 3060 on VM 112
 
-Seit 2026-09-26 hängt die RTX 3060 des Hosts (`0c:00`, GA106, 12 GB) an der
-Test-VM, damit Whisper, Sprachausgabe und lokale Modelle auf der GPU laufen
-können. Der Host war vorbereitet (`amd_iommu=on iommu=pt`, beide
-NVIDIA-Karten an `vfio-pci`, eigene IOMMU-Gruppen); die Schritte waren:
+Since 2026-09-26 the host's RTX 3060 (`0c:00`, GA106, 12 GB) has been attached
+to the test VM, so that Whisper, speech output and local models can run on the
+GPU. The host was already prepared (`amd_iommu=on iommu=pt`, both NVIDIA cards
+on `vfio-pci`, separate IOMMU groups); the steps were:
 
-1. In der laufenden VM auf die NVIDIA-Variante wechseln, nur gestaged:
+1. In the running VM, switch to the NVIDIA variant, staged only:
    `sudo bootc switch ghcr.io/pottrauschen/hermes-os-nvidia:latest`
-   (36 neue Schichten, 2,4 GB, rund fünf Minuten).
-2. VM herunterfahren (`sudo systemctl poweroff` in der VM; `qm shutdown`
-   kann an der Plasma-Abfrage hängen), dann auf dem Host
-   `qm set 112 -hostpci0 0000:0c:00,pcie=1` und `qm start 112`.
-   Die Audio-Funktion `0c:00.1` kommt über die Multifunktionsangabe mit.
-3. Prüfen: `nvidia-smi` meldet die Karte, `lsmod` zeigt `nvidia`,
-   `nvidia_drm`, `nvidia_modeset`, `nvidia_uvm`; Treiber 615.71.09 mit
-   Lizenz „Dual MIT/GPL", also die offenen Kernelmodule.
-   `tests/boot-check.sh 44.20260922.1.20260926` meldete keine harten Fehler.
+   (36 new layers, 2.4 GB, about five minutes).
+2. Shut the VM down (`sudo systemctl poweroff` inside the VM; `qm shutdown`
+   can hang on Plasma's prompt), then on the host
+   `qm set 112 -hostpci0 0000:0c:00,pcie=1` and `qm start 112`.
+   The audio function `0c:00.1` comes along through the multifunction notation.
+3. Check: `nvidia-smi` reports the card, `lsmod` shows `nvidia`,
+   `nvidia_drm`, `nvidia_modeset`, `nvidia_uvm`; driver 615.71.09 with the
+   license “Dual MIT/GPL”, so the open kernel modules.
+   `tests/boot-check.sh 44.20260922.1.20260926` reported no hard errors.
 
-Zuerst lief die VM ohne `x-vga` und mit `vga: virtio`: Die Proxmox-Konsole
-zeigte den Desktop, die 3060 war reine Rechenkarte. Seit dem 2026-09-27 steht
-VM 112 auf `vga: none`: Plasma läuft auf der 3060, das Bild kommt über deren
-HDMI an den Bildschirm am KVM-Umschalter, Tastatur und Maus über den
-durchgereichten USB-Anschluss. Die Proxmox-Konsole bleibt damit schwarz, und
-`qm monitor … screendump` liefert nichts; bedient wird die Sitzung von hier
-aus wie im Abschnitt „VM 112 von hier bedienen“.
+At first the VM ran without `x-vga` and with `vga: virtio`: the Proxmox
+console showed the desktop, and the 3060 was a pure compute card. Since
+2026-09-27 VM 112 has been on `vga: none`: Plasma runs on the 3060, the
+picture goes out over its HDMI to the monitor on the KVM switch, keyboard and
+mouse come in over the passed-through USB port. The Proxmox console therefore
+stays black, and `qm monitor … screendump` returns nothing; the session is
+operated from here as described in the section “Operating VM 112 from here”.
 
-Randbedingungen: Die 3060 steht auch in den Configs von VM 105 und 107
-(Render-VM); solange sie an 112 hängt, startet keine der beiden. Der
-Gast-RAM (8 GB) ist bei Passthrough fest gepinnt. Die Quadro P620 (`04:00`,
-Pascal) taugt nicht: `aurora-dx-nvidia-open` unterstützt erst Turing, und
-NVIDIA beendet die Pascal-Unterstützung mit der 580er-Linie.
+Constraints: the 3060 is also in the configs of VM 105 and 107 (render VM);
+while it is attached to 112, neither of them starts. With passthrough the
+guest RAM (8 GB) is pinned. The Quadro P620 (`04:00`, Pascal) is no use:
+`aurora-dx-nvidia-open` supports Turing and later only, and NVIDIA ends Pascal
+support with the 580 series.
 
-## VM 112 von hier bedienen
+## Operating VM 112 from here
 
-Die VM hat keine Proxmox-Konsole mehr (`vga: none`). Vom Windows-PC aus geht
-trotzdem alles, was man an der Sitzung braucht; die Hilfen dafür liegen in
+The VM no longer has a Proxmox console (`vga: none`). Everything the session
+needs still works from the Windows PC; the helpers for it are in
 `tests/vm-hilfen.sh`.
 
-| Was | Wie |
+| What | How |
 |---|---|
-| Anmelden am Anmeldebildschirm | auf dem Host `<proxmox-host>` als root: `qm sendkey 112 shift`, dann das Passwort Taste für Taste, dann `ret`. Auf deutscher Belegung liegt `-` auf der US-Taste `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
-| Befehle in der Sitzung | `ssh <user>@<test-vm>`, dann `. ~/hosenv.sh` (Kopie von `tests/vm-hilfen.sh`, siehe Kopf der Datei). Setzt `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` und die übrige Umgebung der Plasma-Sitzung |
-| Bildschirmfoto | `shot` legt `~/hos/s.png` an (`shotp` mit Zeiger), dann `scp <user>@<test-vm>:hos/s.png .` auf den PC |
-| Klicken und Tippen | `VM_PASS=… prep` einmal je Sitzung (ydotool-Daemon, flache Zeigerbeschleunigung), dann `click X Y` und `paste "Text"`. Ist ein Nutzer ohne sudo angemeldet: `prep` als Admin-Nutzer, dann `flach` als dieser Nutzer |
-| Bildschirm aufnehmen | `rec_start` (Spectacles Kürzel „Bildschirm aufnehmen“ plus der Klick, den es verlangt), `rec_stop` gibt den Pfad der Datei aus; dann `scp` auf den PC |
-| Hermes fragen ohne Tastatur | `frage "…"` schickt die Frage ins Kontor, `frage_still "…"` antwortet als Benachrichtigung (Runner des Leisten-Symbols über D-Bus) |
-| Leisten-Symbol zeigen | `/usr/libexec/hermes-os-tray --show` (reicht an die laufende Instanz weiter) |
+| Log in at the login screen | on the host `<proxmox-host>` as root: `qm sendkey 112 shift`, then the password key by key, then `ret`. On a German layout, `-` sits on the US key `slash`: `for k in h e r m e s slash o s; do qm sendkey 112 $k; done; qm sendkey 112 ret` |
+| Commands in the session | `ssh <user>@<test-vm>`, then `. ~/hosenv.sh` (a copy of `tests/vm-hilfen.sh`, see the file's header). Sets `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` and the rest of the Plasma session's environment |
+| Screenshot | `shot` writes `~/hos/s.png` (`shotp` with the pointer), then `scp <user>@<test-vm>:hos/s.png .` to the PC |
+| Clicking and typing | `VM_PASS=… prep` once per session (ydotool daemon, flat pointer acceleration), then `click X Y` and `paste "Text"`. If a user without sudo is logged in: `prep` as the admin user, then `flach` as that user |
+| Recording the screen | `rec_start` presses Spectacle's shortcut “Record Screen” (German default: „Bildschirm aufnehmen“) and makes the click it asks for; `rec_stop` prints the file's path; then `scp` to the PC |
+| Asking Hermes without a keyboard | `frage "…"` sends the question into the Kontor (the chat window), `frage_still "…"` answers as a notification (the tray icon's runner over D-Bus) |
+| Showing the tray icon | `/usr/libexec/hermes-os-tray --show` (hands over to the running instance) |
 
-Wer an der VM sitzt, sieht, was diese Hilfen tun: Fenster öffnen sich, der
-Zeiger bewegt sich. Vorher Bescheid sagen. Für Bilder von Oberflächen, die
-niemanden stören sollen, gibt es die Offscreen-Tests
-(`docs/entwicklung.md`, „Oberflächen ohne Bildschirm prüfen“).
+Anyone sitting at the VM sees what these helpers do: windows open, the pointer
+moves. Say so beforehand. For pictures of interfaces that should not disturb
+anyone, there are the offscreen tests (`docs/entwicklung.md`, “Checking
+interfaces without a screen”).
 
-## Stolperfallen
+## Pitfalls
 
-- **`/tmp` auf dem Host ist ein tmpfs im RAM.** Die ainux-Doku legt die Platte
-  dort ab, bei 3,5 GB. Das hermes-os-qcow2 ist ein Vielfaches davon und würde
-  den RAM verdrängen, den die Test-VM braucht. Deshalb der ZFS-Pool.
-- **Aurora deklariert `btrfs` als Wurzeldateisystem** in
-  `/usr/lib/bootc/install/20-aurora.toml`. Das Makefile setzt `--rootfs`
-  trotzdem, weil das nackte Universal-Blue-Basis-Image ohne die Angabe
-  abbricht und die Wahl so sichtbar bleibt.
-- **Neue Platte, neue Wirtsschlüssel.** Nach jedem Tausch meldet `ssh`
-  „REMOTE HOST IDENTIFICATION HAS CHANGED". Richtig ist
-  `ssh-keygen -R <adresse>`, nicht das Abschalten der Prüfung.
-- **`sudo` in der Test-VM fragt nach dem Passwort.** Prüfungen, die root
-  brauchen, laufen deshalb über `ssh -t` mit Eingabe oder an der Konsole.
-- **Secure Boot ist in VM 112 aus**, weil das Image noch nicht signiert ist.
-  Sobald `SIGNING_SECRET` und `cosign.pub` da sind, gehört das getestet.
-- **SSH ist im Image aus.** Aurora startet sshd nicht, und der Datenträger
-  erbt das. Über den Gast-Agenten geht nur `systemctl enable sshd`, also der
-  Symlink, nicht der Start: der Agent läuft unter einem SELinux-Kontext, der
-  systemctl nicht bedienen darf. Ein Neustart aktiviert den Dienst; an der
-  Konsole reicht `sudo systemctl enable --now sshd`.
-- **Auroras Ersteinrichtung startet trotz vorhandenem Nutzer.**
-  `plasma-setup.service` läuft, solange `/etc/plasma-setup-done` fehlt; der
-  Builder legt den Nutzer an, den Marker nicht. Entweder den Wizard an der
-  Konsole durchlaufen, der einen weiteren Nutzer anlegen will, oder als Nutzer
-  `sudo touch /etc/plasma-setup-done` und neu starten. Dann erscheint der Login
-  von plasmalogin, Auroras Login-Manager anstelle von SDDM.
-- **Kernel-Zeile mit `console=ttyS0`.** Der Builder trägt sie ein; ohne
-  serielle Schnittstelle meldet agetty alle zehn Sekunden einen Fehler. VM 112
-  hat deshalb `serial0: socket`, und `qm terminal 112` liefert eine Konsole.
-- **Journal-Rauschen aus Aurora.** udev löst beim frühen Boot Gruppen wie
-  disk, kvm, tss und plugdev nicht auf, dazu kommen zwei SELinux-Hinweise
-  (lsblk gegen die userdb, chcon mit mac_admin). Nichts davon stammt aus der
-  hermes-os-Schicht; `tests/boot-check.sh` filtert das Bekannte heraus.
-- **Screenshots ohne Anmeldung** gingen nur mit `vga: virtio`:
-  `echo "screendump /root/112.ppm" | qm monitor 112` auf dem Host,
-  `/root/ppm2png.py` dort wandelt das PPM nach PNG. Mit `vga: none` bleibt
-  das Bild schwarz; dann Spectacle in der Sitzung (unten).
-- **Bildschirmfoto aus der Sitzung zeigt ein altes Bild**, wenn die Anzeige
-  per DPMS aus ist: `spectacle --background` liefert dann den eingefrorenen
-  Frame samt alter Uhr. Vorher `kscreen-doctor --dpms on` über
-  `systemd-run --user`, dann stimmt das Foto; `wake` in
-  `tests/vm-hilfen.sh` tut genau das.
-- **Ohne Bildschirm an der 3060 gibt es keine Sitzung.** Nach dem Start
-  melden alle Anschlüsse `disconnected`, solange der KVM-Umschalter nie auf
-  die VM stand: KWin hat keine Ausgabe, plasmashell stürzt in einer Schleife
-  ab, Fotos und Aufnahmen scheitern. Einmal auf die VM umschalten genügt;
-  danach bleibt HDMI verbunden, auch wenn der Umschalter zurückgeht.
-  Prüfen: `grep . /sys/class/drm/card0-*/status`.
-- **Spectacle nimmt erst nach einem Klick auf.** „Bildschirm aufnehmen“
-  zeigt ein Fadenkreuz und wartet, welcher Bildschirm gemeint ist; ohne Klick
-  beendet es sich still, ohne Meldung im Log. `rec_start` klickt; ein
-  `ydotool click 0xC0` in einem Zug kommt dort nicht an, Drücken und
-  Loslassen getrennt schon. Die Datei liegt im übersetzten Unterordner,
-  in deutscher Sitzung `~/Videos/Bildschirmaufnahmen`. Ein Bildschirmfoto
-  mit Spectacle während der Aufnahme geht an dieselbe Instanz und beendet sie;
-  `shot` ruft deshalb `spectacle --new-instance`, so wie Hermes' Sichtprüfung,
-  und die Aufnahme läuft weiter. Ob eine Aufnahme läuft, verrät der
-  Leisten-Eintrag „Spectacle“ (`_rec_laeuft`); das Kürzel selbst schaltet nur um.
-- **Platte vergrößern nur mit sudo in der VM.** Der Gast-Agent darf wegen
-  SELinux weder `/dev/sda` öffnen noch `systemd-run` aufrufen. Ablauf: auf dem
-  Host `qm resize 112 scsi0 +32G`, in der VM `sgdisk -e /dev/sda`,
+- **`/tmp` on the host is a tmpfs in RAM.** The ainux docs put the disk there,
+  at 3.5 GB. The hermes-os qcow2 is several times that size and would push out
+  the RAM the test VM needs. Hence the ZFS pool.
+- **Aurora declares `btrfs` as the root filesystem** in
+  `/usr/lib/bootc/install/20-aurora.toml`. The Makefile sets `--rootfs`
+  anyway, because the bare Universal Blue base image aborts without it, and
+  this keeps the choice visible.
+- **New disk, new host keys.** After every swap, `ssh` reports
+  “REMOTE HOST IDENTIFICATION HAS CHANGED”. The right fix is
+  `ssh-keygen -R <address>`, not turning the check off.
+- **`sudo` in the test VM asks for the password.** Checks that need root
+  therefore run via `ssh -t` with input, or at the console.
+- **Secure Boot is off in VM 112**, because the image is not signed yet. Once
+  `SIGNING_SECRET` and `cosign.pub` exist, this needs testing.
+- **SSH is off in the image.** Aurora does not start sshd, and the disk
+  inherits that. Through the guest agent only `systemctl enable sshd` works,
+  meaning the symlink, not the start: the agent runs in an SELinux context
+  that is not allowed to drive systemctl. A reboot activates the service; at
+  the console, `sudo systemctl enable --now sshd` is enough.
+- **Aurora's first-run setup starts even though a user exists.**
+  `plasma-setup.service` runs as long as `/etc/plasma-setup-done` is missing;
+  the builder creates the user, not the marker. Either go through the wizard
+  at the console, which wants to create another user, or run
+  `sudo touch /etc/plasma-setup-done` as the user and reboot. Then the login
+  screen of plasmalogin appears, Aurora's login manager in place of SDDM.
+- **Kernel command line with `console=ttyS0`.** The builder adds it; without a
+  serial port, agetty logs an error every ten seconds. VM 112 therefore has
+  `serial0: socket`, and `qm terminal 112` gives a console.
+- **Journal noise from Aurora.** During early boot, udev does not resolve
+  groups such as disk, kvm, tss and plugdev, and there are two SELinux notices
+  on top (lsblk against the userdb, chcon with mac_admin). None of this comes
+  from the hermes-os layer; `tests/boot-check.sh` filters out the known noise.
+- **Screenshots without logging in** only worked with `vga: virtio`:
+  `echo "screendump /root/112.ppm" | qm monitor 112` on the host, and
+  `/root/ppm2png.py` there converts the PPM to PNG. With `vga: none` the
+  picture stays black; then use Spectacle in the session (below).
+- **A screenshot from the session shows an old picture** when the display is
+  off through DPMS: `spectacle --background` then returns the frozen frame,
+  old clock included. Run `kscreen-doctor --dpms on` through
+  `systemd-run --user` first, and the screenshot is right; `wake` in
+  `tests/vm-hilfen.sh` does exactly that.
+- **Without a monitor on the 3060 there is no session.** After startup, all
+  connectors report `disconnected` as long as the KVM switch has never been
+  set to the VM: KWin has no output, plasmashell crashes in a loop, screenshots
+  and recordings fail. Switching to the VM once is enough; after that HDMI
+  stays connected, even when the switch goes back.
+  Check: `grep . /sys/class/drm/card0-*/status`.
+- **Spectacle only starts recording after a click.** “Record Screen” (German
+  default: „Bildschirm aufnehmen“) shows a crosshair and waits to be told which
+  screen is meant; without a click it quits silently, with nothing in the log.
+  `rec_start` clicks; a `ydotool click 0xC0` in one go does not register
+  there, but press and release sent separately do. The file lands in the
+  localized subfolder, in a German session `~/Videos/Bildschirmaufnahmen`. A
+  Spectacle screenshot during the recording goes to the same instance and ends
+  it; `shot` therefore calls `spectacle --new-instance`, as Hermes' own visual
+  check does, and the recording keeps running. Whether a recording is running
+  shows in the panel entry “Spectacle” (`_rec_laeuft`); the shortcut itself
+  only toggles.
+- **Growing the disk only works with sudo in the VM.** Because of SELinux, the
+  guest agent may neither open `/dev/sda` nor call `systemd-run`. Steps: on the
+  host `qm resize 112 scsi0 +32G`, in the VM `sgdisk -e /dev/sda`,
   `echo ",+" | sfdisk -N 4 --no-reread --force /dev/sda`, `partx -u -n 4
-  /dev/sda`, `btrfs filesystem resize max /var`. `parted` verweigert die
-  eingehängte Partition, `/sysroot` ist schreibgeschützt eingehängt.
-- **ydotool tippt US-Belegung.** `ydotool type` setzt auf deutscher Tastatur
-  y und z vertauscht und Sonderzeichen falsch; Text deshalb über die
-  Zwischenablage (`paste`). `wl-copy` ohne offene Ausgaben starten, sonst
-  hält es die SSH-Sitzung offen.
-- **Ohne grafische Anmeldung stirbt das Gateway mit der SSH-Sitzung.** Nach
-  einem Neustart steht die VM am Anmeldebildschirm, kein Autologin; die
-  Nutzer-Units starten erst mit der Plasma-Sitzung. `systemctl --user start
-  hermes-gateway` aus SSH läuft nur, solange diese Sitzung offen ist, weil
-  der Nutzer-Manager ohne Linger mit der letzten Sitzung endet. Also Start
-  und Test in einer SSH-Sitzung, oder an der Konsole anmelden.
-- **Tastatur und Sprache kommen nicht vom Builder.** bootc-image-builder
-  kennt keine Locale-Anpassung; ohne Vorgaben im Image bootet der Datenträger
-  mit us-Tastatur und Englisch. Plasma liest die Tastatur aus `kxkbrc`, sonst
-  aus `localectl`. KWin lauscht per KConfigWatcher: eine Änderung greift
-  sofort, wenn `kwriteconfig6 --notify` schreibt, sonst erst mit der nächsten
-  Anmeldung. Das D-Bus-Signal `reloadConfig` bewirkt bei KWin 6.7 nichts.
+  /dev/sda`, `btrfs filesystem resize max /var`. `parted` refuses the mounted
+  partition, and `/sysroot` is mounted read-only.
+- **ydotool types a US layout.** On a German keyboard, `ydotool type` swaps
+  y and z and gets special characters wrong; text therefore goes through the
+  clipboard (`paste`). Start `wl-copy` with no output streams left open,
+  otherwise it keeps the SSH session open.
+- **Without a graphical login, the gateway dies with the SSH session.** After
+  a reboot the VM waits at the login screen, with no autologin; the user units
+  only start with the Plasma session. `systemctl --user start
+  hermes-gateway` from SSH only runs as long as that session is open, because
+  without linger the user manager ends with the last session. So start and
+  test within one SSH session, or log in at the console.
+- **Keyboard and language do not come from the builder.** bootc-image-builder
+  has no locale customization; without defaults in the image, the disk boots
+  with a US keyboard and English. Plasma reads the keyboard from `kxkbrc`,
+  otherwise from `localectl`. KWin listens through KConfigWatcher: a change
+  takes effect immediately when `kwriteconfig6 --notify` writes it, otherwise
+  only at the next login. The D-Bus signal `reloadConfig` does nothing in
+  KWin 6.7.
 
-## Messwerte vom ersten Lauf (2026-09-26)
+## Measurements from the first run (2026-09-26)
 
-| Schritt | Wert |
+| Step | Value |
 |---|---|
-| Pull des Images auf 110 | 6 GB komprimiert, 16,3 GB im Speicher, rund 20 Minuten |
-| Datenträgerbau auf 110 | 32 Minuten mit 4 Kernen und 4 GB |
-| qcow2 | 7,35 GB Datei, 32 GB virtuelle Platte |
-| Transfer 110 nach Host | rund 300 MB/s, unter einer Minute |
-| Import nach vmdata | rund 2 Minuten |
-| Boot bis Gast-Agent | rund 20 Sekunden, SSH unmittelbar danach |
+| Pulling the image on 110 | 6 GB compressed, 16.3 GB in storage, about 20 minutes |
+| Disk build on 110 | 32 minutes with 4 cores and 4 GB |
+| qcow2 | 7.35 GB file, 32 GB virtual disk |
+| Transfer from 110 to the host | about 300 MB/s, under a minute |
+| Import into vmdata | about 2 minutes |
+| Boot until the guest agent answers | about 20 seconds, SSH right after |
 
-Gebootet hat `44.20260922.1.20260925` mit Kernel 7.1.10; das Prüfskript meldete
-keine harten Fehler. Spätere Fassungen kamen per `bootc upgrade` (450 MB, 38 s)
-und `bootc switch` auf die NVIDIA-Variante (2,4 GB, rund fünf Minuten).
+The version that booted was `44.20260922.1.20260925`, with kernel 7.1.10; the
+check script reported no hard errors. Later versions came via `bootc upgrade`
+(450 MB, 38 s) and `bootc switch` to the NVIDIA variant (2.4 GB, about five
+minutes).
 
-## Boot-Checkliste, Stand 2026-09-26
+## Boot checklist, as of 2026-09-26
 
-| Punkt | Ergebnis |
+| Item | Result |
 |---|---|
-| First-Login | Bestanden. Config aus Vorlage, Plugin und Skill verlinkt, Plugin enabled. Einrichtung über den Assistenten aus `~/hos` (Testfassung, im Image ab dem nächsten CI-Lauf), OpenRouter mit Schlüssel. Nach dem Upgrade auf `44.20260922.1.20260926` legte das Skript beim Login `API_SERVER_KEY` in `.env` an und schaltete das Gateway ein. |
-| Leisten-Symbol (`docs/systemagent.md`) | Automatischer Teil bestanden: Symbol startet per Autostart, legt das Gespräch `hermes-os-tray` am API-Server an, keine QML-Fehler im Journal, `/health` antwortet, `--show` einer zweiten Instanz endet sofort (Weiterreichen). Offen, nur am Bildschirm prüfbar: Symbolfarbe, Meta+H, Antwort im Fenster, Freigabe-Kasten und Benachrichtigung. |
-| NVIDIA-Variante | Bestanden am 2026-09-26 mit der RTX 3060 per Passthrough: `hermes-os-nvidia` bootet, offene Kernelmodule 615.71.09 geladen, `nvidia-smi` zeigt 12 GB. Ob Whisper und Piper die GPU nutzen, ist noch nicht geprüft. |
-| `hermes` im Terminal, Plugin geladen | Bestanden. `hermes chat -q` mit der Frage nach Deployments lieferte Image-Referenz und Version aus `os_status`. |
-| `app_launch` | Bestanden. Aus der Sitzung gestartet (`systemd-run --user`), Konsole erschien. Per SSH ohne Sitzungsumgebung nicht testbar. |
-| Freigabe-Dialog | Offen, nur interaktiv prüfbar: `sudo bootc upgrade --check` im Chat muss fragen, `flatpak install` nicht. |
-| Gateway | Bestanden. Der Assistent ruft nach dem Speichern das First-Login-Skript, das die Unit einschaltet; `enabled`/`active`, OpenRouter-Schlüssel im Credential-Pool. Seit dem 26.09. mit API-Server auf `127.0.0.1:8642`, Schlüssel aus `.env` wird akzeptiert. Hinweis im Journal: die Unit hat `TimeoutStopSec=30s`, Hermes erwartet `drain_timeout`-passende Werte („Stale systemd unit detected"); noch nicht angeglichen. |
-| Sprache (`/voice on`) | Offen, braucht Mikrofon in der VM. |
-| Tastatur und Systemsprache | Fehlgeschlagen am 2026-09-26 mit dem ersten Datenträger: y ergab z, Plasma auf Englisch. Ursache: der Datenträger aus dem Builder trägt weder Locale noch Tastatur, nur der Anaconda-Installer fragt danach; das Testmodell hat dann Schlüssel in `kdeglobals` und `kwinrc` erfunden. In VM 112 von Hand gesetzt, seither Vorgaben im Image und Rezeptur im Skill. Bestanden am Abend des 2026-09-26 nach `bootc upgrade` auf Digest `2eb6e1a5…`: Vorgaben unter `/etc` und `/etc/xdg` da, `localectl` meldet de/de/de, der Agent bestätigt es über `os_locale`. |
-| Bibliothek (`docs/bibliothek.md`) | Bestanden am 2026-09-26: `library_list` über das Gateway im gebooteten Image nennt den Eintrag docs.kde.org; zuvor aus `~/hos` der volle Lauf mit `library_fetch` (Dolphin-Handbuch mit Quelle in 30 s). Die Seite im Fenster ist offscreen geprüft, am Bildschirm noch nicht. |
-| `ujust --list` | Bestanden, acht Rezepte. |
-| AT-SPI (Phase 3) | `busctl --user tree org.a11y.atspi.Registry` liefert keinen Baum; Accessibility in den KDE-Einstellungen einschalten, sobald Phase 3 beginnt. |
+| First login | Passed. Config from the template, plugin and skill linked, plugin enabled. Setup through the assistant from `~/hos` (test build, in the image from the next CI run on), OpenRouter with a key. After the upgrade to `44.20260922.1.20260926`, the script created `API_SERVER_KEY` in `.env` at login and enabled the gateway. |
+| Tray icon (`docs/systemagent.md`) | Automated part passed: the icon starts through autostart, creates the conversation `hermes-os-tray` on the API server, no QML errors in the journal, `/health` answers, `--show` from a second instance exits at once (hand-over). Open, only checkable at the screen: icon color, Meta+H, answer in the window, approval box and notification. |
+| NVIDIA variant | Passed on 2026-09-26 with the RTX 3060 via passthrough: `hermes-os-nvidia` boots, open kernel modules 615.71.09 loaded, `nvidia-smi` shows 12 GB. Whether Whisper and Piper use the GPU has not been checked yet. |
+| `hermes` in the terminal, plugin loaded | Passed. `hermes chat -q` with a question about deployments returned the image reference and version from `os_status`. |
+| `app_launch` | Passed. Started from the session (`systemd-run --user`), Konsole appeared. Not testable over SSH without the session environment. |
+| Approval dialog | Open, only checkable interactively: `sudo bootc upgrade --check` in the chat must ask, `flatpak install` must not. |
+| Gateway | Passed. After saving, the assistant calls the first-login script, which enables the unit; `enabled`/`active`, OpenRouter key in the credential pool. Since 2026-09-26 with the API server on `127.0.0.1:8642`, and the key from `.env` is accepted. Note in the journal: the unit has `TimeoutStopSec=30s`, while Hermes expects values that fit `drain_timeout` (“Stale systemd unit detected”); not aligned yet. |
+| Voice (`/voice on`) | Open, needs a microphone in the VM. |
+| Keyboard and system language | Failed on 2026-09-26 with the first disk: y came out as z, Plasma in English. Cause: the disk from the builder carries neither locale nor keyboard, only the Anaconda installer asks for them; the model used for testing then invented keys in `kdeglobals` and `kwinrc`. Set by hand in VM 112, since then defaults in the image and the recipe in the skill. Passed on the evening of 2026-09-26 after `bootc upgrade` to digest `2eb6e1a5…`: defaults under `/etc` and `/etc/xdg` present, `localectl` reports de/de/de, the agent confirms it via `os_locale`. |
+| Library (`docs/bibliothek.md`) | Passed on 2026-09-26: `library_list` through the gateway in the booted image names the entry docs.kde.org; before that, the full run from `~/hos` with `library_fetch` (Dolphin handbook with source in 30 s). The page in the window was checked offscreen, not yet on screen. |
+| `ujust --list` | Passed, eight recipes. |
+| AT-SPI (Phase 3) | `busctl --user tree org.a11y.atspi.Registry` returns no tree; turn on accessibility in the KDE settings once Phase 3 begins. |
 
-`hermes doctor` ist bis auf optionale Pakete grün, OpenRouter erreichbar. Ohne
-Bedeutung für hermes-os: „~/.local/bin/hermes not found" (unser Launcher liegt
-unter `/usr/bin`), ripgrep und Node fehlen (optional).
+`hermes doctor` is green apart from optional packages, OpenRouter reachable.
+Irrelevant for hermes-os: “~/.local/bin/hermes not found” (our launcher lives
+under `/usr/bin`), ripgrep and Node missing (optional).

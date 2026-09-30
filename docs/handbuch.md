@@ -1,137 +1,141 @@
-# Handbuch: hermes-os benutzen
+# User guide: using hermes-os
 
-hermes-os ist ein Linux mit KDE Plasma, in dem ein Assistent mitarbeitet:
-**Hermes**. Hermes kennt deinen Rechner (System, Programme, Hardware), kann
-Dinge für dich erledigen und fragt vorher, wenn etwas das System verändert.
-Diese Seite erklärt die Bedienung. Wie es gebaut ist, steht in
+hermes-os is a Linux with KDE Plasma in which an assistant works alongside you:
+**Hermes**. Hermes knows your computer (system, programs, hardware), can get
+things done for you and asks first when something would change the system.
+This page explains how to use it. How it is built is described in
 [entwicklung.md](entwicklung.md).
 
-## Der erste Start
+## The first start
 
-1. Anmelden wie gewohnt.
-2. Der **Einrichtungsassistent** öffnet sich von selbst. Dort wählst du, mit
-   welchem Sprachmodell Hermes arbeitet: einen Anbieter (zum Beispiel
-   OpenRouter), deinen Schlüssel von dort und ein Modell. Später findest du
-   ihn im Menü als „Hermes einrichten“.
-3. Danach sitzt Hermes als Symbol unten rechts in der Leiste.
+1. Log in as usual.
+2. The **setup assistant** opens by itself (its texts are still German). There
+   you choose which language model Hermes works with: a provider (for example
+   OpenRouter), your key from that provider and a model. Later you find it in
+   the menu as “Set up Hermes” (German default: „Hermes einrichten“).
+3. After that, Hermes sits as an icon at the bottom right of the panel.
 
-Die Farbe des Symbols sagt, was Hermes gerade tut:
+The color of the icon shows what Hermes is doing:
 
-| Farbe | Bedeutung |
+| Color | Meaning |
 |---|---|
-| grau | aus, oder noch nicht eingerichtet |
-| blau | bereit |
-| orange | arbeitet |
-| gelb | fragt dich um Erlaubnis |
-| rot mit Mikrofon | hört zu |
-| blau mit Lautsprecher | spricht |
+| gray | off, or not set up yet |
+| blue | ready |
+| orange | working |
+| yellow | asking you for permission |
+| red with microphone | listening |
+| blue with speaker | speaking |
 
-## Mit Hermes reden
+## Talking to Hermes
 
-**Kontor:** So heißt das Chat-Fenster, in der Titelleiste und im Startmenü
-„Hermes-Kontor“. Klick auf das Symbol oder **Meta+H**. Frage eintippen,
-Enter schickt ab, Umschalt+Enter macht eine neue Zeile. Escape oder
-Schließen versteckt das Fenster nur, Hermes bleibt da.
+**The Kontor (the chat window):** the title bar and the start menu call it
+“Hermes Kontor” (German default: „Hermes-Kontor“). Click the icon or press
+**Meta+H**. Type a question; Enter sends it, Shift+Enter starts a new line.
+Escape or closing only hides the window; Hermes stays.
 
-- **Bilder mitschicken:** Knopf mit dem Bild, Strg+V (zum Beispiel ein
-  Bildschirmfoto) oder die Datei ins Fenster ziehen.
-- **Modell und Denkaufwand:** der kleine Knopf links neben dem Senden-Knopf,
-  etwa „Sonnet 5 · mittel“. Mehr Denkaufwand heißt gründlichere, aber
-  langsamere Antworten. Dieselbe Wahl gibt es im Rechtsklick-Menü am Symbol.
-- **Neues Gespräch:** Knopf „Neu“ oben. Ein leeres Kontor zeigt rechts unten
-  drei Vorschläge; ein Klick schickt den Vorschlag gleich ab.
-- Oben findest du außerdem **Bibliothek**, **Protokoll** und **Einrichten**.
+- **Sending images:** the button with the picture, Ctrl+V (for example a
+  screenshot) or drag the file into the window.
+- **Model and reasoning effort:** the small button to the left of the send
+  button, for example “Sonnet 5 · medium” (German default: „Sonnet 5 · mittel“).
+  More reasoning effort means more thorough but slower answers. The same choice
+  is in the icon's right-click menu.
+- **New conversation:** the “New” button at the top (German default: „Neu“). An
+  empty Kontor shows three suggestions at the bottom right; one click sends the
+  suggestion right away.
+- At the top you also find **Library**, **Log** and **Set up** (German
+  defaults: „Bibliothek“, „Protokoll“, „Einrichten“).
 
-**Schneller ohne Fenster:**
+**Faster without the window:**
 
-| Kürzel | Was passiert |
+| Shortcut | What happens |
 |---|---|
-| Meta+H | Kontor auf und zu |
-| Meta+Umschalt+H | Bildschirmausschnitt wählen, Hermes sagt, was darauf zu sehen ist |
-| Meta+Leertaste halten | Frage sprechen; die Antwort wird vorgelesen |
-| Alt+Leertaste, dann `h: deine Frage` | Hermes aus KRunner fragen; Enter öffnet den Chat, „Nur nachschlagen“ antwortet als Benachrichtigung |
+| Meta+H | Open and close the Kontor |
+| Meta+Shift+H | Select a screen region; Hermes says what it shows |
+| Hold Meta+Space | Speak a question; the answer is read aloud |
+| Alt+Space, then `h: your question` | Ask Hermes from KRunner; Enter opens the chat, “Look up only” (German default: „Nur nachschlagen“) answers as a notification |
 
-Im Terminal geht es auch: `hermes`.
+It also works in the terminal: `hermes`.
 
-## Was Hermes darf und wann er fragt
+## What Hermes may do and when he asks
 
-Hermes darf ohne Rückfrage alles in deinem Home-Ordner, Programme starten,
-Apps aus Flathub installieren und nachsehen, wie es dem System geht.
+Without asking, Hermes may do anything in your home folder, start programs,
+install apps from Flathub and check how the system is doing.
 
-**Er fragt vorher**, wenn etwas das System selbst verändert: Updates,
-Systemdienste, Dateien unter `/etc` oder `/usr`, Firewall, Nutzer, Befehle
-mit `sudo`. Dann erscheint im Kontor ein Kasten, und zusätzlich eine
-Benachrichtigung mit denselben Knöpfen:
+**He asks first** when something changes the system itself: updates, system
+services, files under `/etc` or `/usr`, the firewall, users, commands with
+`sudo`. A box then appears in the Kontor, along with a notification with the
+same buttons:
 
-- **Einmal erlauben**: nur dieses eine Mal
-- **Für diese Sitzung**: bis zum Ende des Gesprächs
-- **Immer**: auch künftig ohne Frage
-- **Ablehnen**
+- **Allow once** (German default: „Einmal erlauben“): just this one time
+- **This session** („Für diese Sitzung“): until the end of the conversation
+- **Always allow** („Immer erlauben“): from now on without asking
+- **Deny** („Ablehnen“)
 
-Ohne Antwort läuft der Befehl nach fünf Minuten nicht. Neu starten oder
-herunterfahren tut Hermes nie selbst; er bittet dich darum.
+If nobody answers within five minutes, the command does not run. Hermes never
+reboots or shuts down by himself; he asks you to do it.
 
-Im **Protokoll** (Knopf mit der Uhr) siehst du, was Hermes am System getan
-hat: Freigaben mit deiner Entscheidung, Systembefehle mit Ergebnis,
-gestartete Programme.
+The **Log** (German default: „Protokoll“; the button with the clock) shows what
+Hermes did to the system: approvals with your decision, system commands with
+their result, launched programs.
 
-## Was Hermes sonst noch kann
+## What else Hermes can do
 
-- **Bibliothek:** Adressen, Dateien und Ordner eintragen, in denen Hermes
-  nachschlagen soll, etwa ein Handbuch oder deine Notizen. Er nennt die
-  Quelle, wenn er daraus zitiert. Einträge lassen sich spiegeln und dann
-  durchsuchen. Mehr: [bibliothek.md](bibliothek.md).
-- **Morgenbericht:** jeden Morgen eine Benachrichtigung zu Updates,
-  Fehlern, Plattenplatz und Diensten; „Im Chat besprechen“ öffnet ihn im
-  Chat. Einschalten: `ujust hermes-morgenbericht-ein 07:45`.
-- **Dashboard:** Hermes' eigene Einstellungen in einem Fenster: Modelle,
-  Schlüssel, Gespräche, geplante Aufgaben, Erweiterungen, Protokolle. Im
-  Menü am Symbol „Dashboard öffnen“.
-- **Lokales Modell:** Hermes ohne Cloud, auf deiner Grafikkarte. Kleine
-  Modelle sind schwächer als die großen aus der Cloud. Einschalten:
-  `ujust hermes-lokal-ein`. Mehr: [lokales-modell.md](lokales-modell.md).
-- **Programme starten:** „Starte Firefox“ reicht.
+- **Library:** add addresses, files and folders where Hermes should look things
+  up, such as a handbook or your notes. He names the source when he quotes from
+  it. Entries can be mirrored and then searched. More:
+  [bibliothek.md](bibliothek.md).
+- **Morning report:** every morning a notification about updates, errors, disk
+  space and services; “Discuss in chat” (German default: „Im Chat besprechen“)
+  opens the report in the chat. To switch it on:
+  `ujust hermes-morgenbericht-ein 07:45`.
+- **Dashboard:** Hermes' own settings in a window: models, keys, conversations,
+  scheduled tasks, extensions, logs. In the icon's menu: “Open dashboard”
+  (German default: „Dashboard öffnen“).
+- **Local model:** Hermes without the cloud, on your graphics card. Small
+  models are weaker than the large cloud models. To switch it on:
+  `ujust hermes-lokal-ein`. More: [lokales-modell.md](lokales-modell.md).
+- **Launching programs:** “Launch Firefox” is enough.
 
-## Das System aktuell halten
+## Keeping the system up to date
 
-hermes-os aktualisiert sich als Ganzes, wie ein Handy: Das neue System wird
-im Hintergrund geladen und gilt ab dem nächsten Neustart. Das alte bleibt
-als Rückfall.
+hermes-os updates as a whole, like a phone: the new system is downloaded in
+the background and takes effect with the next reboot. The old one stays as a
+fallback.
 
-- **Updates:** `ujust update`, danach neu starten. Hermes kann das für dich
-  anstoßen, fragt aber vorher.
-- **Zurück zum Stand davor**, falls nach einem Update etwas nicht geht:
-  `sudo bootc rollback`, dann neu starten.
-- **Programme:** über Discover oder Flathub. Sie werden getrennt vom System
-  aktualisiert.
-- Hermes selbst kommt mit dem System. `hermes update` gibt es hier nicht.
+- **Updates:** `ujust update`, then reboot. Hermes can start this for you, but
+  asks first.
+- **Back to the previous state**, if something breaks after an update:
+  `sudo bootc rollback`, then reboot.
+- **Programs:** through Discover or Flathub. They are updated separately from
+  the system.
+- Hermes himself comes with the system. `hermes update` does not exist here.
 
-## Befehle im Überblick
+## Commands at a glance
 
-Alle Befehle von hermes-os beginnen mit `ujust hermes`. `ujust --list | grep hermes`
-zeigt sie mit kurzer Erklärung.
+All hermes-os commands start with `ujust hermes`. `ujust --list | grep hermes`
+shows them with a short explanation.
 
-| Befehl | Wofür |
+| Command | Purpose |
 |---|---|
-| `ujust hermes-setup` | Anbieter, Schlüssel und Modell wählen |
-| `ujust hermes-tray` | Kontor öffnen |
-| `ujust hermes-dashboard` | Dashboard öffnen |
-| `ujust hermes-doctor` | Hermes prüft sich selbst |
-| `ujust hermes-gateway-status` | Läuft der Hintergrunddienst? Letzte Meldungen |
-| `ujust hermes-gateway-enable` | Hintergrunddienst einschalten |
-| `ujust hermes-morgenbericht-ein` / `-aus` | Morgenbericht an und aus |
-| `ujust hermes-lokal-ein` / `-aus` / `-entfernen` | lokales Modell |
-| `ujust hermes-os-info` | welches System und welches Hermes installiert sind |
+| `ujust hermes-setup` | Choose provider, key and model |
+| `ujust hermes-tray` | Open the Kontor |
+| `ujust hermes-dashboard` | Open the dashboard |
+| `ujust hermes-doctor` | Hermes checks himself |
+| `ujust hermes-gateway-status` | Is the background service running? Latest messages |
+| `ujust hermes-gateway-enable` | Switch on the background service |
+| `ujust hermes-morgenbericht-ein` / `-aus` | Morning report on and off |
+| `ujust hermes-lokal-ein` / `-aus` / `-entfernen` | Local model |
+| `ujust hermes-os-info` | Which system and which Hermes are installed |
 
-## Wenn etwas nicht geht
+## When something does not work
 
-| Was du siehst | Was hilft |
+| What you see | What helps |
 |---|---|
-| Symbol bleibt grau, „Gateway läuft nicht“ | Im Kontor auf „Gateway starten“, oder `ujust hermes-gateway-enable` |
-| „noch nicht eingerichtet“ | „Hermes einrichten“ im Menü oder im Fenster |
-| Hermes antwortet mit einem Fehler zum Anbieter | Schlüssel und Guthaben beim Anbieter prüfen, dann `ujust hermes-setup` |
-| Sprechen geht nicht | Mikrofon in den Systemeinstellungen prüfen; das Symbol sagt, wenn keines da ist |
-| Nach einem Update geht etwas nicht mehr | `sudo bootc rollback`, neu starten, und Bescheid geben |
-| Unklar, was Hermes getan hat | Protokoll im Kontor |
+| Icon stays gray, “The Hermes gateway is not running” (German default: „Das Hermes-Gateway läuft nicht“) | “Start gateway” (German default: „Gateway starten“) in the Kontor, or `ujust hermes-gateway-enable` |
+| “not set up yet” (German default: „noch nicht eingerichtet“) | “Set up Hermes” (German default: „Hermes einrichten“) in the menu or in the window |
+| Hermes answers with an error about the provider | Check your key and credit with the provider, then `ujust hermes-setup` |
+| Speaking does not work | Check the microphone in System Settings; the icon tells you when there is none |
+| Something stops working after an update | `sudo bootc rollback`, reboot, and report it |
+| Unclear what Hermes did | The Log in the Kontor |
 
-`ujust hermes-doctor` sammelt die wichtigsten Prüfungen auf einen Blick.
+`ujust hermes-doctor` collects the most important checks at a glance.

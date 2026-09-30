@@ -1,115 +1,115 @@
-# Bibliothek: Wissensquellen für den Agenten
+# Library: knowledge sources for the agent
 
-Stand: 2026-09-26, Stufe zwei. Der Nutzer trägt im Kontor Adressen,
-Dateien und Ordner ein, die Hermes kennen soll; der Agent liest sie bei Bedarf
-und nennt die Quelle. Gedacht für Handbücher wie docs.kde.org und eigene
-Unterlagen. Stufe eins (2026-09-26) war die einfache Form: Ablage, Seite,
-`library_list` und `library_fetch`. Stufe zwei (gleicher Tag, eigener Zweig)
-legt darüber je Eintrag einen Spiegel im Cache an, einen Volltextindex mit
-SQLite FTS5 und `library_search`, die Schalter für die Doku-Server aus Hermes'
-MCP-Katalog und die Seite bekommt Ablegen, Suche, Spiegeln und Notizen ändern.
-Die Ablage `bibliothek.json` blieb dabei unverändert.
+As of 2026-09-26, stage two. In the Kontor (the chat window), the user enters
+addresses, files and folders that Hermes should know about; the agent reads
+them when needed and cites the source. It is meant for manuals such as
+docs.kde.org and the user's own documents. Stage one (2026-09-26) was the
+simple form: the store, the page, `library_list` and `library_fetch`. Stage two
+(same day, separate branch) adds a mirror per entry in the cache, a full-text
+index with SQLite FTS5 and `library_search`, and switches for the doc servers
+from Hermes' MCP catalog; the page gains drag and drop, search, mirroring and
+note editing. The store `bibliothek.json` stayed unchanged.
 
-## Was es tut
+## What it does
 
-- **Seite „Bibliothek" im Kontor**, erreichbar über den Knopf im Kopf
-  und den Menüpunkt am Symbol: Eintrag mit Adresse oder Pfad, Titel und Notiz,
-  Datei- und Ordnerdialog, ein Feld zum Ablegen (Dateien und Ordner aus dem
-  Dateimanager, Adressen aus dem Browser), ein Suchfeld mit Trefferliste, je
-  Eintrag der Stand des Spiegels mit Knopf „Spiegeln" oder „Abbrechen", Titel
-  und Notiz ändern, Öffnen und Entfernen, unten die Schalter der Doku-Server.
-  Escape oder der Pfeil führen zurück zum Chat. Spiegeln und Suchen laufen in
-  Arbeitsthreads, der Fortschritt kommt über Signale in die Ereignisschleife.
-- **Ablage** `~/.config/hermes-os/bibliothek.json` (Format unten). Das Symbol
-  schreibt, das Plugin liest; beide über `plugins/hermes_os/library.py`. Das
-  Symbol lädt das Modul über seinen Dateipfad und importiert das Plugin-Paket
-  nicht; das Modul braucht weder Hermes noch Qt.
-- **Prompt-Abschnitt**: Bei jeder neuen Sitzung bekommt der Agent die Liste
-  mit Kennung, Titel, Quelle, Notiz und Stand des Spiegels sowie die Regeln:
-  erst `library_search`, dann `library_fetch` mit der Quelle eines Treffers;
-  ohne Spiegel `library_fetch` und den Verweisen folgen oder `library_mirror`
-  anbieten (die Plugin-API nimmt ein Callable, es liest Datei und Index
-  frisch). Eine leere Bibliothek sagt ihm, wo der Nutzer Quellen eintragen
-  kann. `library_list` zeigt die Liste samt Stand jederzeit.
-- **`library_fetch`** holt eine Seite oder Datei. `target` ist die Kennung
-  eines Eintrags, eine Adresse unter einer eingetragenen Adresse, eine
-  eingetragene Datei oder ein Pfad unter einem eingetragenen Ordner; ein
-  Ordner liefert seine Dateiliste. HTML wird zu Text mit Überschriften,
-  Listen und Bild-Beschreibungen, dazu die Verweise auf demselben Host, denen
-  der Agent mit einem weiteren Aufruf folgt. PDF läuft über `pdftotext`
-  (erste 60 Seiten), Textformate werden direkt gelesen. Lange Texte kommen in
-  Stücken (`start`, `max_chars`, Vorgabe 12 000 Zeichen). Adressen liegen 24
-  Stunden im Cache unter `~/.cache/hermes-os/bibliothek`, `refresh` holt neu.
-- **`library_mirror(entry_id, depth, max_pages, refresh)`** legt den Spiegel
-  eines Eintrags an oder erneuert ihn, dasselbe tut der Knopf auf der Seite.
-  Eine Adresse wird ab der Startseite Breite zuerst gespiegelt: Verweise auf
-  demselben Host unter dem Pfadanfang, bis zur Tiefe (`depth`, Vorgabe 2, 0
-  nur die Seite, höchstens 5) und bis zum Seitenlimit (`max_pages`, Werkzeug
-  100, Seite 200, höchstens 2000). Höflich: `robots.txt` des Hosts wird
-  geholt und beachtet (Disallow und Crawl-delay bis 10 s), zwischen zwei
-  Netzabrufen liegt eine halbe Sekunde, Seiten aus dem 24-Stunden-Cache
-  kosten keinen Abruf, Verweise auf Bilder, Archive, Skripte und Stile werden
-  gar nicht erst geholt, derselbe User-Agent wie beim Abrufer. Dateien und
-  Ordner werden indiziert, nicht kopiert: der Text landet im Index, die
-  Dateien bleiben, wo sie sind (Ordner: lesbare Textformate und PDF, ohne
-  versteckte Einträge, bis zum Limit). Stand je Eintrag: Seitenzahl,
-  Zeitpunkt, Fehlerzahl und die ersten Fehler (robots, fremder Host, 404,
-  Binärdatei). Ein vollständiger Lauf räumt Seiten aus dem Index, die es nicht
-  mehr gibt; ein abgebrochener Lauf lässt stehen, was da ist. Das Werkzeug
-  läuft synchron im Aufruf und kann bei vielen Seiten Minuten dauern; die
-  Beschreibung sagt dem Agenten, dass er das vorher ankündigt.
-- **Index** `~/.cache/hermes-os/bibliothek/index.sqlite`: Tabelle `pages`
-  (Eintrag, Quelle, Titel, Text bis 400 000 Zeichen, dazu eine gefaltete
-  Kopie für den Rückfall), `mirrors` (Stand je Eintrag) und darüber
-  `pages_fts`, eine externe FTS5-Inhaltstabelle mit dem Tokenizer `unicode61
-  remove_diacritics 2`, die nach jedem Spiegel-Lauf neu gebaut wird. Beide
-  Interpreter bringen FTS5 mit: das Python 3.13 der Hermes-Venv (uv,
-  python-build-standalone, SQLite 3.50 mit `ENABLE_FTS5`, geprüft am
-  2026-09-26) für das Plugin und Fedoras Python für das Symbol; das Gate
-  meldet beides. **Rückfall**: Fehlt FTS5, meldet `open_index` das beim
-  Anlegen der virtuellen Tabelle, und `library_search` sucht mit `LIKE` in der
-  gefalteten Spalte (Kleinschreibung, ß zu ss, Umlaute und Akzente ohne
-  Zeichen), Ausschnitt um den ersten Treffer, Reihenfolge nach Textlänge; das
-  Werkzeug sagt dann „LIKE-Suche" dazu. Der Test erzwingt den Rückfall einmal.
-- **`library_search(query, entry_id, limit)`** liefert Treffer mit Titel,
-  Quelle (Adresse oder Pfad), Kennung des Eintrags und einem Ausschnitt mit
-  markierten Fundstellen, sortiert nach `bm25` (Titel zählt vierfach). Wörter
-  werden als Wortanfänge gesucht („Datei" findet „Dateien"), ein Ausdruck in
-  Anführungszeichen als Wortfolge, mehrere Wörter mit UND. Deutsche
-  Schreibweisen werden ergänzt, weil der Tokenizer nur Umlautpunkte streicht:
-  ß und ss, ae/oe/ue und Umlaut (`grosse`, `Größe`, `GROESSE` finden dasselbe,
-  `Strasse` findet `Straße`). Sonderzeichen der FTS-Syntax werden entfernt.
-  Ohne Spiegel verweist die Antwort auf `library_mirror`, ohne Treffer nennt
-  sie, was gespiegelt ist. Auf der Seite sucht dasselbe Suchfeld mit bis zu
-  30 Treffern; „Öffnen" zeigt die Quelle im Browser oder Programm.
-- **Doku-Server (MCP)**: Hermes 0.21.5 hat einen Katalog
-  (`optional-mcps/<name>/manifest.yaml` im Hermes-Repo, `hermes mcp install
-  <name>`); context7 (`https://mcp.context7.com/mcp`, Dokumentation und
-  Codebeispiele zu Bibliotheken) und deepwiki (`https://mcp.deepwiki.com/mcp`,
-  Fragen zu öffentlichen GitHub-Projekten) sind darin, beide anonym, beide
-  Streamable HTTP. Die Installation über die CLI ist interaktiv (Werkzeug-
-  auswahl in curses), deshalb schreibt der Schalter denselben Eintrag selbst:
-  `mcp_servers.<name>` mit `url` und `enabled: true` in `~/.hermes/config.yaml`.
-  Geändert wird nur der Block des Servers, zeilenweise, damit die Kommentare
-  der Datei stehen bleiben; PyYAML prüft das Ergebnis vor dem Schreiben, wo es
-  da ist. Ausschalten entfernt einen Block, der nur aus `url` und `enabled`
-  besteht; einen Block mit eigenen Schlüsseln (etwa `headers` mit einem
-  API-Key) setzt es nur auf `enabled: false`, Einschalten dreht das zurück.
-  Ein `mcp_servers` in Flow-Schreibweise fasst der Schalter nicht an. **Kein
-  Neustart nötig**, anders als im Plan: das Gateway beobachtet `config.yaml`
-  und verbindet oder trennt Server innerhalb etwa einer Minute
-  (`gateway/run_profile_reconcile.py`, Doku `mcp.md`, „Reloading"); der
-  API-Server, an dem das Kontor hängt, nimmt alle eingeschalteten Server
-  mit, solange `platform_toolsets.api_server` nichts anderes sagt. Ein
-  laufendes Gespräch sieht die neuen Werkzeuge ab dem nächsten neuen Gespräch.
-  Die Werkzeuge heißen `mcp__context7__<tool>` und `mcp__deepwiki__<tool>`.
-- **Grenzen**: Geholt wird nur, was der Nutzer eingetragen hat: derselbe Host
-  samt Pfadanfang, die Datei selbst, Pfade unter dem Ordner. Umleitungen auf
-  fremde Hosts werden verworfen, Antworten über 8 MB nicht gelesen, Binär-
-  dateien abgewiesen. Abgerufener Text steht zwischen Markierungen als
-  Fremdtext; die Regeln im Prompt sagen dem Agenten, dass Anweisungen darin
-  nicht gelten. Der Index ist eine Kopie des Textes im Cache des Nutzers,
-  nicht mehr; wer einen Eintrag entfernt, entfernt seinen Spiegel mit.
+- **“Library” page in the Kontor** (German default: „Bibliothek“), reachable
+  from the button in the header and the menu item on the tray icon: an entry
+  with address or path, title and note, file and folder dialogs, a drop area
+  (files and folders from the file manager, addresses from the browser), a
+  search field with a list of hits, for each entry the mirror status with a
+  “Mirror” or “Cancel” button (German defaults: „Spiegeln“, „Abbrechen“),
+  editing title and note, opening and removing, and at the bottom the switches
+  for the doc servers. Escape or the arrow leads back to the chat. Mirroring
+  and searching run in worker threads; progress reaches the event loop via
+  signals.
+- **Store** `~/.config/hermes-os/bibliothek.json` (format below). The icon
+  writes, the plugin reads; both go through `plugins/hermes_os/library.py`. The
+  icon loads the module by its file path and does not import the plugin
+  package; the module needs neither Hermes nor Qt.
+- **Prompt section**: With every new session the agent gets the list with ID,
+  title, source, note and mirror status, plus the rules: first
+  `library_search`, then `library_fetch` with the source of a hit; without a
+  mirror, `library_fetch` and follow the links, or offer `library_mirror` (the
+  plugin API takes a callable, which reads the file and the index fresh each
+  time). An empty library tells the agent where the user can add sources.
+  `library_list` shows the list with its status at any time.
+- **`library_fetch`** gets a page or a file. `target` is the ID of an entry,
+  an address below a listed address, a listed file, or a path below a listed
+  folder; a folder returns its file list. HTML becomes text with headings,
+  lists and image descriptions, plus the links on the same host, which the
+  agent follows with another call. PDF goes through `pdftotext` (first 60
+  pages); text formats are read directly. Long texts come in chunks (`start`,
+  `max_chars`, default 12 000 characters). Addresses stay in the cache under
+  `~/.cache/hermes-os/bibliothek` for 24 hours; `refresh` fetches them again.
+- **`library_mirror(entry_id, depth, max_pages, refresh)`** creates or renews
+  an entry's mirror; the button on the page does the same. An address is
+  mirrored breadth-first from the start page: links on the same host below the
+  path prefix, down to the depth (`depth`, default 2, 0 for the page only, at
+  most 5) and up to the page limit (`max_pages`, 100 for the tool, 200 for the
+  page, at most 2000). It is polite: it fetches and honors the host's
+  `robots.txt` (Disallow, and Crawl-delay up to 10 s), waits half a second
+  between two network fetches, pages from the 24-hour cache cost no fetch,
+  links to images, archives, scripts and stylesheets are never fetched, and it
+  sends the same User-Agent as the fetcher. Files and folders are indexed, not
+  copied: the text goes into the index, the files stay where they are
+  (folders: readable text formats and PDF, no hidden entries, up to the limit).
+  Status per entry: page count, time, error count and the first errors
+  (robots, foreign host, 404, binary file). A complete run removes pages from
+  the index that no longer exist; a cancelled run leaves what is there. The
+  tool runs synchronously within the call and can take minutes for many pages;
+  its description tells the agent to announce that beforehand.
+- **Index** `~/.cache/hermes-os/bibliothek/index.sqlite`: table `pages`
+  (entry, source, title, text up to 400 000 characters, plus a folded copy for
+  the fallback), `mirrors` (status per entry), and on top of them `pages_fts`,
+  an external-content FTS5 table with the tokenizer
+  `unicode61 remove_diacritics 2`, rebuilt after every mirror run. Both
+  interpreters ship FTS5: the Python 3.13 of the Hermes venv (uv,
+  python-build-standalone, SQLite 3.50 with `ENABLE_FTS5`, checked on
+  2026-09-26) for the plugin, and Fedora's Python for the icon; the gate
+  reports both. **Fallback**: if FTS5 is missing, `open_index` reports it when
+  creating the virtual table, and `library_search` searches with `LIKE` in the
+  folded column (lowercase, ß to ss, umlauts and accents stripped of their
+  marks), with a snippet around the first hit, ordered by text length; the tool
+  then notes „LIKE-Suche“ (LIKE search). The test forces the fallback once.
+- **`library_search(query, entry_id, limit)`** returns hits with title, source
+  (address or path), entry ID and a snippet with the matches marked, sorted by
+  `bm25` (the title counts four times). Words are searched as word prefixes
+  (“Datei” finds “Dateien”), a quoted phrase as a word sequence, several words
+  are combined with AND. German spellings are added because the tokenizer only
+  strips the umlaut dots: ß and ss, ae/oe/ue and umlaut (`grosse`, `Größe`,
+  `GROESSE` find the same, `Strasse` finds `Straße`). Special characters of the
+  FTS syntax are removed. Without a mirror, the answer points to
+  `library_mirror`; without hits, it names what is mirrored. On the page, the
+  same search field returns up to 30 hits; “Open” (German default: „Öffnen“)
+  shows the source in the browser or in an application.
+- **Doc servers (MCP)**: Hermes 0.21.5 has a catalog
+  (`optional-mcps/<name>/manifest.yaml` in the Hermes repo,
+  `hermes mcp install <name>`); context7 (`https://mcp.context7.com/mcp`,
+  documentation and code examples for libraries) and deepwiki
+  (`https://mcp.deepwiki.com/mcp`, questions about public GitHub projects) are
+  in it, both anonymous, both Streamable HTTP. Installing through the CLI is
+  interactive (tool selection in curses), so the switch writes the same entry
+  itself: `mcp_servers.<name>` with `url` and `enabled: true` in
+  `~/.hermes/config.yaml`. Only the server's block is changed, line by line, so
+  the comments in the file stay; where PyYAML is available, it checks the
+  result before writing. Switching off removes a block that consists only of
+  `url` and `enabled`; a block with keys of its own (such as `headers` with an
+  API key) is only set to `enabled: false`, and switching on reverses that. The
+  switch leaves an `mcp_servers` in flow style alone. **No restart needed**,
+  unlike in the plan: the gateway watches `config.yaml` and connects or
+  disconnects servers within about a minute (`gateway/run_profile_reconcile.py`,
+  docs `mcp.md`, “Reloading”); the API server the Kontor talks to picks up all
+  enabled servers unless `platform_toolsets.api_server` says otherwise. A
+  running conversation does not see the new tools; the next new conversation
+  does. The tools are called `mcp__context7__<tool>` and
+  `mcp__deepwiki__<tool>`.
+- **Limits**: Only what the user listed is fetched: the same host including
+  the path prefix, the file itself, paths below the folder. Redirects to
+  foreign hosts are discarded, responses over 8 MB are not read, binary files
+  are rejected. Fetched text sits between markers as external text; the rules
+  in the prompt tell the agent that instructions inside it do not apply. The
+  index is a copy of the text in the user's cache, nothing more; removing an
+  entry removes its mirror too.
 
 ## Format
 
@@ -124,14 +124,14 @@ Die Ablage `bibliothek.json` blieb dabei unverändert.
 }
 ```
 
-`kind` ist `url`, `file` oder `folder`. Die Kennung entsteht aus dem Host
-oder dem Dateinamen (`docs-kde-org`, `handbuch-pdf`), bei Dopplung mit `-2`.
-Fehlt der Titel, steht der Host oder der Dateiname dort. Der Stand der Spiegel
-steht nicht hier, sondern in `index.sqlite` (Tabelle `mirrors`: `status`
-`running`, `done`, `error` oder `cancelled`, `pages`, `started`, `finished`,
-`depth`, `page_limit`, `error_count`, `errors` als JSON-Liste).
+`kind` is `url`, `file` or `folder`. The ID is derived from the host or the
+file name (`docs-kde-org`, `handbuch-pdf`), with `-2` appended for a duplicate.
+If the title is missing, the host or the file name takes its place. The mirror
+status is not stored here but in `index.sqlite` (table `mirrors`: `status`
+`running`, `done`, `error` or `cancelled`, `pages`, `started`, `finished`,
+`depth`, `page_limit`, `error_count`, `errors` as a JSON list).
 
-Der Eintrag, den der Schalter in `~/.hermes/config.yaml` anlegt:
+The entry the switch creates in `~/.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
@@ -140,27 +140,27 @@ mcp_servers:
     enabled: true
 ```
 
-## docs.kde.org als erster Eintrag
+## docs.kde.org as the first entry
 
-Adresse `https://docs.kde.org/`, Notiz etwa: „Handbücher der KDE-Programme.
-Deutsch unter stable_kf6/de/<programm>/<programm>/index.html, Übersicht unter
-index.php?language=de&package=<programm>". Der Agent holt die Übersicht,
-folgt dem Verweis zum Programm und liest das Kapitel. Die Handbücher sind
-teils älter als das laufende Plasma; was sie sagen, prüft er mit den
-os_*-Werkzeugen am System.
+Address `https://docs.kde.org/`, with a note along these lines: “Manuals for
+the KDE applications. German under stable_kf6/de/<program>/<program>/index.html,
+overview at index.php?language=de&package=<program>”. The agent fetches the
+overview, follows the link to the application and reads the chapter. Some of
+the manuals are older than the running Plasma; the agent checks what they say
+against the system with the os_* tools.
 
-Geprüft am 2026-09-26 gegen das Gateway in der Test-VM (Stufe eins): Auf die
-Frage nach dem Dolphin-Handbuch rief der Agent `library_list`, mehrfach
-`library_fetch` entlang der Verweise und `web_search` mit `site:docs.kde.org`,
-nannte Titel, Adresse und Quelle in rund 30 Sekunden und merkte an, dass der
-ältere Pfad `stable5/de` inzwischen 404 liefert.
+Checked on 2026-09-26 against the gateway in the test VM (stage one): asked
+about the Dolphin manual, the agent called `library_list`, then `library_fetch`
+several times along the links, and `web_search` with `site:docs.kde.org`; it
+gave title, address and source in about 30 seconds and noted that the older
+path `stable5/de` now returns 404.
 
-Für die Suche lohnt ein engerer Eintrag als die Startseite: die Übersicht
-verweist auf hunderte Programme, ein Spiegel mit Tiefe 2 und 200 Seiten bleibt
-in der Übersicht hängen. Besser `https://docs.kde.org/stable_kf6/de/dolphin/`
-als eigener Eintrag, dann liegt das ganze Handbuch im Index.
+For search, a narrower entry than the start page pays off: the overview links
+to hundreds of applications, and a mirror with depth 2 and 200 pages gets stuck
+in the overview. Better to add `https://docs.kde.org/stable_kf6/de/dolphin/` as
+an entry of its own; then the whole manual is in the index.
 
-## Testen
+## Testing
 
 ```sh
 python3 tests/library-check.py --plugin-dir files/system/usr/share/hermes-os/plugins/hermes_os
@@ -168,69 +168,69 @@ python3 tests/library2-check.py --plugin-dir files/system/usr/share/hermes-os/pl
     --config-template files/system/usr/share/hermes-os/config.yaml.default
 ```
 
-Ohne Qt und ohne Hermes, überall mit Python 3.9 oder neuer. Stufe eins:
-Ablage, Kennungen, Zuordnung von Zielen zu Einträgen, Abrufer gegen einen
-nachgebauten Webserver (HTML zu Text, Verweise nur vom eigenen Host, Cache,
-`refresh`, Stückelung, fremde Hosts und Binärdateien abgewiesen), Dateien und
-Ordner, Prompt-Abschnitt. Stufe zwei: Spiegel gegen einen nachgebauten Server
-mit `robots.txt` (Tiefe, Seitenlimit, Disallow, Bild-Verweise, Umleitung auf
-fremden Host, 404, Fortschritt, Abbruch, zweiter Lauf aus dem Cache, `refresh`),
-Ordner und Datei im Index, Suche mit FTS5 (Ausschnitt, deutsche Schreibweisen,
-Wortfolge, Eintrag-Filter, Limit, Sonderzeichen), der erzwungene LIKE-Rückfall,
-Werkzeugtexte, Prompt-Abschnitt, Entfernen räumt den Index, und die Schalter
-gegen eine Kopie der Config-Vorlage (ein, dazu, aus, leeres Mapping, eigener
-Block mit `headers`, Flow-Schreibweise abgewiesen, fehlende Datei angelegt,
-Rechte 0600 bleiben, PyYAML-Gegenprobe). `make lint` und das Gate
-(`80-validate.sh`, 7g) führen beide aus, das Gate mit der Venv-Python des
-Gateways und einer Meldung, ob deren SQLite und Fedoras Python FTS5 haben.
-`tests/tray-gui-check.py` rendert die Seite offscreen: öffnen, Eintrag anlegen,
-Fehler anzeigen, entfernen, Ablegen, Spiegeln mit Fortschritt und Abbrechen-
-Knopf, Suche mit Trefferliste und Öffnen, Titel und Notiz ändern, Schalter der
-Doku-Server, zurück.
+Without Qt and without Hermes, anywhere with Python 3.9 or newer. Stage one
+covers the store, IDs, mapping targets to entries, the fetcher against a mock
+web server (HTML to text, links only from the same host, cache, `refresh`,
+chunking, foreign hosts and binary files rejected), files and folders, and the
+prompt section. Stage two covers mirroring against a mock server with
+`robots.txt` (depth, page limit, Disallow, image links, redirect to a foreign
+host, 404, progress, cancelling, a second run from the cache, `refresh`), folder
+and file in the index, search with FTS5 (snippet, German spellings, phrase,
+entry filter, limit, special characters), the forced LIKE fallback, tool texts,
+the prompt section, removal clearing the index, and the switches against a copy
+of the config template (on, a second one on, off, empty mapping, a block of its
+own with `headers`, flow style rejected, missing file created, 0600 permissions
+kept, PyYAML cross-check). `make lint` and the gate (`80-validate.sh`, 7g) run
+both, the gate with the gateway's venv Python and a message on whether its
+SQLite and Fedora's Python have FTS5. `tests/tray-gui-check.py` renders the
+page offscreen: open, add an entry, show an error, remove, drop, mirror with
+progress and the Cancel button, search with the hit list and Open, edit title
+and note, the doc server switches, back.
 
-## Stolperfallen
+## Pitfalls
 
-- **Neue Einträge gelten ab dem nächsten Gespräch.** Der Prompt-Abschnitt
-  wird beim Anlegen einer Sitzung eingefroren; im laufenden Gespräch sieht der
-  Agent neue Einträge nur über `library_list`. Ein neuer Spiegel dagegen ist
-  sofort durchsuchbar, `library_search` liest den Index bei jedem Aufruf.
-- **Ein Ziel muss zu einem Eintrag gehören.** Fragt der Agent eine fremde
-  Adresse an, bekommt er den Hinweis auf `library_list`, keine Seite. Das ist
-  Absicht: die Bibliothek ist kein allgemeiner Web-Abrufer, dafür gibt es
-  `web_extract`.
-- **Das Modell entscheidet, ob es nachschlägt.** Die Regeln im Prompt helfen,
-  ersetzen aber kein Modell, das Werkzeuge verlässlich nutzt.
-- **Ein Spiegel ist so gut wie sein Startpunkt.** Tiefe und Seitenlimit
-  zählen ab der eingetragenen Adresse; wer die Startseite eines großen
-  Doku-Servers einträgt, bekommt Übersichten, keine Kapitel. Engere Einträge
-  je Handbuch sind der bessere Weg.
-- **`library_mirror` blockiert das Gespräch.** Bis zu 100 Seiten mit halber
-  Sekunde Pause sind eine Minute, plus Abrufzeit. Für große Spiegel ist der
-  Knopf auf der Seite der richtige Ort: er läuft im Hintergrund, zeigt den
-  Fortschritt und lässt sich abbrechen.
-- **Zwei Interpreter, ein Index.** Das Symbol schreibt mit Fedoras Python,
-  das Plugin liest mit dem Python der Venv, beide über dieselbe SQLite-Datei
-  im WAL-Modus (daneben liegen `index.sqlite-wal` und `-shm`). Läuft ein
-  Spiegel, liest die Suche den Stand vom letzten Commit. Ein Interpreter ohne
-  FTS5 kann den Index trotzdem lesen, nur eben mit der LIKE-Suche.
-- **Der Tokenizer kennt kein ß.** `remove_diacritics` macht aus ö ein o,
-  aber aus ß kein ss; deshalb ergänzt `fts_query` die Schreibweisen. Wer
-  andere Sprachen mit eigenen Regeln braucht, erweitert `_term_variants`.
-- **Die Schalter schreiben in die Datei des Nutzers.** `config.yaml` gehört
-  Hermes und dem Nutzer; der Schalter ändert nur den Block seines Servers und
-  legt die Datei mit einem Kommentarkopf an, wenn sie fehlt. Hermes selbst
-  schreibt die Datei mit einem ruamel-Roundtrip (`utils.atomic_roundtrip_yaml_save`),
-  Kommentare überleben beides.
-- **Offen: Prüfung in der Test-VM.** Der Umlauf Schalter, Gateway verbindet
-  context7 innerhalb einer Minute, Agent nutzt `mcp__context7__*`, ist im
-  Quellcode belegt, aber noch nicht in VM 112 beobachtet; ebenso die Seite mit
-  echtem Ablegen aus Dolphin und Firefox und ein Spiegel von docs.kde.org.
+- **New entries apply from the next conversation on.** The prompt section is
+  frozen when a session is created; in a running conversation the agent sees
+  new entries only through `library_list`. A new mirror, on the other hand, is
+  searchable right away; `library_search` reads the index on every call.
+- **A target must belong to an entry.** If the agent requests an address that
+  is not listed, it gets a pointer to `library_list`, not a page. That is
+  intentional: the library is not a general web fetcher; `web_extract` exists
+  for that.
+- **The model decides whether to look things up.** The rules in the prompt
+  help, but they do not replace a model that uses tools reliably.
+- **A mirror is only as good as its starting point.** Depth and page limit
+  count from the listed address; list the start page of a large documentation
+  server and you get overviews, not chapters. Narrower entries, one per manual,
+  work better.
+- **`library_mirror` blocks the conversation.** Up to 100 pages with a
+  half-second pause come to a minute, plus fetch time. For large mirrors, use
+  the button on the page: it runs in the background, shows progress and can be
+  cancelled.
+- **Two interpreters, one index.** The icon writes with Fedora's Python, the
+  plugin reads with the venv's Python, both through the same SQLite file in WAL
+  mode (next to it sit `index.sqlite-wal` and `-shm`). While a mirror is
+  running, search reads the state as of the last commit. An interpreter without
+  FTS5 can still read the index, just with the LIKE search.
+- **The tokenizer does not know ß.** `remove_diacritics` turns ö into o, but
+  not ß into ss; that is why `fts_query` adds the spellings. If you need other
+  languages with rules of their own, extend `_term_variants`.
+- **The switches write to the user's file.** `config.yaml` belongs to Hermes
+  and the user; a switch changes only its own server's block and creates the
+  file with a comment header if it is missing. Hermes itself writes the file
+  with a ruamel round trip (`utils.atomic_roundtrip_yaml_save`); comments
+  survive both.
+- **Open: a check in the test VM.** The round trip (switch on, the gateway
+  connects context7 within a minute, the agent uses `mcp__context7__*`) is
+  backed by the source code but not yet observed in VM 112; the same goes for
+  the page with real drag and drop from Dolphin and Firefox, and for a mirror of
+  docs.kde.org.
 
-## Nächste Stufe, offen
+## Next stage, open
 
-- Spiegel von selbst erneuern (Alter je Eintrag, Lauf im Hintergrund über
-  einen Timer des Gateways oder das Symbol).
-- Weitere Server aus dem Katalog als Schalter, sobald der Bedarf da ist; die
-  Liste `MCP_CATALOG` in `library.py` ist der einzige Ort dafür.
-- Treffer der Seite direkt ins Gespräch übernehmen („Im Chat besprechen" wie
-  beim Morgenbericht).
+- Renew mirrors automatically (age per entry, a background run via a gateway
+  timer or the icon).
+- More servers from the catalog as switches once there is a need; the
+  `MCP_CATALOG` list in `library.py` is the only place for that.
+- Take hits from the page straight into the conversation (“Discuss in chat”,
+  German default: „Im Chat besprechen“, as in the morning report).

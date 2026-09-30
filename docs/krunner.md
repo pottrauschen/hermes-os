@@ -1,125 +1,127 @@
-# KRunner: Hermes fragen
+# KRunner: ask Hermes
 
-Alt+Leertaste öffnet KRunner. Wer dort `hermes <Frage>` tippt, kurz `h: <Frage>`,
-bekommt oben den Treffer „Hermes fragen: <Frage>“. Enter öffnet das Kontor
-des Leisten-Symbols und schickt die Frage sofort ab. Die Aktion „Nur
-nachschlagen“ am Treffer (Knopf rechts im Treffer) fragt Hermes, ohne
-das Fenster zu öffnen, und bringt die Antwort als Benachrichtigung.
+Alt+Space opens KRunner. Type `hermes <question>` there, or `h: <question>` for
+short, and the top match reads “Ask Hermes: <question>” (German default:
+„Hermes fragen: <Frage>“). Enter opens the Kontor (the chat window) of the tray
+icon and sends the question right away. The match's action “Look up only”
+(German default: „Nur nachschlagen“; the button on the right of the match)
+asks Hermes without opening the window and delivers the answer as a
+notification.
 
-Erkannt werden `hermes` mit Leerzeichen, Doppelpunkt oder Komma dahinter und
-`h:`, Groß- und Kleinschreibung egal: `Hermes: …`, `hermes, …`, `H:…`. Die Frage
-bleibt, wie sie getippt wurde. `hermes` allein, `h:` ohne Frage, `hermesfoo`
-oder `hermes-os` liefern keinen Treffer; `hermes` allein findet weiter den
-Menüeintrag „Hermes“.
+It recognizes `hermes` followed by a space, colon or comma, and `h:`, in any
+case: `Hermes: …`, `hermes, …`, `H:…`. The question stays as it was typed.
+`hermes` alone, `h:` without a question, `hermesfoo` or `hermes-os` produce no
+match; `hermes` alone still finds the menu entry “Hermes”.
 
-In einer englischen Sitzung ([systemagent.md](systemagent.md), „Sprache der
-Oberfläche“) heißt der Treffer „Ask Hermes: <Frage>“ mit dem Untertitel
-„Enter: ask in the Kontor“, die Aktion „Look up only“; Meldungen des
-Nachschlagens sind englisch („Hermes: lookup failed“, „Hermes is not ready“).
-Name, Beschreibung und Syntax-Hilfe der Desktop-Datei haben `[en]`-Fassungen
-(`X-Plasma-Runner-Syntax-Descriptions[en]`). Die Präfixe `hermes` und `h:`
-bleiben in jeder Sprache gleich.
+In an English session ([systemagent.md](systemagent.md), “Interface
+language”) the match reads “Ask Hermes: <question>” with the subtitle
+“Enter: ask in the Kontor”, and the action “Look up only”; messages from a
+lookup are in English (“Hermes: lookup failed”, “Hermes is not ready”). Name,
+description and syntax help of the desktop file have `[en]` variants
+(`X-Plasma-Runner-Syntax-Descriptions[en]`). The prefixes `hermes` and `h:`
+are the same in every language.
 
-## Aufbau
+## Structure
 
-| Datei | Aufgabe |
+| File | Purpose |
 |---|---|
-| `files/system/usr/share/krunner/dbusplugins/hermes-os.desktop` | meldet den Runner bei KRunner an: `X-Plasma-API=DBus`, Dienst `io.github.pottrauschen.hermesos.tray*`, Pfad `/runner`, Filter-Regex und Mindestlänge |
-| `files/system/usr/share/hermes-os/tray/runner.py` | Präfix, Treffer, Aktionen, Run, wartende Frage, Nachschlagen; `install()` hängt den Runner an die Qt-Schleife des Leisten-Symbols |
-| `files/system/usr/share/hermes-os/tray/dbus_peer.py` | kleine D-Bus-Anbindung mit Standardbibliothek: Anmeldung, Hello, RequestName, Drahtformat lesen und schreiben |
-| `files/system/usr/libexec/hermes-os-tray` | ruft nach dem Start `runner.install(...)` auf; `--check` prüft, dass `runner.py` importierbar ist |
+| `files/system/usr/share/krunner/dbusplugins/hermes-os.desktop` | registers the runner with KRunner: `X-Plasma-API=DBus`, service `io.github.pottrauschen.hermesos.tray*`, path `/runner`, filter regex and minimum length |
+| `files/system/usr/share/hermes-os/tray/runner.py` | prefix, match, actions, run, pending question, lookup; `install()` attaches the runner to the tray icon's Qt loop |
+| `files/system/usr/share/hermes-os/tray/dbus_peer.py` | small D-Bus binding on the standard library alone: authentication, Hello, RequestName, reading and writing the wire format |
+| `files/system/usr/libexec/hermes-os-tray` | calls `runner.install(...)` after startup; `--check` checks that `runner.py` can be imported |
 
-Der Runner läuft im Prozess des Leisten-Symbols, weil dort Ereignisschleife,
-Gateway-Client und Fenster schon sind. KRunner spricht ihn über
-`org.kde.krunner1` an:
+The runner lives in the tray icon's process, because the event loop, the
+gateway client and the window are already there. KRunner talks to it via
+`org.kde.krunner1`:
 
-- **Match(s) → a(sssida{sv})**: ein Treffer (ID `frage:<Frage>`, Text, Symbol
-  `hermes-os`, Kategorie-Relevanz 100 = Highest, Relevanz 1.0, Eigenschaften
-  `subtext`, `category`, `actions`), sonst eine leere Liste.
-- **Actions → a(sss)**: `lookup`, „Nur nachschlagen“. Wegen
-  `X-Plasma-Request-Actions-Once=true` fragt KRunner das nur einmal ab.
-- **SetActivationToken(s)**: kommt unter Wayland direkt vor Run; das Token
-  landet in `XDG_ACTIVATION_TOKEN`, Qt nimmt es beim Aktivieren des Fensters.
-- **Run(ss)**: leere Aktion schickt die Frage ins Fenster, `lookup` schlägt nach.
-- **Teardown**, **Config** (nur bei `DBus2`), **Introspect**, **Ping**.
+- **Match(s) → a(sssida{sv})**: one match (ID `frage:<question>`, text, icon
+  `hermes-os`, category relevance 100 = Highest, relevance 1.0, properties
+  `subtext`, `category`, `actions`), otherwise an empty list.
+- **Actions → a(sss)**: `lookup`, “Look up only”. Because of
+  `X-Plasma-Request-Actions-Once=true`, KRunner asks for this only once.
+- **SetActivationToken(s)**: arrives under Wayland right before Run; the token
+  goes into `XDG_ACTIVATION_TOKEN`, and Qt uses it when activating the window.
+- **Run(ss)**: an empty action sends the question to the window; `lookup`
+  looks it up.
+- **Teardown**, **Config** (only with `DBus2`), **Introspect**, **Ping**.
 
-Der Dienstname in der Desktop-Datei endet auf `*`. Dann ruft KRunner nur
-Dienste, die gerade auf dem Bus sind, und versucht keine D-Bus-Aktivierung:
-läuft das Leisten-Symbol nicht, gibt es keinen Treffer und kein Fehlerprotokoll.
-Der Filter `X-Plasma-Runner-Match-Regex` sorgt dafür, dass KRunner Match nur für
-Eingaben mit Präfix aufruft.
+The service name in the desktop file ends in `*`. KRunner then only calls
+services that are on the bus at that moment and does not attempt D-Bus
+activation: if the tray icon is not running, there is no match and no error
+log. The filter `X-Plasma-Runner-Match-Regex` makes KRunner call Match only
+for input with a prefix.
 
-**Ins Fenster:** Das Fenster geht sofort auf. Ist Hermes bereit (Gateway an,
-Verlauf geladen, kein Run offen), geht die Frage gleich los, sonst wartet sie bis
-zu 90 Sekunden und geht los, sobald es passt; eine neuere Frage aus KRunner
-ersetzt eine wartende. Klappt es in der Zeit nicht, steht die Frage im
-Eingabefeld und eine Benachrichtigung sagt es. Die Frage geht über denselben Weg
-wie eine getippte (`backend.send`), also auch mit Bildern, die gerade als Anhang
-im Fenster liegen.
+**Into the window:** The window opens immediately. If Hermes is ready (gateway
+up, history loaded, no run in progress), the question goes out at once;
+otherwise it waits up to 90 seconds and goes out as soon as things are ready;
+a newer question from KRunner replaces a waiting one. If that does not happen
+in time, the question sits in the input field and a notification says so. The
+question takes the same path as a typed one (`backend.send`), so it also
+carries images that are attached in the window at that moment.
 
-**Nur nachschlagen:** eigener Run im Gespräch `hermes-os-krunner-<Datum>`, ein
-Gespräch je Tag, damit Nachfragen am selben Tag Zusammenhang haben und der
-Fenster-Verlauf sauber bleibt. Die Antwort kommt als `notify-send`, gekürzt auf
-900 Zeichen, `MEDIA:`-Pfade entfernt. Fragt Hermes dabei nach einer Freigabe,
-lehnt der Nachschlag sie ab und sagt das in der Benachrichtigung: ohne Fenster
-erteilt niemand bewusst eine Freigabe. Nach 180 Sekunden wird der Run gestoppt.
+**Look up only:** a separate run in the conversation
+`hermes-os-krunner-<date>`, one conversation per day, so that follow-up
+questions on the same day have context and the window's history stays clean.
+The answer arrives via `notify-send`, cut to 900 characters, with `MEDIA:`
+paths removed. If Hermes asks for an approval during the lookup, the lookup
+denies it and says so in the notification: without a window, nobody grants an
+approval knowingly. After 180 seconds the run is stopped.
 
-**Wer den Runner auslösen kann:** jeder Prozess des Nutzers auf dem
-Sitzungsbus. `Run` stellt Hermes eine Frage, ohne dass der Aufrufer den
-API-Schlüssel kennt. Das öffnet nichts Neues: derselbe Nutzer kann
-`~/.hermes/.env` ohnehin lesen, Freigaben laufen weiter über Fenster und
-Benachrichtigung, und beim Nachschlagen werden sie abgelehnt. Wird das
-Projekt umbenannt, muss der Dienstname `io.github.pottrauschen.hermesos.tray`
-in `runner.py` und in der Desktop-Datei mit.
+**Who can trigger the runner:** any process of the user on the session bus.
+`Run` puts a question to Hermes without the caller knowing the API key. That
+opens nothing new: the same user can read `~/.hermes/.env` anyway, approvals
+still go through the window and notifications, and a lookup denies them. If
+the project is renamed, the service name `io.github.pottrauschen.hermesos.tray`
+in `runner.py` and in the desktop file has to change with it.
 
-## Testen
+## Testing
 
 ```sh
-python3 tests/runner-check.py            # läuft auch in make lint und im Gate (80-validate.sh, 7h)
+python3 tests/runner-check.py            # also runs in make lint and in the gate (80-validate.sh, 7h)
 ```
 
-Der Test braucht weder Qt noch Hermes noch Plasma. Er prüft Präfix-Erkennung,
-Umlaute, leere Eingabe, Treffer und Relevanz, Run, die wartende Frage, das
-Nachschlagen gegen einen nachgebauten Client, das Drahtformat und die
-Desktop-Datei (Pflichtschlüssel, Dienstname und Pfad passen zu `runner.py`,
-Filter passt zur Erkennung, `desktop-file-validate` falls vorhanden). Gibt es
-`dbus-daemon` und `dbus-send`, startet er einen privaten Bus und ruft Match, Run,
-Actions und Introspect über den echten Bus auf.
+The test needs neither Qt nor Hermes nor Plasma. It checks prefix detection,
+umlauts, empty input, match and relevance, Run, the pending question, lookup
+against a mock client, the wire format and the desktop file (required keys,
+service name and path match `runner.py`, the filter matches the detection,
+`desktop-file-validate` if available). If `dbus-daemon` and `dbus-send` are
+present, it starts a private bus and calls Match, Run, Actions and Introspect
+over the real bus.
 
-In der Plasma-Sitzung (VM 112):
+In the Plasma session (VM 112):
 
 ```sh
-busctl --user list | grep hermesos                        # Name gehört dem Leisten-Symbol
+busctl --user list | grep hermesos                        # name is owned by the tray icon
 gdbus call --session -d io.github.pottrauschen.hermesos.tray -o /runner \
-  -m org.kde.krunner1.Match 'hermes Wie spät ist es?'     # Treffer als a(sssida{sv})
-kquitapp6 krunner                                         # KRunner liest dbusplugins neu
+  -m org.kde.krunner1.Match 'hermes What time is it?'     # match as a(sssida{sv})
+kquitapp6 krunner                                         # KRunner rereads dbusplugins
 ```
 
-Danach Alt+Leertaste, `h: Welches Image ist gebootet?`, Enter, und einmal über
-„Nur nachschlagen“. Eine Testfassung des Runners läuft mit, wenn das
-Leisten-Symbol aus dem Home gestartet wird (`HERMES_OS_TRAY_DIR`, siehe
-[systemagent.md](systemagent.md)); die Desktop-Datei gehört dafür nach
+Then Alt+Space, `h: Which image is booted?`, Enter, and once more via
+“Look up only”. A test build of the runner comes along when the tray icon is
+started from the home directory (`HERMES_OS_TRAY_DIR`, see
+[systemagent.md](systemagent.md)); the desktop file then belongs in
 `~/.local/share/krunner/dbusplugins/`.
 
-## Stolperfallen
+## Pitfalls
 
-- **QtDBus aus PySide6 reicht nicht.** Match muss `a(sssida{sv})` liefern, ein
-  Feld von Strukturen. `QDBusArgument.beginArray` braucht dafür einen mit
-  `qDBusRegisterMetaType` angemeldeten C++-Typ, den es aus Python nicht gibt
-  („type … is not registered with D-Bus“); mit einem falschen Elementtyp bricht
-  libdbus den Prozess per `abort()` ab. Eine Antwort mit `av` nimmt KRunner nicht
-  an, weil `QDBusPendingReply` die Signatur vergleicht. Deshalb `dbus_peer.py`.
-  Nebenbei: `QDBusArgument << 5` schreibt in PySide6 ein Byte, nicht `int32`.
-- **KConfig-Maskierung:** In Desktop-Dateien wird `\s` beim Lesen zu einem
-  Leerzeichen. Der Filter in `X-Plasma-Runner-Match-Regex` kommt deshalb ohne
-  Backslash aus (`(?i)^ *(hermes[ :,]|h *:)`); der Test prüft das.
-- **Listen in der Desktop-Datei** trennt KConfig an Kommas. Die
-  `X-Plasma-Runner-Syntax-Descriptions` dürfen darum kein Komma enthalten.
-- **`X-Plasma-API=DBus2` mit `*` im Dienstnamen vermeiden:** Bei `DBus2` fragt
-  KRunner beim Laden Config vom ersten passenden Dienst ab; läuft zu dem
-  Zeitpunkt keiner, greift KRunner auf eine leere Menge zu. Filter und
-  Mindestlänge stehen deshalb in der Desktop-Datei, `Config` antwortet nur für
-  den Fall, dass jemand umstellt.
-- **Run-IDs:** KRunner gibt die Treffer-ID ohne das eigene Präfix zurück
-  (`X-Plasma-Runner-Unique-Results` ist aus). Die Frage steckt vollständig in der
-  ID, auch wenn der Text im Treffer gekürzt ist.
+- **QtDBus from PySide6 is not enough.** Match has to return `a(sssida{sv})`,
+  an array of structs. For that, `QDBusArgument.beginArray` needs a C++ type
+  registered with `qDBusRegisterMetaType`, which does not exist from Python
+  (“type … is not registered with D-Bus”); with a wrong element type, libdbus
+  kills the process with `abort()`. KRunner does not accept a reply with `av`,
+  because `QDBusPendingReply` compares the signature. Hence `dbus_peer.py`.
+  Side note: in PySide6, `QDBusArgument << 5` writes a byte, not an `int32`.
+- **KConfig escaping:** in desktop files, `\s` turns into a space when read.
+  So the filter in `X-Plasma-Runner-Match-Regex` does without a backslash
+  (`(?i)^ *(hermes[ :,]|h *:)`); the test checks this.
+- **Lists in the desktop file** are split at commas by KConfig. So the
+  entries of `X-Plasma-Runner-Syntax-Descriptions` must not contain a comma.
+- **Avoid `X-Plasma-API=DBus2` with `*` in the service name:** with `DBus2`,
+  KRunner requests Config from the first matching service at load time; if
+  none is running at that moment, KRunner accesses an empty set. So filter and
+  minimum length live in the desktop file, and `Config` only answers in case
+  someone switches over.
+- **Run IDs:** KRunner hands back the match ID without its own prefix
+  (`X-Plasma-Runner-Unique-Results` is off). The question is contained in full
+  in the ID, even when the text in the match is shortened.
